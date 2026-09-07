@@ -15,6 +15,7 @@ type Props = {
   exerciseNameById: Record<string, string>;
   hasPatientLinkedSessions: boolean;
   maxSessions?: number;
+  scopedPatientId?: string;
   emptyStateOverride?: {
     title: string;
     body: string;
@@ -30,6 +31,7 @@ export function AssessmentCaptureReviewLayout({
   exerciseNameById,
   hasPatientLinkedSessions,
   maxSessions = 10,
+  scopedPatientId,
   emptyStateOverride,
 }: Props) {
   const showEmpty = !loading && !error && metrics.length === 0;
@@ -53,6 +55,18 @@ export function AssessmentCaptureReviewLayout({
         </p>
         <h1 className="mt-2 text-2xl font-bold text-white">{config.title}</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/45">{config.description}</p>
+
+        {scopedPatientId ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-[#1D9E75]/20 bg-[#1D9E75]/8 px-3 py-2.5">
+            <p className="text-xs text-[#5DCAA5]">Showing this patient&apos;s saved results only.</p>
+            <Link
+              href={`/clinician/patients/${scopedPatientId}`}
+              className="text-xs font-semibold text-[#5DCAA5] hover:text-white"
+            >
+              ← Patient profile
+            </Link>
+          </div>
+        ) : null}
 
         <div className="mt-5 rounded-[10px] border border-amber-400/20 bg-amber-400/5 px-4 py-3.5">
           <p className="text-[11px] font-bold uppercase tracking-wider text-amber-200/90">

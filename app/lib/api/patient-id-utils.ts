@@ -6,6 +6,14 @@ export function isUuidPatientId(id: string): boolean {
   return UUID_RE.test(id.trim());
 }
 
+/** Optional ?patientId= from assessment workspace URLs. */
+export function readOptionalPatientIdParam(
+  searchParams: { get(name: string): string | null },
+): string | undefined {
+  const value = searchParams.get("patientId")?.trim();
+  return value || undefined;
+}
+
 /** Legacy demo portal uses numeric patient ids stored in localStorage. */
 export function parseNumericDemoPatientId(id: string | number): number | null {
   if (typeof id === "number") {
