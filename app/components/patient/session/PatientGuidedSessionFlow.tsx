@@ -60,7 +60,6 @@ export function GuidedSessionShell({
       <div>
         <h1
           className="text-[20px] font-bold leading-snug text-[#0A0F1A]"
-          style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
         >
           {sessionTitle}
         </h1>
@@ -88,7 +87,6 @@ export function GuidedSessionStartScreen({
   lang,
   arClass,
   textDir,
-  sessionTitle,
   totalExercises,
   firstExerciseName,
   onBegin,
@@ -96,7 +94,6 @@ export function GuidedSessionStartScreen({
   lang: PatientExerciseLanguage;
   arClass: string;
   textDir: "ltr" | "rtl";
-  sessionTitle: string;
   totalExercises: number;
   firstExerciseName: string;
   onBegin: () => void;
@@ -112,13 +109,7 @@ export function GuidedSessionStartScreen({
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/70">
           {ui.startEyebrow}
         </p>
-        <h2
-          className="mt-3 text-[26px] font-bold leading-tight"
-          style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
-        >
-          {ui.startTitle(sessionTitle)}
-        </h2>
-        <p className="mt-3 text-[14px] leading-relaxed text-white/85">{ui.startSubtitle}</p>
+        <p className="mt-3 text-[15px] leading-relaxed text-white/90">{ui.startSubtitle}</p>
         <p className="mt-4 text-[13px] font-semibold text-[#B8F5DF]">
           {ui.exercisesReady(totalExercises)}
         </p>
@@ -189,7 +180,6 @@ export function GuidedSessionExerciseHero({
       <div>
         <h2
           className="text-[22px] font-bold leading-snug text-[#0A0F1A]"
-          style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
         >
           {view.name}
         </h2>
@@ -293,7 +283,6 @@ export function GuidedSessionRestScreen({
         </div>
         <h2
           className="mt-4 text-[24px] font-bold text-[#0A0F1A]"
-          style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
         >
           {ui.restTitle}
         </h2>
@@ -304,7 +293,6 @@ export function GuidedSessionRestScreen({
             {secondsLeft > 0 ? (
               <p
                 className="text-[40px] font-bold leading-tight text-[#1D9E75]"
-                style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
               >
                 {ui.restCountdownSeconds(secondsLeft)}
               </p>
@@ -384,7 +372,6 @@ export function GuidedSessionCompleteScreen({
       <div className="max-w-sm">
         <h2
           className="text-[28px] font-bold text-[#0A0F1A]"
-          style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
         >
           {ui.sessionCompleteTitle}
         </h2>

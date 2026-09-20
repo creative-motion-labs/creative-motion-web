@@ -154,7 +154,7 @@ function PatientDashboardContent() {
     : "Outstanding progress — the finish line is close.";
 
   return (
-    <main className="min-h-screen bg-[#F4F6F5]" style={{ fontFamily: "var(--font-inter, ui-sans-serif, sans-serif)" }}>
+    <main className="font-ui-en min-h-screen bg-[#F4F6F5]">
 
       {/* Legacy route notice */}
       <div className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-center">
@@ -174,7 +174,6 @@ function PatientDashboardContent() {
               <p className="text-[10px] font-bold uppercase tracking-widest text-[#6b9080]">RASQ · Patient portal</p>
               <h1
                 className="mt-2 text-2xl font-bold text-[#0f2e22] sm:text-3xl"
-                style={{ fontFamily: "var(--font-geist, var(--font-inter), sans-serif)" }}
               >
                 Welcome back, {PATIENT_NAME}
               </h1>

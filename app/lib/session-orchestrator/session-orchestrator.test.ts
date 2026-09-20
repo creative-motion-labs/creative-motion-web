@@ -395,6 +395,7 @@ describe("SessionOrchestrator — result category separation", () => {
     const result = o.getSessionPerformanceSummary(T0 + 2_000).blockResults[0];
     assert.deepEqual(Object.keys(result).sort(), [
       "blockId",
+      "blockType",
       "completedAtMs",
       "completionReason",
       "interaction",
@@ -402,6 +403,7 @@ describe("SessionOrchestrator — result category separation", () => {
       "measured",
       "movementId",
       "startedAtMs",
+      "title",
     ]);
     assert.equal(result.interaction.targetsContacted, 1);
     assert.equal(result.interaction.patternsCompleted, 0);
@@ -412,6 +414,54 @@ describe("SessionOrchestrator — result category separation", () => {
     assert.equal("patternsCompleted" in result.measured, false);
     assert.equal("validRepetitions" in result.interaction, false);
     assert.equal("compensationEvents" in result.measured, false);
+    assert.deepEqual(result.interaction.timingSamplesMs, []);
+    assert.deepEqual(result.measured.rangeValuesDegrees, []);
+  });
+
+  it("echoes the originating block's own blockType and title onto the result — not derived, not guessed", () => {
+    const def: SessionDefinition = {
+      sessionId: "block-type-session",
+      title: "Block type session",
+      blocks: [
+        minimalBlock({
+          blockId: "warm-up",
+          blockType: "instructional",
+          title: "Warm-up",
+          completionMode: "duration",
+          targetDurationSeconds: 5,
+          restAfterSeconds: 0,
+        }),
+        minimalBlock({
+          blockId: "reach",
+          blockType: "movement-target",
+          title: "Reach the Light",
+          completionMode: "duration",
+          targetDurationSeconds: 5,
+          restAfterSeconds: 0,
+        }),
+      ],
+    };
+    const o = startedOrchestrator(def);
+    o.tick(T0 + 5_000);
+    o.tick(T0 + 10_000);
+
+    const results = o.getSessionPerformanceSummary(T0 + 10_000).blockResults;
+    assert.equal(results[0]?.blockType, "instructional");
+    assert.equal(results[0]?.title, "Warm-up");
+    assert.equal(results[1]?.blockType, "movement-target");
+    assert.equal(results[1]?.title, "Reach the Light");
+  });
+
+  it("a block that declares no blockType leaves the result's blockType undefined — never a fabricated guess", () => {
+    const def: SessionDefinition = {
+      sessionId: "no-block-type-session",
+      title: "No block type session",
+      blocks: [minimalBlock({ blockType: undefined, completionMode: "manualCompletion", targetDurationSeconds: undefined })],
+    };
+    const o = startedOrchestrator(def);
+    o.completeBlockManually(T0 + 1_000);
+    const result = o.getSessionPerformanceSummary(T0 + 1_000).blockResults[0];
+    assert.equal(result?.blockType, undefined);
   });
 
   it("records patternCompleted separately from targetsContacted and validRepetitions", () => {
@@ -464,6 +514,105 @@ describe("SessionOrchestrator — mock Neuro Upper-Limb session fixture", () => 
       summary.blockResults.map((r) => r.blockId),
       ["warm-up", "main-movement", "functional-challenge", "cool-down"],
     );
+  });
+});
+
+describe("SessionOrchestrator — measured sample persistence", () => {
+  function manualCompletionSession(): SessionDefinition {
+    return {
+      sessionId: "sample-persistence",
+      title: "Sample persistence",
+      blocks: [
+        minimalBlock({
+          completionMode: "manualCompletion",
+          targetDurationSeconds: undefined,
+          restAfterSeconds: 0,
+        }),
+      ],
+    };
+  }
+
+  it("appends reactionTimeMs samples for valid target contacts without changing target counts", () => {
+    const o = startedOrchestrator(manualCompletionSession());
+    o.reportInputEvent(
+      { type: "targetContact", capturedAtMs: T0 + 1_000, reactionTimeMs: 420 },
+      T0 + 1_000,
+    );
+    o.reportInputEvent(
+      { type: "targetContact", capturedAtMs: T0 + 2_000, reactionTimeMs: 510 },
+      T0 + 2_000,
+    );
+    o.completeBlockManually(T0 + 3_000);
+
+    const result = o.getSessionPerformanceSummary(T0 + 3_000).blockResults[0];
+    assert.equal(result.interaction.targetsContacted, 2);
+    assert.deepEqual(result.interaction.timingSamplesMs, [420, 510]);
+    assert.equal(result.measured.validRepetitions, 0);
+  });
+
+  it("does not fabricate timing samples when reactionTimeMs is missing or invalid", () => {
+    const o = startedOrchestrator(manualCompletionSession());
+    o.reportInputEvent({ type: "targetContact", capturedAtMs: T0 + 1_000 }, T0 + 1_000);
+    o.reportInputEvent(
+      { type: "targetContact", capturedAtMs: T0 + 2_000, reactionTimeMs: Number.NaN },
+      T0 + 2_000,
+    );
+    o.completeBlockManually(T0 + 3_000);
+
+    const result = o.getSessionPerformanceSummary(T0 + 3_000).blockResults[0];
+    assert.equal(result.interaction.targetsContacted, 2);
+    assert.deepEqual(result.interaction.timingSamplesMs, []);
+  });
+
+  it("appends peakAngleDegrees samples for valid repetitions without changing rep counts", () => {
+    const o = startedOrchestrator(manualCompletionSession());
+    o.reportInputEvent(
+      { type: "validRepetition", capturedAtMs: T0 + 1_000, metrics: { peakAngleDegrees: 82 } },
+      T0 + 1_000,
+    );
+    o.reportInputEvent(
+      { type: "validRepetition", capturedAtMs: T0 + 2_000, metrics: { peakAngleDegrees: 95.5 } },
+      T0 + 2_000,
+    );
+    o.completeBlockManually(T0 + 3_000);
+
+    const result = o.getSessionPerformanceSummary(T0 + 3_000).blockResults[0];
+    assert.equal(result.measured.validRepetitions, 2);
+    assert.deepEqual(result.measured.rangeValuesDegrees, [82, 95.5]);
+    assert.equal(result.interaction.targetsContacted, 0);
+  });
+
+  it("does not fabricate range samples when peakAngleDegrees is missing or invalid", () => {
+    const o = startedOrchestrator(manualCompletionSession());
+    o.reportInputEvent({ type: "validRepetition", capturedAtMs: T0 + 1_000 }, T0 + 1_000);
+    o.reportInputEvent(
+      { type: "validRepetition", capturedAtMs: T0 + 2_000, metrics: { peakAngleDegrees: Number.NaN } },
+      T0 + 2_000,
+    );
+    o.completeBlockManually(T0 + 3_000);
+
+    const result = o.getSessionPerformanceSummary(T0 + 3_000).blockResults[0];
+    assert.equal(result.measured.validRepetitions, 2);
+    assert.deepEqual(result.measured.rangeValuesDegrees, []);
+  });
+
+  it("records one timing sample and one range sample per distinct event — no cross-conversion", () => {
+    const o = startedOrchestrator(manualCompletionSession());
+    o.reportInputEvent(
+      { type: "targetContact", capturedAtMs: T0 + 1_000, reactionTimeMs: 900 },
+      T0 + 1_000,
+    );
+    o.reportInputEvent(
+      { type: "validRepetition", capturedAtMs: T0 + 1_500, metrics: { peakAngleDegrees: 75 } },
+      T0 + 1_500,
+    );
+    o.completeBlockManually(T0 + 2_000);
+
+    const result = o.getSessionPerformanceSummary(T0 + 2_000).blockResults[0];
+    assert.equal(result.interaction.targetsContacted, 1);
+    assert.equal(result.measured.validRepetitions, 1);
+    assert.deepEqual(result.interaction.timingSamplesMs, [900]);
+    assert.deepEqual(result.measured.rangeValuesDegrees, [75]);
   });
 });
 

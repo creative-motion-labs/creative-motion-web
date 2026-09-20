@@ -17,6 +17,7 @@ const ASSESSMENT_TYPES: { value: AssessmentType; label: string; description: str
   { value: "sports",        label: "Sports",            description: "Sports-specific — includes gait and return-to-activity screening" },
   { value: "gait",          label: "Gait Assessment",  description: "Walking and movement — pain, gait, and daily activity impact" },
   { value: "pain_function", label: "Pain & Function",  description: "Quick pain intake — symptoms and daily functional limitations only" },
+  { value: "stroke_neuro_v1", label: "Neuro / Stroke", description: "Adaptive remote neurorehabilitation intake with a safety gate and upper-limb priority" },
 ];
 
 const ALL_SECTIONS: PatientSectionId[] = ["pain", "rom", "strength", "balance", "gait", "functional"];
@@ -146,7 +147,7 @@ export function SendAssessmentModal({ patientId, patientName, onClose, onCreated
               </div>
 
               {/* Section selection */}
-              <div>
+              {assessmentType !== "stroke_neuro_v1" ? <div>
                 <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-white/50">
                   Sections to include
                 </p>
@@ -181,7 +182,14 @@ export function SendAssessmentModal({ patientId, patientName, onClose, onCreated
                 {sections.length === 0 && (
                   <p className="mt-2 text-xs text-rose-300/80">Select at least one section.</p>
                 )}
-              </div>
+              </div> : (
+                <div className="rounded-2xl border border-cyan-300/20 bg-cyan-400/5 px-4 py-3">
+                  <p className="text-xs leading-5 text-cyan-100/80">
+                    The Stroke v1 pathway adapts its sections from the patient&apos;s answers.
+                    It does not ask the patient to perform movement tests.
+                  </p>
+                </div>
+              )}
 
               {/* Expiry info */}
               <div className="flex items-start gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
@@ -203,7 +211,7 @@ export function SendAssessmentModal({ patientId, patientName, onClose, onCreated
               {/* Generate button */}
               <button
                 type="button"
-                disabled={sections.length === 0 || generating}
+                disabled={(assessmentType !== "stroke_neuro_v1" && sections.length === 0) || generating}
                 onClick={handleGenerate}
                 className="w-full rounded-2xl bg-cyan-400 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
               >

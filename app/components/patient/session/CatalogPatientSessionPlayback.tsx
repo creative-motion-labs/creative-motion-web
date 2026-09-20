@@ -15,12 +15,18 @@ import {
   submitPatientSessionComplete,
 } from "@/app/lib/patient-portal/catalog-session-playback";
 import {
+  shouldSubmitInteractiveShoulderOutcome,
+  submitInteractiveShoulderOutcome,
+} from "@/app/lib/patient-portal/interactive-shoulder-outcome-submission";
+import type { InteractiveShoulderSessionCompletionSnapshot } from "@/app/lib/interactive-shoulder/orchestrator-cv-session-types";
+import {
   guidedSessionUi,
   sessionExerciseFlowUi,
   sessionShellUi,
 } from "@/app/lib/patient-portal-ui";
+import { resolveCatalogSessionDisplay } from "@/app/lib/interactive-shoulder/resolve-catalog-session-display";
 
-type CatalogPhase = "start" | "playback" | "wrapup";
+type CatalogPhase = "start" | "playback" | "cameraDeclined" | "wrapup";
 
 function PainScale({
   label,
@@ -43,7 +49,7 @@ function PainScale({
             key={n}
             type="button"
             onClick={() => onChange(n)}
-            className={`flex h-[44px] min-w-[40px] flex-1 items-center justify-center rounded-[10px] border text-[13px] font-semibold transition ${
+            className={`flex h-[48px] min-w-[44px] flex-1 items-center justify-center rounded-[10px] border text-[13px] font-semibold transition ${
               value === n
                 ? "border-[#1D9E75] bg-[#1D9E75] text-white"
                 : "border-[#E2E8E5] bg-[#F4F6F5] text-[#374151] hover:border-[#1D9E75]/40"
@@ -85,12 +91,33 @@ export function CatalogPatientSessionPlayback({
   } | null>(null);
   const cvSessionCompleteRef = useRef(false);
   const submitStartedRef = useRef(false);
+  /**
+   * Independent of cvSessionCompleteRef/submitStartedRef above — the
+   * clinical movement-outcome submission (O2) and the patient-reported
+   * completion submission must never gate, overwrite, or impersonate
+   * each other. "submitted" is set only on a genuine success or an
+   * idempotent-replay response from the server; a failure leaves it at
+   * "idle" so a future call (not built in this slice) could safely
+   * retry without ever double-submitting a success.
+   */
+  const movementOutcomeSubmissionRef = useRef<"idle" | "submitting" | "submitted">("idle");
 
   const shellUi = sessionShellUi(patientLanguage);
   const guidedUi = guidedSessionUi(patientLanguage);
   const flowUi = sessionExerciseFlowUi(patientLanguage);
   const catalogSession = session.catalogSession ?? null;
+  const sessionDisplay = resolveCatalogSessionDisplay(
+    patientLanguage,
+    catalogSession?.id,
+    session.title,
+    catalogSession?.goal,
+  );
 
+  // Reset-on-prop-change effect, matching the established suppression
+  // convention already used elsewhere in this codebase for this exact
+  // rule (e.g. app/clinician/motor-screen-lab/page.tsx) — pre-existing
+  // pattern, unrelated to the O2 addition below beyond the one new ref reset.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setPhase("start");
     setEffortScore(null);
@@ -102,13 +129,47 @@ export function CatalogPatientSessionPlayback({
     setCompletionSummary(null);
     cvSessionCompleteRef.current = false;
     submitStartedRef.current = false;
+    movementOutcomeSubmissionRef.current = "idle";
   }, [token, session.id]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-  const handleCatalogSessionComplete = useCallback(() => {
-    if (cvSessionCompleteRef.current) return;
-    cvSessionCompleteRef.current = true;
-    setPhase("wrapup");
+  /**
+   * Interactive Shoulder is camera-dependent — there is no non-camera
+   * fallback experience. Declining camera consent must not leave the
+   * "Skip camera" button silently doing nothing (it previously had no
+   * `onSkipped` handler at all): show a clear, honest stop state instead.
+   * "Try again" simply returns to "start", which re-mounts
+   * CatalogSessionPlayer fresh on the next Begin click, giving the
+   * patient another chance at the consent screen.
+   */
+  const handleCameraSkipped = useCallback(() => {
+    setPhase("cameraDeclined");
   }, []);
+
+  const handleCatalogSessionComplete = useCallback(
+    (snapshot: InteractiveShoulderSessionCompletionSnapshot) => {
+      if (cvSessionCompleteRef.current) return;
+      cvSessionCompleteRef.current = true;
+      setPhase("wrapup");
+
+      // Fire-and-forget, independent of the patient-reported completion
+      // flow below: this never blocks or gates the wrap-up UI, and the
+      // wrap-up UI never waits on or reflects this submission's outcome.
+      // A poor network connection or a disabled feature flag must not
+      // interrupt the patient's own session-complete flow.
+      if (shouldSubmitInteractiveShoulderOutcome(movementOutcomeSubmissionRef.current)) {
+        movementOutcomeSubmissionRef.current = "submitting";
+        void submitInteractiveShoulderOutcome({
+          token,
+          planSessionId: session.id,
+          snapshot,
+        }).then((result) => {
+          movementOutcomeSubmissionRef.current = result.ok ? "submitted" : "idle";
+        });
+      }
+    },
+    [token, session.id],
+  );
 
   const handleSubmitSession = useCallback(async () => {
     if (effortScore === null || painAfter === null) return;
@@ -174,7 +235,7 @@ export function CatalogPatientSessionPlayback({
         arClass={arClass}
         textDir={textDir}
         token={token}
-        sessionTitle={session.title}
+        sessionTitle={sessionDisplay.title}
         totalExercises={0}
         completedLabel={completedLabel}
         hideExerciseCount
@@ -189,7 +250,7 @@ export function CatalogPatientSessionPlayback({
         arClass={arClass}
         textDir={textDir}
         token={token}
-        sessionTitle={session.title}
+        sessionTitle={sessionDisplay.title}
         exercisesCompleted={0}
         effortScore={completionSummary.effortScore}
         painAfter={completionSummary.painAfter}
@@ -207,18 +268,17 @@ export function CatalogPatientSessionPlayback({
         arClass={arClass}
         textDir={textDir}
         token={token}
-        sessionTitle={session.title}
+        sessionTitle={sessionDisplay.title}
       >
         <div className={`space-y-6 ${arClass}`} dir={textDir}>
           <section className="rounded-[20px] border border-[#E2E8E5] bg-white p-5 shadow-[0_8px_30px_rgba(10,15,26,0.06)]">
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#1D9E75]">
               {guidedUi.startEyebrow}
             </p>
-            <p className="mt-2 text-[18px] font-bold text-[#0A0F1A]">{session.title}</p>
-            {catalogSession?.goal ? (
-              <p className="mt-3 text-[13px] leading-relaxed text-[#6B7280]">{catalogSession.goal}</p>
+            {sessionDisplay.goal ? (
+              <p className="mt-3 text-[14px] leading-relaxed text-[#6B7280]">{sessionDisplay.goal}</p>
             ) : (
-              <p className="mt-3 text-[13px] leading-relaxed text-[#6B7280]">
+              <p className="mt-3 text-[14px] leading-relaxed text-[#6B7280]">
                 {flowUi.sessionOverviewBody}
               </p>
             )}
@@ -238,6 +298,34 @@ export function CatalogPatientSessionPlayback({
     );
   }
 
+  if (phase === "cameraDeclined") {
+    return (
+      <GuidedSessionShell
+        lang={patientLanguage}
+        arClass={arClass}
+        textDir={textDir}
+        token={token}
+        sessionTitle={sessionDisplay.title}
+      >
+        <div className={`space-y-6 ${arClass}`} dir={textDir}>
+          <section className="rounded-[20px] border border-[#E2E8E5] bg-white p-5 shadow-[0_8px_30px_rgba(10,15,26,0.06)]">
+            <p className="text-[18px] font-bold text-[#0A0F1A]">{guidedUi.cameraRequiredTitle}</p>
+            <p className="mt-3 text-[13px] leading-relaxed text-[#6B7280]">
+              {guidedUi.cameraRequiredBody}
+            </p>
+          </section>
+          <button
+            type="button"
+            onClick={() => setPhase("start")}
+            className={GUIDED_PRIMARY_BTN}
+          >
+            {guidedUi.cameraRequiredRetry}
+          </button>
+        </div>
+      </GuidedSessionShell>
+    );
+  }
+
   if (phase === "wrapup") {
     return (
       <GuidedSessionShell
@@ -245,7 +333,7 @@ export function CatalogPatientSessionPlayback({
         arClass={arClass}
         textDir={textDir}
         token={token}
-        sessionTitle={session.title}
+        sessionTitle={sessionDisplay.title}
       >
         <div className="space-y-6 pb-4">
           <div className="rounded-[20px] border border-[#D1E7DE] bg-[#F0FAF6] px-5 py-6 text-center">
@@ -310,14 +398,18 @@ export function CatalogPatientSessionPlayback({
       arClass={arClass}
       textDir={textDir}
       token={token}
-      sessionTitle={session.title}
+      sessionTitle={sessionDisplay.title}
     >
       <CatalogSessionPlayer
+        key={`${session.id}:${session.prescribedSide ?? "none"}`}
         programSession={catalogSession}
         language={patientLanguage}
         arClass={arClass}
         textDir={textDir}
+        prescribedSide={session.prescribedSide}
+        clinicalPrescribedSideRequired
         onSessionComplete={handleCatalogSessionComplete}
+        onSkipped={handleCameraSkipped}
       />
     </GuidedSessionShell>
   );

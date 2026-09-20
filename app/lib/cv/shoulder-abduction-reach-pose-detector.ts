@@ -19,12 +19,16 @@
 import {
   createShoulderAbductionReachDetectorState,
   updateShoulderAbductionReachDetector,
+  extractShoulderAbductionReachArmGeometry,
+  EMPTY_SHOULDER_ABDUCTION_REACH_ARM_GEOMETRY,
   SHOULDER_ABDUCTION_REACH_BONUS_JOINTS,
+  type ShoulderAbductionReachArmGeometry,
   type ShoulderAbductionReachDetectorState,
   type ShoulderAbductionReachFrameResult,
   type ShoulderAbductionReachSide,
 } from "@/app/lib/shoulder-rehabilitation";
 import { BLAZEPOSE_ACQUISITION_ADAPTER, type InputAcquisitionContext } from "@/app/lib/input-acquisition";
+import type { NormalizedMotionFrame } from "@/app/lib/motion-intelligence";
 import type { PoseLandmark } from "@/app/lib/cv/pose-landmark-overlay";
 import { drawPoseLandmarkDots } from "@/app/lib/cv/pose-landmark-overlay";
 import {
@@ -82,6 +86,19 @@ export type ShoulderAbductionReachPoseDetectorSnapshot = {
   trackingError: string | null;
   /** Primary-side wrist in normalized preview coordinates for interactive target UI. */
   primaryWristNormalized: { x: number; y: number } | null;
+  /**
+   * Affected-side shoulder in the same normalized preview space — the anchor for
+   * adaptive target-placement geometry. Optional so existing consumers keep compiling.
+   */
+  primaryShoulderNormalized?: { x: number; y: number } | null;
+  /** Affected-side elbow in the same normalized preview space. */
+  primaryElbowNormalized?: { x: number; y: number } | null;
+  /**
+   * shoulder→elbow plus elbow→wrist normalized distance, or null when any of the
+   * three joints fails the existing presence rule. Never a fabricated default.
+   * An on-screen reach scale, NOT an anthropometric or clinical measurement.
+   */
+  estimatedArmLengthNormalized?: number | null;
 };
 
 /**
@@ -119,6 +136,30 @@ export type ShoulderAbductionReachPoseDetectorCallbacks = {
   onSnapshot: (snapshot: ShoulderAbductionReachPoseDetectorSnapshot) => void;
   /** Optional — PR1 exposes the event stream; nothing subscribes to it in production yet. */
   onMeasuredEvent?: (event: ShoulderAbductionReachMeasuredEvent) => void;
+  /**
+   * Optional, dev-only hook — RASQ ML bridge Slice 1 (2026-08-19). Fires once per
+   * frame that produced a usable `NormalizedMotionFrame`, alongside this frame's
+   * primary-side phase/rep state, for a research capture recorder
+   * (`app/lib/ml-research/shoulder-abduction-reach/rep-recorder.ts`) to consume.
+   * Never invoked unless a caller explicitly supplies it — omitting it (every
+   * existing caller) leaves this class's behavior completely unchanged. No
+   * production caller wires this today.
+   *
+   * Does NOT include `peakAngleDegrees` (Slice 1.1, 2026-08-19): the phase
+   * FSM's own running peak intentionally persists across the resting phase
+   * (see `tickShoulderAbductionReachPhase`'s doc comment) and is correct for
+   * that FSM's own purpose, but a real live-capture session showed it
+   * leaking as a stale, carried-over value into unrelated downstream
+   * research records when passed through. The recorder now computes its own
+   * peak strictly from the frames it captured — see the Slice 1.1 project
+   * report.
+   */
+  onDevFrameCaptured?: (input: {
+    frame: NormalizedMotionFrame;
+    capturedAtMs: number;
+    phase: ShoulderAbductionReachFrameResult["left"]["phase"];
+    repCount: number;
+  }) => void;
 };
 
 const TRACKER_LOST_CONSECUTIVE_FRAMES = 10;
@@ -131,7 +172,30 @@ const SHOULDER_ABDUCTION_REACH_POSE_SHELL = {
   canvasWidth: DEFAULT_STS_CONFIG.canvasWidth,
   canvasHeight: DEFAULT_STS_CONFIG.canvasHeight,
   initTimeoutMs: DEFAULT_STS_CONFIG.initTimeoutMs,
-  uiFrameUpdateInterval: DEFAULT_STS_CONFIG.uiFrameUpdateInterval,
+  /**
+   * Snapshot publication cadence, in processed camera frames — deliberately NOT
+   * `DEFAULT_STS_CONFIG.uiFrameUpdateInterval` (15). Issue #276.
+   *
+   * The shared default is tuned for the reporting-style detectors that consume it
+   * (sit-to-stand, heel raise, functional reach, single-leg stance, step-up, lateral
+   * step), whose snapshots carry slow clinical readouts — rep counts, hold seconds,
+   * framing guidance — where a ~2 Hz refresh is invisible. It is left untouched here
+   * for exactly that reason; this override is local to Shoulder Abduction Reach.
+   *
+   * Interactive Shoulder is the only surface that publishes an INTERACTIVE
+   * measurement: `primaryWristNormalized` drives both the on-screen hand marker and
+   * the target hit test. Since the decoded-frame dedup added in #258, `framesTotal`
+   * counts real camera frames rather than rAF ticks, so an interval of 15 at ~30 fps
+   * published a new wrist roughly every 500 ms — while MediaPipe had already computed
+   * a fresh one on every one of those frames. The throttle was discarding
+   * measurements that already existed, and `TrackedHandCursor` then smoothed toward
+   * each stale value one lerp step per publication, compounding the visible lag.
+   *
+   * Publishing on every processed frame costs no additional inference: it emits what
+   * the frame already computed. The dedup guard above still gates this — one
+   * inference and at most one publication per decoded camera frame.
+   */
+  uiFrameUpdateInterval: 1,
   prototypeVersion: "cv-neuro-1-shoulder-abduction-reach",
 } as const;
 
@@ -144,6 +208,8 @@ const SHOULDER_ABDUCTION_REACH_POSE_SHELL = {
  * both sides' raw results remain available via the frame result.
  */
 export class ShoulderAbductionReachPoseDetector {
+  private consecutiveDetectErrors = 0;
+
   private readonly callbacks: ShoulderAbductionReachPoseDetectorCallbacks;
   private readonly primarySide: ShoulderAbductionReachSide;
 
@@ -173,6 +239,21 @@ export class ShoulderAbductionReachPoseDetector {
   private lastFrameResult: ShoulderAbductionReachFrameResult | null = null;
   private lastBodyFramingState: BodyFramingState = "checking";
   private lastPrimaryWristNormalized: { x: number; y: number } | null = null;
+  private lastPrimaryArmGeometry: ShoulderAbductionReachArmGeometry =
+    EMPTY_SHOULDER_ABDUCTION_REACH_ARM_GEOMETRY;
+  /**
+   * The `<video>` element's own `currentTime` (seconds) at the last frame
+   * actually processed. Slice 1.1 (2026-08-19) root-cause fix: `detect()`
+   * runs once per `requestAnimationFrame` tick, which fires at the DISPLAY's
+   * refresh rate (commonly 60-144Hz, i.e. every ~7-17ms) — NOT at the
+   * camera's actual decode rate (commonly ~30fps, i.e. every ~33ms). A real
+   * live-capture session showed captured-frame intervals of 11-14ms despite
+   * a normal webcam, which traces directly to this: without this guard,
+   * `detectForVideo` was re-run on the SAME underlying decoded video frame
+   * multiple times per real camera frame, each re-timestamped as if it were
+   * a new observation. `null` at session start / after `resetSessionState()`.
+   */
+  private lastProcessedVideoTimeS: number | null = null;
 
   constructor(
     callbacks: ShoulderAbductionReachPoseDetectorCallbacks,
@@ -219,6 +300,9 @@ export class ShoulderAbductionReachPoseDetector {
       previewActive: this.previewActive,
       trackingError: this.trackingError,
       primaryWristNormalized: this.lastPrimaryWristNormalized,
+      primaryShoulderNormalized: this.lastPrimaryArmGeometry.shoulder,
+      primaryElbowNormalized: this.lastPrimaryArmGeometry.elbow,
+      estimatedArmLengthNormalized: this.lastPrimaryArmGeometry.estimatedArmLengthNormalized,
     };
   }
 
@@ -248,6 +332,112 @@ export class ShoulderAbductionReachPoseDetector {
 
   private emit(): void {
     this.callbacks.onSnapshot(this.getSnapshot());
+  }
+
+  /**
+   * Clears every per-session measurement value. Called only from `start()` — this is
+   * that single lifecycle boundary factored out so it can be exercised without a
+   * camera, not a second way to reset the detector.
+   */
+  private resetSessionState(): void {
+    this.detectorState = createShoulderAbductionReachDetectorState();
+    this.compensationState = createShoulderAbductionReachCompensationState();
+    this.frameIndex = 0;
+    this.framesWithPose = 0;
+    this.framesTotal = 0;
+    this.consecutiveNoLandmarkFrames = 0;
+    this.trackerWasLost = false;
+    this.lastFrameResult = null;
+    // Cached geometry is deliberately retained across a dropped frame *within* a
+    // session (see `processFrame`), so the session boundary is the only place that can
+    // clear it. Without this, the previous session's last wrist/shoulder/elbow position
+    // stays readable through `getSnapshot()` until the new session's first valid frame.
+    this.lastPrimaryWristNormalized = null;
+    this.lastPrimaryArmGeometry = EMPTY_SHOULDER_ABDUCTION_REACH_ARM_GEOMETRY;
+    this.lastProcessedVideoTimeS = null;
+    // Framing is written only by the live capture loop, and only for a frame that
+    // actually produced landmarks — so it is cached across dropped frames exactly like
+    // the geometry above. Back to the same "not yet evaluated" value the field is
+    // constructed with, so the previous session's guidance ("move_closer", …) is not
+    // shown against the new session before its own framing evaluation has run.
+    this.lastBodyFramingState = "checking";
+    this.consecutiveDetectErrors = 0;
+  }
+
+  /**
+   * One live-capture loop iteration: deduplicates on `video.currentTime`, runs
+   * MediaPipe inference when the decoded frame advanced, and feeds landmarks
+   * into `processFrame`. Extracted from `start()` so the dedup guard can be
+   * exercised behaviorally without a camera or MediaPipe model load.
+   */
+  private tickLiveVideoFrame(options?: { scheduleNext?: boolean }): void {
+    if (!this.previewActive || !this.videoEl || !this.canvasEl) return;
+
+    const ctx = this.canvasEl.getContext("2d");
+    if (!ctx || !this.poseLandmarker) return;
+
+    const { canvasWidth, canvasHeight, uiFrameUpdateInterval } = SHOULDER_ABDUCTION_REACH_POSE_SHELL;
+
+    try {
+      if (this.videoEl.paused && this.previewActive) {
+        void this.videoEl.play().catch(() => undefined);
+      }
+      if (this.videoEl.videoWidth === 0 || this.videoEl.videoHeight === 0) {
+        if (options?.scheduleNext !== false) {
+          this.animFrameId = requestAnimationFrame(() => this.tickLiveVideoFrame());
+        }
+        return;
+      }
+
+      const currentVideoTimeS = this.videoEl.currentTime;
+      if (this.lastProcessedVideoTimeS !== null && currentVideoTimeS === this.lastProcessedVideoTimeS) {
+        if (options?.scheduleNext !== false) {
+          this.animFrameId = requestAnimationFrame(() => this.tickLiveVideoFrame());
+        }
+        return;
+      }
+      this.lastProcessedVideoTimeS = currentVideoTimeS;
+
+      this.detectTimestamp = Math.max(this.detectTimestamp + 1, performance.now());
+      const nowMs = performance.now();
+      const result = this.poseLandmarker.detectForVideo(this.videoEl, this.detectTimestamp);
+
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+      this.consecutiveDetectErrors = 0;
+
+      if (result.landmarks && result.landmarks.length > 0) {
+        const landmarks = result.landmarks[0] as PoseLandmark[];
+        const trackingQuality = this.computeTrackingQuality();
+        const framing = evaluateBodyFraming(landmarks, UPPER_LIMB_REACH_FRAMING_PROFILE, {
+          checking: false,
+          trackingQuality: trackingQuality === "unknown" ? null : trackingQuality,
+        });
+        this.lastBodyFramingState = framing;
+        drawBodyFramingOverlay(ctx, canvasWidth, canvasHeight, framing);
+        const poseReadiness: PoseReadiness =
+          framing === "checking" ? "checking" : framing === "good_distance" ? "ready" : "not_ready";
+        drawPoseLandmarkDots(ctx, landmarks, canvasWidth, canvasHeight, poseReadiness);
+
+        this.processFrame(landmarks, nowMs);
+      } else {
+        this.processFrame(null, nowMs);
+      }
+    } catch {
+      this.consecutiveDetectErrors += 1;
+      if (this.consecutiveDetectErrors >= 10) {
+        this.trackingError = "Movement tracking could not continue. Please stop and try again.";
+        this.emit();
+        return;
+      }
+    }
+
+    if (this.framesTotal % uiFrameUpdateInterval === 0) {
+      this.emit();
+    }
+
+    if (options?.scheduleNext !== false) {
+      this.animFrameId = requestAnimationFrame(() => this.tickLiveVideoFrame());
+    }
   }
 
   /**
@@ -305,12 +495,28 @@ export class ShoulderAbductionReachPoseDetector {
     // second implementation of it.
     const frame = BLAZEPOSE_ACQUISITION_ADAPTER.normalize(landmarks, context);
     if (frame) {
+      // Dev-only, opt-in — see the callback's own doc comment. No-op unless a
+      // caller explicitly supplies onDevFrameCaptured.
+      this.callbacks.onDevFrameCaptured?.({
+        frame,
+        capturedAtMs,
+        phase: primary.phase,
+        repCount: primary.repCount,
+      });
+
       const wristJointId = SHOULDER_ABDUCTION_REACH_BONUS_JOINTS[this.primarySide].wrist;
       const wristJoint = frame.joints[wristJointId];
       this.lastPrimaryWristNormalized =
         wristJoint?.confidence.present === true
           ? { x: wristJoint.landmark.x, y: wristJoint.landmark.y }
           : null;
+
+      // Affected-side shoulder/elbow/arm-length for adaptive target geometry. Uses the
+      // same already-normalized frame and the same presence rule as the wrist above.
+      this.lastPrimaryArmGeometry = extractShoulderAbductionReachArmGeometry(
+        frame,
+        this.primarySide,
+      );
 
       const wasFlagged = this.compensationState.flagged;
       const status = updateShoulderAbductionReachCompensation(
@@ -334,6 +540,7 @@ export class ShoulderAbductionReachPoseDetector {
       }
     } else {
       this.lastPrimaryWristNormalized = null;
+      this.lastPrimaryArmGeometry = EMPTY_SHOULDER_ABDUCTION_REACH_ARM_GEOMETRY;
     }
   }
 
@@ -383,14 +590,7 @@ export class ShoulderAbductionReachPoseDetector {
     this.trackingError = null;
     this.initPhase = "import";
     this.previewActive = false;
-    this.detectorState = createShoulderAbductionReachDetectorState();
-    this.compensationState = createShoulderAbductionReachCompensationState();
-    this.frameIndex = 0;
-    this.framesWithPose = 0;
-    this.framesTotal = 0;
-    this.consecutiveNoLandmarkFrames = 0;
-    this.trackerWasLost = false;
-    this.lastFrameResult = null;
+    this.resetSessionState();
     this.emit();
 
     const isCurrent = () => this.sessionEpoch === epoch;
@@ -467,65 +667,7 @@ export class ShoulderAbductionReachPoseDetector {
       this.sessionStartMs = performance.now();
       this.emit();
 
-      let consecutiveDetectErrors = 0;
-      const { canvasWidth, canvasHeight, uiFrameUpdateInterval } = SHOULDER_ABDUCTION_REACH_POSE_SHELL;
-
-      const detect = () => {
-        if (!this.previewActive || !this.videoEl || !this.canvasEl) return;
-
-        const ctx = this.canvasEl.getContext("2d");
-        if (!ctx || !this.poseLandmarker) return;
-
-        try {
-          if (this.videoEl.paused && this.previewActive) {
-            void this.videoEl.play().catch(() => undefined);
-          }
-          if (this.videoEl.videoWidth === 0 || this.videoEl.videoHeight === 0) {
-            this.animFrameId = requestAnimationFrame(detect);
-            return;
-          }
-
-          this.detectTimestamp = Math.max(this.detectTimestamp + 1, performance.now());
-          const nowMs = performance.now();
-          const result = this.poseLandmarker.detectForVideo(this.videoEl, this.detectTimestamp);
-
-          ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-          consecutiveDetectErrors = 0;
-
-          if (result.landmarks && result.landmarks.length > 0) {
-            const landmarks = result.landmarks[0] as PoseLandmark[];
-            const trackingQuality = this.computeTrackingQuality();
-            const framing = evaluateBodyFraming(landmarks, UPPER_LIMB_REACH_FRAMING_PROFILE, {
-              checking: false,
-              trackingQuality: trackingQuality === "unknown" ? null : trackingQuality,
-            });
-            this.lastBodyFramingState = framing;
-            drawBodyFramingOverlay(ctx, canvasWidth, canvasHeight, framing);
-            const poseReadiness: PoseReadiness =
-              framing === "checking" ? "checking" : framing === "good_distance" ? "ready" : "not_ready";
-            drawPoseLandmarkDots(ctx, landmarks, canvasWidth, canvasHeight, poseReadiness);
-
-            this.processFrame(landmarks, nowMs);
-          } else {
-            this.processFrame(null, nowMs);
-          }
-        } catch {
-          consecutiveDetectErrors += 1;
-          if (consecutiveDetectErrors >= 10) {
-            this.trackingError = "Movement tracking could not continue. Please stop and try again.";
-            this.emit();
-            return;
-          }
-        }
-
-        if (this.framesTotal % uiFrameUpdateInterval === 0) {
-          this.emit();
-        }
-
-        this.animFrameId = requestAnimationFrame(detect);
-      };
-
-      this.animFrameId = requestAnimationFrame(detect);
+      this.animFrameId = requestAnimationFrame(() => this.tickLiveVideoFrame());
     } catch (err) {
       if (!isCurrent()) return;
       this.stop();

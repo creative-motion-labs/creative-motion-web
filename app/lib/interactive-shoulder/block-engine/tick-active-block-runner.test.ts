@@ -90,12 +90,19 @@ describe("tick-active-block-runner — resolved runner is ticked", () => {
     let tickCalls = 0;
     const fakeRunner = {
       ...TARGET_BLOCK_RUNNER,
+      // `attemptStartedEvents`/`attemptTimeoutEvent` are additive fields that CHANGE-004
+      // makes REQUIRED on the target runner result, so that no runner can drop an attempt
+      // event by omission. This double therefore has to state "no events this tick"
+      // explicitly. The assertion below is unchanged — it still only proves that dispatch
+      // ticks the injected runner rather than a hardcoded constant.
       tick: () => {
         tickCalls += 1;
         return {
           state: createInitialTargetLifecycle(),
           ticked: true,
           completionEvent: null,
+          attemptStartedEvents: [],
+          attemptTimeoutEvent: null,
         };
       },
     };
@@ -230,7 +237,10 @@ describe("tick-active-block-runner", () => {
 
   it("target completion maps to targetContact only — never patternCompleted", () => {
     registerAllBlockRunners();
-    let states = nullPatternStates();
+    // `const` only: a pre-existing prefer-const error in this file, inherited by CHANGE-004
+    // because the file is now in scope. Declaration keyword only — no assertion, input or
+    // expectation in this test is altered.
+    const states = nullPatternStates();
     const spawned = tickActiveBlockRunner({
       sessionState: "active",
       blockType: "movement-target",
@@ -354,5 +364,172 @@ describe("tick-active-block-runner", () => {
       pattern,
     });
     assert.equal(result.status, "ticked");
+  });
+});
+
+/**
+ * CHANGE-004 — target-attempt propagation through the active-block dispatcher.
+ *
+ * FIXTURE ONLY — no reach window in this repository is clinically validated, and this
+ * layer must never originate one.
+ */
+const FIXTURE_TIMEOUT_MS = 4_000;
+const FIXTURE_LEVEL_DEGREES = 45;
+
+/**
+ * A tracked wrist at rest, outside `DEFAULT_SAFE_TARGET_BOUNDS`. Required wherever an
+ * attempt is meant to expire: since the blocker-2 review fix an attempt only spends its
+ * window on ticks where the wrist was actually measured, so a timeout scenario must
+ * supply one. `wrist: null` now models a measurement gap, which holds the window instead.
+ */
+const RESTING_WRIST = { x: 0.02, y: 0.97 };
+
+describe("tick-active-block-runner — CHANGE-004 target attempt propagation", () => {
+  it("7. propagates target attempt start events out of the target runner", () => {
+    registerAllBlockRunners();
+    const spawned = tickActiveBlockRunner({
+      sessionState: "active",
+      blockType: "movement-target",
+      nowMs: T0,
+      blockElapsedSeconds: 7,
+      states: nullPatternStates(),
+      wrist: null,
+      side: "right",
+      bounds: DEFAULT_SAFE_TARGET_BOUNDS,
+      random: () => 0.5,
+      attemptTimeoutMs: FIXTURE_TIMEOUT_MS,
+      levelDegrees: FIXTURE_LEVEL_DEGREES,
+    });
+    assert.equal(spawned.status, "ticked");
+    if (spawned.status !== "ticked") return;
+
+    assert.equal(spawned.targetAttemptStarted.length, 1);
+    const started = spawned.targetAttemptStarted[0];
+    assert.equal(started.targetId, spawned.states.target.currentTarget?.id);
+    assert.equal(started.sequence, 1);
+    assert.equal(started.side, "right");
+    assert.equal(started.levelDegrees, FIXTURE_LEVEL_DEGREES);
+    // The dispatcher's own blockElapsedSeconds reached the lifecycle as the attempt clock.
+    assert.equal(started.startedAtBlockElapsedS, 7);
+    assert.equal(spawned.states.target.currentTarget?.spawnedAtBlockElapsedS, 7);
+    assert.equal(spawned.targetAttemptTimeout, null);
+  });
+
+  it("8. propagates the target timeout event, with no contact and exactly one successor start", () => {
+    registerAllBlockRunners();
+    const spawned = tickActiveBlockRunner({
+      sessionState: "active",
+      blockType: "movement-target",
+      nowMs: T0,
+      blockElapsedSeconds: 0,
+      states: nullPatternStates(),
+      wrist: RESTING_WRIST,
+      side: "right",
+      bounds: DEFAULT_SAFE_TARGET_BOUNDS,
+      random: () => 0.5,
+      attemptTimeoutMs: FIXTURE_TIMEOUT_MS,
+    });
+    assert.equal(spawned.status, "ticked");
+    if (spawned.status !== "ticked") return;
+    const expiringTargetId = spawned.states.target.currentTarget?.id;
+
+    const expired = tickActiveBlockRunner({
+      sessionState: "active",
+      blockType: "movement-target",
+      nowMs: T0 + FIXTURE_TIMEOUT_MS,
+      blockElapsedSeconds: FIXTURE_TIMEOUT_MS / 1000,
+      states: spawned.states,
+      wrist: RESTING_WRIST,
+      side: "right",
+      bounds: DEFAULT_SAFE_TARGET_BOUNDS,
+      random: () => 0.5,
+      attemptTimeoutMs: FIXTURE_TIMEOUT_MS,
+    });
+    assert.equal(expired.status, "ticked");
+    if (expired.status !== "ticked") return;
+
+    assert.ok(expired.targetAttemptTimeout);
+    assert.equal(expired.targetAttemptTimeout?.targetId, expiringTargetId);
+    assert.equal(expired.targetAttemptTimeout?.activeElapsedMs, FIXTURE_TIMEOUT_MS);
+    assert.equal(expired.targetAttemptTimeout?.attemptTimeoutMs, FIXTURE_TIMEOUT_MS);
+    assert.equal(expired.targetContact, null, "an expired attempt is never reported as contact");
+    // CHANGE-008: the terminal tick carries the outcome alone. Dispatch forwards whatever
+    // the lifecycle produced — which is now no attempt start until the successor is built.
+    assert.equal(expired.targetAttemptStarted.length, 0);
+    assert.equal(expired.states.target.currentTarget, null);
+
+    const successor = tickActiveBlockRunner({
+      sessionState: "active",
+      blockType: "movement-target",
+      nowMs: T0 + FIXTURE_TIMEOUT_MS + 16,
+      blockElapsedSeconds: FIXTURE_TIMEOUT_MS / 1000 + 0.016,
+      states: expired.states,
+      wrist: RESTING_WRIST,
+      side: "right",
+      bounds: DEFAULT_SAFE_TARGET_BOUNDS,
+      random: () => 0.5,
+      attemptTimeoutMs: FIXTURE_TIMEOUT_MS,
+    });
+    assert.equal(successor.status, "ticked");
+    if (successor.status !== "ticked") return;
+    assert.equal(successor.targetAttemptStarted.length, 1);
+    assert.notEqual(successor.targetAttemptStarted[0].targetId, expiringTargetId);
+    assert.equal(successor.targetAttemptTimeout, null);
+  });
+
+  it("target attempt fields stay inert when no attempt configuration is supplied", () => {
+    registerAllBlockRunners();
+    const result = tickActiveBlockRunner({
+      sessionState: "active",
+      blockType: "movement-target",
+      nowMs: T0,
+      blockElapsedSeconds: 999,
+      states: nullPatternStates(),
+      wrist: null,
+      side: "right",
+      bounds: DEFAULT_SAFE_TARGET_BOUNDS,
+      random: () => 0.5,
+    });
+    assert.equal(result.status, "ticked");
+    if (result.status !== "ticked") return;
+    // A spawn still starts an attempt — that is the lifecycle's contract — but without a
+    // configured timeout nothing can expire, whatever the block clock says.
+    assert.equal(result.targetAttemptStarted.length, 1);
+    assert.equal(result.targetAttemptStarted[0].levelDegrees, undefined);
+    assert.equal(result.targetAttemptTimeout, null);
+  });
+
+  it("9. non-target modes are unchanged — no attempt events, no attempt behaviour", () => {
+    registerAllBlockRunners();
+    const pattern = resolveActiveMotionPattern(D1_INSPIRED_DIAGONAL_REACH_FEEDBACK_PROFILE, "right")!;
+
+    const instructional = tickActiveBlockRunner({
+      sessionState: "active",
+      blockType: "instructional",
+      nowMs: T0,
+      blockElapsedSeconds: 30,
+      targetDurationSeconds: 60,
+      states: nullPatternStates(),
+    });
+    assert.equal(instructional.status, "ticked");
+    if (instructional.status !== "ticked") return;
+    assert.deepEqual(instructional.targetAttemptStarted, []);
+    assert.equal(instructional.targetAttemptTimeout, null);
+    assert.equal(instructional.presentationProgress, 0.5, "instructional progress is untouched");
+
+    const patternResult = tickActiveBlockRunner({
+      sessionState: "active",
+      blockType: "movement-pattern",
+      nowMs: T0,
+      blockElapsedSeconds: 999,
+      states: patternStates(),
+      wrist: samplePathAtProgress(pattern.sampledPath, 0.05),
+      pattern,
+    });
+    assert.equal(patternResult.status, "ticked");
+    if (patternResult.status !== "ticked") return;
+    assert.deepEqual(patternResult.targetAttemptStarted, []);
+    assert.equal(patternResult.targetAttemptTimeout, null);
+    assert.equal(patternResult.targetContact, null);
   });
 });

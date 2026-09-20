@@ -60,6 +60,7 @@ function assessmentTypeLabel(type: string): string {
   if (type === "general_msk") return "General MSK Assessment";
   if (type === "structured") return "Structured Assessment";
   if (type === "remote_questionnaire") return "Remote Questionnaire Assessment";
+  if (type === "upper_limb_motor_screen") return "Upper Limb Motor Screen";
   if (type === "questionnaire") return "Questionnaire";
   return type;
 }

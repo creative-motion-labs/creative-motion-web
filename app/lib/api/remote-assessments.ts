@@ -13,7 +13,12 @@ import { isUuidPatientId } from "./patient-id-utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type AssessmentType = "general_msk" | "sports" | "gait" | "pain_function";
+export type AssessmentType =
+  | "general_msk"
+  | "sports"
+  | "gait"
+  | "pain_function"
+  | "stroke_neuro_v1";
 
 /** Subset of SectionId that a patient can answer (no CV/SOAP/AI/special-tests). */
 export type PatientSectionId = "pain" | "rom" | "strength" | "balance" | "gait" | "functional";
@@ -23,6 +28,7 @@ export const ASSESSMENT_TYPE_LABELS: Record<AssessmentType, string> = {
   sports:        "Sports Assessment",
   gait:          "Gait Assessment",
   pain_function: "Pain & Function",
+  stroke_neuro_v1: "Remote Neurorehabilitation Intake",
 };
 
 export const DEFAULT_SECTIONS: Record<AssessmentType, PatientSectionId[]> = {
@@ -30,6 +36,7 @@ export const DEFAULT_SECTIONS: Record<AssessmentType, PatientSectionId[]> = {
   sports:        ["pain", "rom", "strength", "balance", "gait", "functional"],
   gait:          ["pain", "gait", "functional"],
   pain_function: ["pain", "functional"],
+  stroke_neuro_v1: [],
 };
 
 /** English labels for patient forms (Arabic via patient-assessment-questions when enabled). */
@@ -48,6 +55,7 @@ export interface RemoteAssessmentRequest {
   expiresAt: string;                   // ISO string — 7 days from creation
   createdAt: string;
   submittedAt?: string;
+  assessmentId?: string;
   /** Patient-filled answers, keyed by section */
   patientDraft?: PatientAssessmentDraft;
   /** Language used when patient completed the form */
@@ -167,7 +175,13 @@ function uuid(): string {
 }
 
 function parseAssessmentType(value: string): AssessmentType {
-  if (value === "general_msk" || value === "sports" || value === "gait" || value === "pain_function") {
+  if (
+    value === "general_msk" ||
+    value === "sports" ||
+    value === "gait" ||
+    value === "pain_function" ||
+    value === "stroke_neuro_v1"
+  ) {
     return value;
   }
   return "general_msk";
@@ -373,6 +387,7 @@ type RemoteAssessmentListApiItem = {
   expiresAt: string;
   createdAt: string;
   submittedAt: string | null;
+  assessmentId: string | null;
 };
 
 function mapApiListItemToRequest(
@@ -389,6 +404,7 @@ function mapApiListItemToRequest(
     createdAt: item.createdAt,
     expiresAt: item.expiresAt,
     submittedAt: item.submittedAt ?? local?.submittedAt,
+    assessmentId: item.assessmentId ?? local?.assessmentId,
     patientDraft: local?.patientDraft,
     assessmentLanguage: local?.assessmentLanguage,
   };
@@ -501,7 +517,7 @@ export async function submitRemoteAssessment(
   };
   persist(submitted);
 
-  if (base.patientId) {
+  if (base.patientId && base.assessmentType !== "stroke_neuro_v1") {
     mergePatientDraftIntoClinicianDraft(base.patientId, patientDraft);
   }
 }

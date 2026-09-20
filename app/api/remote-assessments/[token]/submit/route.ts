@@ -12,6 +12,20 @@ import {
 } from "@/app/lib/remote-assessment-validation";
 import { serviceUnavailableResponse } from "@/app/lib/api/safe-errors";
 import { backfillTranscriptionSessionAssessmentId } from "@/app/lib/speech-ai/transcription-session-persistence";
+import { batchTranslateRemoteQuestionnaire } from "@/app/lib/reports/batch-translate-remote-questionnaire";
+import { getOpenAiKeyConfig } from "@/app/lib/openai/server-env";
+import {
+  isStrokeQuestionnaireData,
+  STROKE_PATHWAY,
+  STROKE_QUESTIONNAIRE_VERSION,
+  validateStrokeIntakeProvenance,
+  type StrokeQuestionnaireSubmission,
+} from "@/app/lib/stroke-questionnaire/stroke-questionnaire-schema";
+import { prepareStrokeSubmission } from "@/app/lib/stroke-questionnaire/stroke-pt-clinical-report";
+import {
+  buildStrokeBranchTrace,
+  resolveStrokeSafetyState,
+} from "@/app/lib/stroke-questionnaire/stroke-branch-engine";
 
 let serviceRoleClientOverride: SupabaseClient | null = null;
 
@@ -37,6 +51,7 @@ type RequestRow = {
   status: string;
   assessment_id: string | null;
   submitted_at: string | null;
+  assessment_type: string;
 };
 
 /**
@@ -81,7 +96,7 @@ export async function POST(
 
   const { data: requestRow, error: fetchError } = await admin
     .from("remote_assessment_requests")
-    .select("id, patient_id, provider_id, status, assessment_id, submitted_at")
+    .select("id, patient_id, provider_id, status, assessment_id, submitted_at, assessment_type")
     .eq("token", trimmed)
     .gt("expires_at", new Date().toISOString())
     .maybeSingle<RequestRow>();
@@ -107,13 +122,57 @@ export async function POST(
     return NextResponse.json({ error: "Invalid or expired link" }, { status: 404 });
   }
 
+  const submittedData = validated.data as Record<string, unknown>;
+  const isStrokeRequest = requestRow.assessment_type === "stroke_neuro_v1";
+  if (isStrokeRequest !== isStrokeQuestionnaireData(submittedData)) {
+    return NextResponse.json(
+      { error: "Questionnaire kind does not match this assessment link." },
+      { status: 400 },
+    );
+  }
+  if (isStrokeRequest) {
+    const provenanceValidation = validateStrokeIntakeProvenance(submittedData);
+    if (!provenanceValidation.ok) {
+      return NextResponse.json(
+        { error: provenanceValidation.error },
+        { status: 400 },
+      );
+    }
+  }
+
+  let structuredDataForSave: Record<string, unknown>;
+  let translationAttempted = false;
+  let failedFieldKeys: string[] = [];
+  if (isStrokeRequest) {
+    structuredDataForSave = prepareStrokeSubmission({
+      ...(submittedData as unknown as Omit<StrokeQuestionnaireSubmission, "strokeWorkflow">),
+      questionnaireVersion: STROKE_QUESTIONNAIRE_VERSION,
+      pathway: STROKE_PATHWAY,
+      safetyState: resolveStrokeSafetyState(
+        (submittedData as unknown as StrokeQuestionnaireSubmission).responses ?? {},
+      ),
+      branchTrace: buildStrokeBranchTrace(
+        (submittedData as unknown as StrokeQuestionnaireSubmission).responses ?? {},
+      ),
+    }) as unknown as Record<string, unknown>;
+  } else {
+    const keyConfig = getOpenAiKeyConfig();
+    const translation = await batchTranslateRemoteQuestionnaire(
+      submittedData,
+      keyConfig.ok ? keyConfig.apiKey : null,
+    );
+    structuredDataForSave = translation.structuredData;
+    translationAttempted = translation.translationAttempted;
+    failedFieldKeys = translation.failedFieldKeys;
+  }
+
   const { data: assessment, error: insertError } = await admin
     .from("assessments")
     .insert({
       patient_id: requestRow.patient_id,
       provider_id: requestRow.provider_id,
       type: "remote_questionnaire",
-      structured_data: validated.data,
+      structured_data: structuredDataForSave,
       status: "completed",
       mode: "remote",
       selected_tests: [],
@@ -124,6 +183,13 @@ export async function POST(
   if (insertError) {
     console.error("[POST /api/remote-assessments/[token]/submit] assessment insert failed");
     return NextResponse.json({ error: "Failed to save assessment." }, { status: 500 });
+  }
+
+  if (translationAttempted && failedFieldKeys.length > 0) {
+    console.warn(
+      "[POST /api/remote-assessments/[token]/submit] clinical translation incomplete",
+      { assessmentId: assessment.id, failedFields: failedFieldKeys.length },
+    );
   }
 
   const submittedAt = new Date().toISOString();

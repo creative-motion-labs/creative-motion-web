@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getClinician } from "@/app/lib/auth";
+import { fetchPatientsList } from "@/app/lib/api/demo-fallback-client";
 import type { PatientRow } from "@/app/lib/validate-patient-ownership";
 import type { AssessmentData, BodyRegion, FunctionalTest } from "@/app/lib/assessment-types";
 import { ROM_CONFIG, FUNCTIONAL_TESTS_BY_REGION } from "@/app/lib/rom-config";
@@ -242,12 +243,8 @@ function NewAssessmentInner() {
   useEffect(() => {
     if (patientSelected) return;
     setPatientsLoading(true);
-    fetch("/api/patients")
-      .then(async (res) => {
-        if (!res.ok) return;
-        const list = (await res.json()) as PatientRow[];
-        setPatientList(list);
-      })
+    fetchPatientsList()
+      .then(({ patients }) => setPatientList(patients))
       .catch(() => {})
       .finally(() => setPatientsLoading(false));
   }, [patientSelected]);

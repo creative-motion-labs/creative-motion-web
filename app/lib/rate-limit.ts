@@ -53,6 +53,48 @@ export const CLINICIAN_WRITE_RATE_LIMIT: RateLimitConfig = {
   windowMs: DEFAULT_WINDOW_MS,
 };
 
+/** Volunteer research — session creation per IP */
+export const VOLUNTEER_SESSION_CREATE_RATE_LIMIT: RateLimitConfig = {
+  max: 10,
+  windowMs: DEFAULT_WINDOW_MS,
+};
+
+/** Volunteer research — failed campaign code attempts per IP */
+export const VOLUNTEER_FAILED_CAMPAIGN_RATE_LIMIT: RateLimitConfig = {
+  max: 10,
+  windowMs: DEFAULT_WINDOW_MS,
+};
+
+/** Volunteer research — failed session token lookups per IP */
+export const VOLUNTEER_FAILED_SESSION_TOKEN_RATE_LIMIT: RateLimitConfig = {
+  max: 15,
+  windowMs: DEFAULT_WINDOW_MS,
+};
+
+/** Volunteer research — token-authenticated routes per IP + token prefix */
+export const VOLUNTEER_SESSION_TOKEN_RATE_LIMIT: RateLimitConfig = {
+  max: 30,
+  windowMs: DEFAULT_WINDOW_MS,
+};
+
+/** Volunteer research — movement block creation per IP + token prefix */
+export const VOLUNTEER_MOVEMENT_SESSION_RATE_LIMIT: RateLimitConfig = {
+  max: 20,
+  windowMs: DEFAULT_WINDOW_MS,
+};
+
+/** Volunteer research — session completion per IP + token prefix */
+export const VOLUNTEER_COMPLETE_RATE_LIMIT: RateLimitConfig = {
+  max: 10,
+  windowMs: DEFAULT_WINDOW_MS,
+};
+
+/** Volunteer research — repetition submission per IP + token prefix */
+export const VOLUNTEER_REPETITION_RATE_LIMIT: RateLimitConfig = {
+  max: 40,
+  windowMs: DEFAULT_WINDOW_MS,
+};
+
 /**
  * Extract client IP from proxy headers (Vercel, nginx, local dev).
  */
@@ -160,6 +202,77 @@ export function checkClinicianWriteLimit(
     `clinician:write:${route}:${providerId}`,
     CLINICIAN_WRITE_RATE_LIMIT,
   );
+}
+
+export function checkVolunteerSessionCreateLimit(req: NextRequest): RateLimitResult {
+  const ip = getClientIp(req);
+  return consumeRateLimit(`volunteer:session-create:${ip}`, VOLUNTEER_SESSION_CREATE_RATE_LIMIT);
+}
+
+export function checkVolunteerFailedCampaignLimit(req: NextRequest): RateLimitResult {
+  const ip = getClientIp(req);
+  return consumeRateLimit(`volunteer:failed-campaign:${ip}`, VOLUNTEER_FAILED_CAMPAIGN_RATE_LIMIT);
+}
+
+export function enforceVolunteerFailedCampaignRateLimit(req: NextRequest): NextResponse | null {
+  const result = checkVolunteerFailedCampaignLimit(req);
+  if (!result.allowed) {
+    return rateLimitExceededResponse(result.retryAfterSec);
+  }
+  return null;
+}
+
+export function checkVolunteerFailedSessionTokenLimit(req: NextRequest): RateLimitResult {
+  const ip = getClientIp(req);
+  return consumeRateLimit(
+    `volunteer:failed-token:${ip}`,
+    VOLUNTEER_FAILED_SESSION_TOKEN_RATE_LIMIT,
+  );
+}
+
+export function enforceVolunteerFailedSessionTokenRateLimit(req: NextRequest): NextResponse | null {
+  const result = checkVolunteerFailedSessionTokenLimit(req);
+  if (!result.allowed) {
+    return rateLimitExceededResponse(result.retryAfterSec);
+  }
+  return null;
+}
+
+export function checkVolunteerSessionTokenLimit(
+  req: NextRequest,
+  token: string,
+  route: string,
+): RateLimitResult {
+  const ip = getClientIp(req);
+  const prefix = tokenBucketPrefix(token);
+  return consumeRateLimit(
+    `volunteer:token:${route}:${ip}:${prefix}`,
+    VOLUNTEER_SESSION_TOKEN_RATE_LIMIT,
+  );
+}
+
+export function checkVolunteerMovementSessionLimit(
+  req: NextRequest,
+  token: string,
+): RateLimitResult {
+  const ip = getClientIp(req);
+  const prefix = tokenBucketPrefix(token);
+  return consumeRateLimit(
+    `volunteer:movement:${ip}:${prefix}`,
+    VOLUNTEER_MOVEMENT_SESSION_RATE_LIMIT,
+  );
+}
+
+export function checkVolunteerCompleteLimit(req: NextRequest, token: string): RateLimitResult {
+  const ip = getClientIp(req);
+  const prefix = tokenBucketPrefix(token);
+  return consumeRateLimit(`volunteer:complete:${ip}:${prefix}`, VOLUNTEER_COMPLETE_RATE_LIMIT);
+}
+
+export function checkVolunteerRepetitionLimit(req: NextRequest, token: string): RateLimitResult {
+  const ip = getClientIp(req);
+  const prefix = tokenBucketPrefix(token);
+  return consumeRateLimit(`volunteer:repetition:${ip}:${prefix}`, VOLUNTEER_REPETITION_RATE_LIMIT);
 }
 
 /** Standard 429 response — no token or internal details. */

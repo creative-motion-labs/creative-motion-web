@@ -15,6 +15,11 @@ import {
   type RateLimitResult,
 } from "../../../lib/rate-limit";
 import { serviceUnavailableResponse } from "../../../lib/api/safe-errors";
+import {
+  parsePlanSessionPrescriptionsFromBody,
+  toCatalogRpcSessionPrescribedSides,
+} from "../../../lib/clinical/clinical-prescribed-side";
+import { probePrescribedSideStorageCapability } from "../../../lib/clinical/clinical-prescribed-side-capability";
 
 const PLAN_CREATE_ERROR = "Failed to create plan.";
 
@@ -32,6 +37,7 @@ const ERROR_STATUS: Record<CreatePlanFromCatalogProgramErrorReason, number> = {
   program_not_eligible: 422,
   idempotency_conflict: 409,
   integrity_failed: 500,
+  prescribed_side_unavailable: 503,
   rpc_failed: 500,
 };
 
@@ -40,7 +46,25 @@ type PostBody = {
   treatmentProgramId?: string;
   assessmentId?: string | null;
   catalogAssignmentRequestId?: string;
+  sessions?: unknown;
 };
+
+const CATALOG_POST_ALLOWED_KEYS = new Set([
+  "patientId",
+  "treatmentProgramId",
+  "assessmentId",
+  "catalogAssignmentRequestId",
+  "sessions",
+]);
+
+function rejectUnknownCatalogPostKeys(body: PostBody): string | null {
+  for (const key of Object.keys(body)) {
+    if (!CATALOG_POST_ALLOWED_KEYS.has(key)) {
+      return `Unknown request field: ${key}.`;
+    }
+  }
+  return null;
+}
 
 export type CatalogPlanPostDependencies = {
   /** Resolves the authenticated caller, or null if unauthenticated. */
@@ -75,6 +99,11 @@ export function createCatalogPlanPostHandler(deps: CatalogPlanPostDependencies) 
     try { body = (await req.json()) as PostBody; }
     catch { return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 }); }
 
+    const unknownKeyError = rejectUnknownCatalogPostKeys(body);
+    if (unknownKeyError) {
+      return NextResponse.json({ error: unknownKeyError }, { status: 400 });
+    }
+
     const patientId = body.patientId?.trim();
     const treatmentProgramId = body.treatmentProgramId?.trim();
     const catalogAssignmentRequestId = body.catalogAssignmentRequestId?.trim();
@@ -101,6 +130,23 @@ export function createCatalogPlanPostHandler(deps: CatalogPlanPostDependencies) 
       return NextResponse.json({ error: "assessmentId must be a valid UUID." }, { status: 400 });
     }
 
+    const sessionPrescriptions = parsePlanSessionPrescriptionsFromBody(body.sessions);
+    if (!sessionPrescriptions.ok) {
+      return NextResponse.json({ error: sessionPrescriptions.error }, { status: 400 });
+    }
+
+    const sessionPrescribedSides = toCatalogRpcSessionPrescribedSides(sessionPrescriptions.value);
+    if (sessionPrescribedSides.length > 0) {
+      const capability = await probePrescribedSideStorageCapability(deps.adminClient);
+      if (!capability.ok) {
+        console.error("[POST /api/plans/from-catalog-program] prescribed-side capability probe failed");
+        return NextResponse.json({ error: PLAN_CREATE_ERROR }, { status: 500 });
+      }
+      if (!capability.available) {
+        return serviceUnavailableResponse();
+      }
+    }
+
     // Explicit object literal, never a spread of `body` — extra fields
     // a caller sends (providerId, token, patientToken, sessions,
     // exercises, blocks, sourceTreatmentProgramId,
@@ -116,6 +162,7 @@ export function createCatalogPlanPostHandler(deps: CatalogPlanPostDependencies) 
         treatmentProgramId,
         assessmentId,
         catalogAssignmentRequestId,
+        sessionPrescribedSides,
       });
 
       return NextResponse.json(
@@ -130,6 +177,9 @@ export function createCatalogPlanPostHandler(deps: CatalogPlanPostDependencies) 
     } catch (err) {
       if (err instanceof CreatePlanFromCatalogProgramError) {
         console.error("[POST /api/plans/from-catalog-program]", err.reason, err.message);
+        if (err.reason === "prescribed_side_unavailable") {
+          return serviceUnavailableResponse();
+        }
         return NextResponse.json({ error: PLAN_CREATE_ERROR }, { status: ERROR_STATUS[err.reason] });
       }
       console.error("[POST /api/plans/from-catalog-program] unexpected error");

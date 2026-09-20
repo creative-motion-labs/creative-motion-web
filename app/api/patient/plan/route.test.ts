@@ -87,8 +87,8 @@ function createMockClient(responses: Partial<Record<TableName, MockTableResult>>
   return {
     from(table: TableName) {
       return chain(table);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
@@ -233,6 +233,7 @@ describe("handlePlanSessionQueryResult", () => {
       scheduled_at: null,
       completed_at: null,
       source_program_session_id: null,
+      prescribed_side: null,
     }];
 
     const handled = handlePlanSessionQueryResult({
@@ -258,12 +259,14 @@ describe("mapPlanSessionRowsToPatientSessions", () => {
       scheduled_at: null,
       completed_at: null,
       source_program_session_id: null,
+      prescribed_side: null,
     }];
 
     const mapped = mapPlanSessionRowsToPatientSessions(rows, new Map());
 
     assert.equal(mapped.length, 1);
     assert.equal(mapped[0]?.sessionNumber, 1);
+    assert.equal(mapped[0]?.prescribedSide, null);
     assert.equal("catalogSession" in (mapped[0] ?? {}), false);
     assert.deepEqual(mapped[0]?.exercises, []);
   });
@@ -283,6 +286,7 @@ describe("mapPlanSessionRowsToPatientSessions", () => {
       scheduled_at: null,
       completed_at: null,
       source_program_session_id: SESSION_ID,
+      prescribed_side: "right",
     }];
 
     const mapped = mapPlanSessionRowsToPatientSessions(

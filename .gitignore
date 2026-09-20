@@ -48,3 +48,7 @@ next-env.d.ts
 .claude/launch.json
 .tmp/
 supabase/.temp/
+
+# RASQ ML bridge — local-only research capture data, never committed
+# (dev volunteers' movement data; see app/lib/ml-research/shoulder-abduction-reach/README.md)
+/dev-data/

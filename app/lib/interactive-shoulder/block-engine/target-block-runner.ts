@@ -6,36 +6,92 @@
  * `InteractiveShoulderSession.tsx` resolves and ticks Reach the Light
  * exclusively through `resolveTargetBlockRunner`/`registerTargetBlockRunner`
  * below — it no longer imports `tickTargetLifecycleIfActive` directly.
+ *
+ * The same rule governs the target-attempt values: this runner transports
+ * them and interprets none of them. It invents no timeout, no level and no
+ * clock; it does not decide whether an attempt started or expired, and it
+ * does not deduplicate what the lifecycle already emits exactly once. Any
+ * attempt-related rule appearing in this file would be a design defect.
  */
-import type { SessionBlockType } from "@/app/lib/session-orchestrator/types";
+import type { SessionBlockType, SessionState } from "@/app/lib/session-orchestrator/types";
 import {
   createInitialTargetLifecycle,
   type TargetLifecycleState,
   type TargetLifecycleTickInput,
 } from "../target-lifecycle";
 import { tickTargetLifecycleIfActive } from "../target-lifecycle-gating";
-import type { TargetHitEvent } from "../types";
-import type { BlockRunner } from "./block-runner-types";
+import type {
+  TargetAttemptStartEvent,
+  TargetAttemptTimeoutEvent,
+  TargetHitEvent,
+} from "../types";
+import type { BlockRunner, BlockRunnerTickResult } from "./block-runner-types";
 import {
   getBlockRunnerForBlockType,
   isBlockTypeRegistered,
   registerBlockRunner,
 } from "./block-runner-registry";
 
-export const TARGET_BLOCK_RUNNER: BlockRunner<
+/**
+ * The shared runner result plus the two target-attempt outputs, forwarded verbatim from
+ * `target-lifecycle`.
+ *
+ * They are additional fields rather than a reshaping of `completionEvent` because a hit,
+ * an attempt start and an attempt timeout are different facts about different attempts.
+ * Both are REQUIRED (not optional) so that a runner physically cannot return a result in
+ * which an attempt event was quietly omitted; "no events this tick" must be spelled
+ * `[]` / `null`.
+ *
+ * Since CHANGE-008 a terminal tick carries its outcome only — the successor, and therefore
+ * the next attempt start, arrives on a later tick, after the caller has had the chance to
+ * adapt. This wrapper neither knows nor enforces that; it is stated here because the field
+ * shapes were originally justified by the old same-tick behaviour.
+ *
+ * Exactly-once ownership stays in `target-lifecycle`. This wrapper never filters,
+ * deduplicates, buffers or re-emits these values — see the module doc above.
+ */
+export type TargetBlockRunnerTickResult = BlockRunnerTickResult<
   TargetLifecycleState,
-  TargetLifecycleTickInput,
-  TargetHitEvent,
-  void
-> = {
+  TargetHitEvent
+> & {
+  /** Attempt starts produced by this tick, in spawn order. Empty when nothing spawned. */
+  attemptStartedEvents: TargetAttemptStartEvent[];
+  /** At most one per target, and never together with a `completionEvent` for that target. */
+  attemptTimeoutEvent: TargetAttemptTimeoutEvent | null;
+};
+
+/**
+ * `BlockRunner` specialised for the target block: same contract, with a tick result
+ * widened by the two attempt outputs above. Declared as an explicit named type (rather
+ * than left to inference) so the widening is a reviewable part of the public surface and
+ * so `resolveTargetBlockRunner` keeps handing callers a fully typed runner.
+ */
+export type TargetBlockRunnerContract = Omit<
+  BlockRunner<TargetLifecycleState, TargetLifecycleTickInput, TargetHitEvent, void>,
+  "tick"
+> & {
+  tick: (
+    sessionState: SessionState,
+    state: TargetLifecycleState,
+    input: TargetLifecycleTickInput,
+  ) => TargetBlockRunnerTickResult;
+};
+
+export const TARGET_BLOCK_RUNNER: TargetBlockRunnerContract = {
   blockType: "movement-target",
   createInitialState: () => createInitialTargetLifecycle(),
   tick: (sessionState, state, input) => {
+    // `input` is passed through untouched: it already IS the lifecycle's own tick input,
+    // so every attempt field on it (blockElapsedSeconds, attemptTimeoutMs, levelDegrees,
+    // compensationObservedDuringAttempt) reaches the lifecycle exactly as the caller
+    // supplied it, and an omitted field stays omitted rather than acquiring a default.
     const result = tickTargetLifecycleIfActive(sessionState, state, input);
     return {
       state: result.state,
       ticked: result.ticked,
       completionEvent: result.hitEvent,
+      attemptStartedEvents: result.attemptStartedEvents,
+      attemptTimeoutEvent: result.attemptTimeoutEvent,
     };
   },
 };

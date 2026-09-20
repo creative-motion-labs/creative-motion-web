@@ -75,10 +75,7 @@ export function PatientWorkspaceSessions({
   return (
     <div className={`space-y-5 ${arClass}`} dir={textDir}>
       <header>
-        <h1
-          className="text-[22px] font-bold text-[#0A0F1A]"
-          style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
-        >
+        <h1 className="rasq-page-title text-[#0A0F1A]">
           {ui.sessionsPageTitle}
         </h1>
         <p className="mt-1 text-[13px] text-[#6B7280]">{ui.sessionsPageSubtitle}</p>

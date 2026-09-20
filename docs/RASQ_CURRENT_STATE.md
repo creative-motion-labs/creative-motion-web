@@ -1,7 +1,7 @@
 # RASQ Current State
 
-**Last updated:** 2026-06-05  
-**Baseline:** `main` through PR113; PR114 real data flow validation documented
+**Last updated:** 2026-07-31
+**Baseline:** Development baseline: `dev_branch` at `c7c950a`. It includes the `main` baseline through PR114, subsequent development work through PR181–PR190, and the Upper-Limb Motor Screen work merged through PR191–PR194. These development-branch features must not be interpreted as fully deployed production functionality.
 
 This document is the single source of truth for RASQ platform state during controlled clinic pilots. It is **not** a clinical or legal document. All movement observations require **therapist review**. RASQ does **not** diagnose, score clinically, or make automatic treatment decisions.
 
@@ -31,6 +31,11 @@ This document is the single source of truth for RASQ platform state during contr
 | Progress & Outcomes Hub v1 | **PR112** — read-only clinician hub at `/clinician/patients/[id]/outcomes` |
 | Progress & Outcomes Hub polish (docs + UI) | **PR113** — section badges, empty states, nav links, QA checklist |
 | Real data flow validation (docs + plan fix) | **PR114** — outcomes API plan resolution aligned with profile; journey QA doc |
+| Upper-Limb Motor Screen — Phase 1 foundation | **PR191** on `dev_branch` — types, assignment validation, clinical stop, protective pause |
+| Upper-Limb Motor Screen — Forward Reach engine | **PR192** on `dev_branch` — library only; no UI/API wiring |
+| Upper-Limb Motor Screen — Lateral Reach engine | **PR193** on `dev_branch` — library only; horizontal target-facing onset |
+| Upper-Limb Motor Screen — Elbow Extension engine | **PR194** on `dev_branch` — library only; 2D target-facing onset + optional `peakElbowExtensionDeg` |
+| Upper-Limb Motor Screen — clinician UI / live capture | **Not wired** — engines and synthetic tests only |
 | Balance / Functional Movement / PR forms (Assessment Center) | Coming next |
 
 **Production URL:** https://creative-motion-web.vercel.app
@@ -60,7 +65,31 @@ Patient profile + AI draft (clinician)         ├─ Setup readiness + framing
 
 ---
 
-## Completed PRs (recent — PR99–PR114)
+## Completed PRs (recent — PR99–PR114, PR191–PR194 on dev_branch)
+
+### PR194 — Elbow Extension engine (dev_branch)
+- `app/lib/upper-limb-motor-screen/elbow-extension-engine.ts` — third Motor Screen task reducer
+- Target-facing onset via 2D dot product toward configured target; wrong-direction exit re-arms readiness
+- Optional factual `peakElbowExtensionDeg` (shoulder→elbow→wrist 2D angle during outbound/dwelling); never gates completion
+- 101 synthetic tests; combined reach-engine suite 366/366 pass
+- **No** UI, API persistence, or live-camera wiring
+- See `docs/upper-limb-motor-screen.md`
+
+### PR193 — Lateral Reach engine (dev_branch)
+- `app/lib/upper-limb-motor-screen/lateral-reach-engine.ts` — horizontal target-facing onset, wrong-direction re-arming
+- 146 synthetic tests
+- **No** UI or live capture wiring
+
+### PR192 — Forward Reach engine (dev_branch)
+- `app/lib/upper-limb-motor-screen/forward-reach-engine.ts` — any-direction zone-exit onset
+- 119 synthetic tests
+- **Not** the patient CV `functional-reach` exercise — separate assessment task (`taskId: forwardReach`)
+
+### PR191 — Upper-Limb Motor Screen foundation (dev_branch)
+- `types.ts`, `assignment-validation.ts`, `clinical-stop-evaluator.ts`, `protective-pause-evaluator.ts`
+- Phase 1 contracts: `testedSide` vs `affectedSide`, six terminal outcomes, safety-vocabulary guard
+- 155 foundation tests
+- Assessment domain separate from Interactive Upper-Limb Rehabilitation
 
 ### PR114 — Real data flow validation
 - `GET /api/clinician/progress-outcomes` — current plan resolution matches patient profile (active plan first, else newest)
@@ -193,7 +222,8 @@ Optional camera assist may appear during active portal sessions for:
 | Core RASQ workflow | **Ready** for controlled pilots |
 | STS optional camera assist | **Ready** — PR100/101/103; PR104 QA pass; **manual device smoke required** |
 | Assessment Center | **Partial** — STS review useful; Gait/Balance are shells |
-| Pilot documentation | **Updated** — PR102–PR109 incl. gait capture audit |
+| Upper-Limb Motor Screen (library) | **Engine-complete on dev_branch** — PR191–194; synthetic tests pass; **no live capture or UI** |
+| Pilot documentation | **Updated** — PR102–PR109 incl. gait capture audit; Motor Screen doc added 2026-07-31 |
 | Privacy & compliance (technical) | **Foundation documented** — PR105; counsel review still required |
 | Legal / counsel | Pages pilot-ready; counsel review required before commercial contracts |
 
@@ -242,7 +272,9 @@ Optional camera assist may appear during active portal sessions for:
 
 **Outcomes hub:** Run `docs/pilot/real-data-flow-validation.md` to populate hub with real session data; then `docs/pilot/progress-outcomes-hub-qa.md` for UI/sign-off.
 
-**Product:** Heel raise hardening, gait capture, or Assessment Center forms per existing plans.
+**Product:** Heel raise hardening, gait capture, Assessment Center forms, or Upper-Limb Motor Screen UI/capture wiring per existing plans.
+
+**Upper-Limb Motor Screen (dev_branch):** Live-camera adapter and clinician review surface after recorded-sequence validation of engine thresholds — see `docs/upper-limb-motor-screen.md`.
 
 **CV expansion (after STS go):** Heel Raise hardening per `docs/cv/HEEL_RAISE_CV_HARDENING_PLAN.md`.
 
@@ -268,6 +300,7 @@ Suggested close comment:
 
 ## Related documents
 
+- `docs/upper-limb-motor-screen.md` — Motor Screen architecture, tasks, clinical boundaries, validation status (PR191–194)
 - `docs/pilot/real-data-flow-validation.md` — PR114 assessment → plan → session → outcomes journey
 - `docs/pilot/progress-outcomes-hub-qa.md` — PR113 outcomes hub manual QA
 - `docs/progress/PROGRESS_OUTCOMES_HUB_AUDIT.md` — PR111 progress & outcomes hub audit

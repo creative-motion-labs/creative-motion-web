@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   fetchPlanSessionsForPatientPortal,
+  isMissingPrescribedSideColumn,
   isMissingSourceProgramSessionIdColumn,
   LEGACY_PLAN_SESSION_SELECT,
   MODERN_PLAN_SESSION_SELECT,
@@ -22,6 +23,12 @@ const MODERN_ROW = {
   scheduled_at: null,
   completed_at: null,
   source_program_session_id: "22222222-2222-2222-2222-222222222222",
+  prescribed_side: "left",
+};
+
+const MISSING_PRESCRIBED_SIDE_COLUMN_ERROR = {
+  code: "42703",
+  message: 'column "prescribed_side" does not exist',
 };
 
 const LEGACY_ROW = {
@@ -106,6 +113,12 @@ describe("isMissingSourceProgramSessionIdColumn", () => {
   });
 });
 
+describe("isMissingPrescribedSideColumn", () => {
+  it("matches exact 42703 missing prescribed_side signature", () => {
+    assert.equal(isMissingPrescribedSideColumn(MISSING_PRESCRIBED_SIDE_COLUMN_ERROR), true);
+  });
+});
+
 describe("fetchPlanSessionsForPatientPortal", () => {
   it("1. modern schema query succeeds with preserved source_program_session_id and no fallback", async () => {
     const { admin, calls } = createMockAdmin([{ data: [MODERN_ROW], error: null }]);
@@ -117,9 +130,29 @@ describe("fetchPlanSessionsForPatientPortal", () => {
     assert.equal(result.queryMode, "modern");
     assert.equal(result.sessions.length, 1);
     assert.equal(result.sessions[0]?.source_program_session_id, MODERN_ROW.source_program_session_id);
+    assert.equal(result.sessions[0]?.prescribed_side, "left");
     assert.equal(calls.length, 1);
     assert.equal(calls[0]?.select, MODERN_PLAN_SESSION_SELECT);
     assert.equal(calls[0]?.planId, PLAN_ID);
+  });
+
+  it("2b. missing prescribed_side column retries with source_program_session_id only and null prescribed_side", async () => {
+    const legacyWithSourceSelect =
+      "id, session_number, title, exercises, status, scheduled_at, completed_at, source_program_session_id";
+    const { admin, calls } = createMockAdmin([
+      { data: null, error: MISSING_PRESCRIBED_SIDE_COLUMN_ERROR },
+      { data: [{ ...MODERN_ROW, prescribed_side: undefined }], error: null },
+    ]);
+
+    const result = await fetchPlanSessionsForPatientPortal(admin, PLAN_ID);
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.queryMode, "legacy");
+    assert.equal(result.sessions[0]?.prescribed_side, null);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0]?.select, MODERN_PLAN_SESSION_SELECT);
+    assert.equal(calls[1]?.select, legacyWithSourceSelect);
   });
 
   it("2. exact Production incident: 42703 on source_program_session_id triggers one legacy retry", async () => {
@@ -135,6 +168,7 @@ describe("fetchPlanSessionsForPatientPortal", () => {
     assert.equal(result.queryMode, "legacy");
     assert.equal(result.sessions.length, 2);
     assert.ok(result.sessions.every((row) => row.source_program_session_id === null));
+    assert.ok(result.sessions.every((row) => row.prescribed_side === null));
     assert.equal(calls.length, 2);
     assert.equal(calls[0]?.select, MODERN_PLAN_SESSION_SELECT);
     assert.equal(calls[1]?.select, LEGACY_PLAN_SESSION_SELECT);

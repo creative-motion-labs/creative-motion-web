@@ -13,6 +13,7 @@ import {
   analysePostureFrame,
   aggregatePostureResults,
   type PostureCheckResult,
+  type PostureDataSufficiency,
 } from "../lib/posture-analyzer";
 import PostureReport from "../components/PostureReport";
 
@@ -177,6 +178,8 @@ function BodyAxisAIPageContent() {
   const [distanceStatus, setDistanceStatus] = useState("Stand 1.5 to 2 meters away");
   const [movementScore, setMovementScore] = useState<number | null>(null);
   const [reportSummary, setReportSummary] = useState("");
+  const [postureDataSufficiency, setPostureDataSufficiency] =
+    useState<PostureDataSufficiency>("sufficient");
   const [sessionMessage, setSessionMessage] = useState("");
 
   const [aclPoseStatus, setAclPoseStatus] = useState<
@@ -537,6 +540,7 @@ function BodyAxisAIPageContent() {
     }
     if (postureMode) {
       postureFrameResultsRef.current = [];
+      setPostureDataSufficiency("sufficient");
       setPostureLiveLabel("Analysing posture…");
     }
     setSessionState("running");
@@ -630,9 +634,16 @@ function BodyAxisAIPageContent() {
       console.log("[BodyAxisAI] FINAL REPORT VALUES", { score, summary });
     } else if (postureMode) {
       const agg = aggregatePostureResults(postureFrameResultsRef.current);
+      // score/label semantics unchanged for persistence; sufficiency gates report UI.
       setMovementScore(agg.score);
       setReportSummary(agg.summary);
-      console.log("[BodyAxisAI] POSTURE FINAL", agg.score, agg.label);
+      setPostureDataSufficiency(agg.dataSufficiency);
+      console.log(
+        "[BodyAxisAI] POSTURE FINAL",
+        agg.score,
+        agg.label,
+        agg.dataSufficiency
+      );
     } else {
       const score = generateMockScore(test, durationSec);
       const summary = generateReportSummary(test, score, durationSec);
@@ -1066,7 +1077,11 @@ function BodyAxisAIPageContent() {
                   <StatusCard
                     label="Score"
                     value={
-                      movementScore !== null ? `${movementScore}%` : "Not available"
+                      postureMode && postureDataSufficiency === "insufficient"
+                        ? "Insufficient data"
+                        : movementScore !== null
+                          ? `${movementScore}%`
+                          : "Not available"
                     }
                   />
                   <StatusCard label="Duration" value={`${seconds}s`} />
@@ -1085,6 +1100,7 @@ function BodyAxisAIPageContent() {
                 patientName={displayPatientName}
                 lastFrame={lastPostureFrame}
                 reportSummary={reportSummary}
+                dataSufficiency={postureDataSufficiency}
               />
             )}
           </section>

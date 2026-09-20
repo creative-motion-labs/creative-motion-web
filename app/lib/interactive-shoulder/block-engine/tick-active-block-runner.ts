@@ -19,8 +19,17 @@ import type {
 } from "../motion-patterns/pattern-lifecycle";
 import type { ResolvedMotionPattern } from "../motion-patterns/motion-pattern-types";
 import type { InstructionalLifecycleState } from "../instructional-lifecycle";
-import type { TargetLifecycleState } from "../target-lifecycle";
-import type { NormalizedPoint, SafeTargetBounds, TargetHitEvent } from "../types";
+import type {
+  TargetLifecycleState,
+  TargetLifecycleTickInput,
+} from "../target-lifecycle";
+import type {
+  NormalizedPoint,
+  SafeTargetBounds,
+  TargetAttemptStartEvent,
+  TargetAttemptTimeoutEvent,
+  TargetHitEvent,
+} from "../types";
 import {
   resolveInstructionalBlockRunner,
 } from "./instructional-block-runner";
@@ -74,15 +83,37 @@ export type InstructionalBlockTickInput = ActiveBlockTickBase & {
   targetDurationSeconds?: number;
 };
 
-export type TargetBlockTickInput = ActiveBlockTickBase & {
-  blockType: "movement-target";
-  states: ActiveBlockRunnerStates;
-  wrist: NormalizedPoint | null;
-  side: ShoulderAbductionReachSide;
-  bounds: SafeTargetBounds;
-  hitExitTransitionMs?: number;
-  random?: () => number;
-};
+/**
+ * The optional target-attempt inputs, taken verbatim from the approved lifecycle contract
+ * with `Pick` rather than re-declared here. Restating them would let this transport layer
+ * drift from `target-lifecycle.ts` — and would duplicate clinical documentation that has
+ * exactly one home.
+ *
+ * Every field is optional and none is defaulted anywhere on this path. In particular an
+ * omitted `attemptTimeoutMs` means "attempt expiration is off", never "use some standard
+ * reach window": a reach window is a clinical parameter this layer may not invent.
+ */
+export type TargetAttemptTickConfig = Pick<
+  TargetLifecycleTickInput,
+  | "attemptTimeoutMs"
+  | "levelDegrees"
+  | "compensationObservedDuringAttempt"
+  // CHANGE-007. Transport only: this layer resolves no geometry, knows nothing about
+  // adaptive levels, and — exactly as with `attemptTimeoutMs` — an omitted value means
+  // "the caller resolved no placement", never "use a default position".
+  | "preferredTargetPosition"
+>;
+
+export type TargetBlockTickInput = ActiveBlockTickBase &
+  TargetAttemptTickConfig & {
+    blockType: "movement-target";
+    states: ActiveBlockRunnerStates;
+    wrist: NormalizedPoint | null;
+    side: ShoulderAbductionReachSide;
+    bounds: SafeTargetBounds;
+    hitExitTransitionMs?: number;
+    random?: () => number;
+  };
 
 export type PatternBlockTickInput = ActiveBlockTickBase & {
   blockType: "movement-pattern";
@@ -104,6 +135,19 @@ export type ActiveBlockTickResult =
       blockType: ActiveBlockTickInput["blockType"];
       states: ActiveBlockRunnerStates;
       targetContact: TargetHitEvent | null;
+      /**
+       * Attempt starts emitted by the target runner on this tick, forwarded unchanged.
+       * Always `[]` for instructional and movement-pattern blocks — those modes have no
+       * attempt concept and this stage does not give them one.
+       */
+      targetAttemptStarted: TargetAttemptStartEvent[];
+      /**
+       * Attempt expiration emitted by the target runner on this tick, forwarded
+       * unchanged. Always `null` for non-target blocks. Never accompanies a
+       * `targetContact` for the same target — the lifecycle guarantees that, and nothing
+       * on this path may synthesise one.
+       */
+      targetAttemptTimeout: TargetAttemptTimeoutEvent | null;
       patternCompleted: PatternCompletionEvent | null;
       /** 0–1 presentation progress for instructional blocks; null otherwise. */
       presentationProgress: number | null;
@@ -170,6 +214,8 @@ export function tickActiveBlockRunner(input: ActiveBlockTickInput): ActiveBlockT
         blockType: "instructional",
         states: nextStates,
         targetContact: null,
+        targetAttemptStarted: [],
+        targetAttemptTimeout: null,
         patternCompleted: null,
         presentationProgress: computeInstructionalPresentationProgress(
           input.blockElapsedSeconds,
@@ -188,6 +234,16 @@ export function tickActiveBlockRunner(input: ActiveBlockTickInput): ActiveBlockT
         bounds: input.bounds,
         hitExitTransitionMs: input.hitExitTransitionMs,
         random: input.random,
+        // ATTEMPT CLOCK. The dispatch layer already carries the orchestrator's pause-aware
+        // active block time for instructional progress; the same value — not a second,
+        // wall-clock one — is what the lifecycle measures attempts against. Forwarded
+        // unconditionally so an attempt's baseline is always honest; on its own it changes
+        // nothing, because expiration additionally requires `attemptTimeoutMs`.
+        blockElapsedSeconds: input.blockElapsedSeconds,
+        attemptTimeoutMs: input.attemptTimeoutMs,
+        levelDegrees: input.levelDegrees,
+        compensationObservedDuringAttempt: input.compensationObservedDuringAttempt,
+        preferredTargetPosition: input.preferredTargetPosition,
       });
       nextStates.target = ticked.state;
       return {
@@ -196,6 +252,10 @@ export function tickActiveBlockRunner(input: ActiveBlockTickInput): ActiveBlockT
         blockType: "movement-target",
         states: nextStates,
         targetContact: ticked.completionEvent,
+        // Forwarded by reference, unfiltered. Re-checking "has this already been emitted?"
+        // here would create a second attempt-event authority competing with the lifecycle.
+        targetAttemptStarted: ticked.attemptStartedEvents,
+        targetAttemptTimeout: ticked.attemptTimeoutEvent,
         patternCompleted: null,
         presentationProgress: null,
       };
@@ -217,6 +277,8 @@ export function tickActiveBlockRunner(input: ActiveBlockTickInput): ActiveBlockT
         blockType: "movement-pattern",
         states: { ...input.states, pattern: ticked.state },
         targetContact: null,
+        targetAttemptStarted: [],
+        targetAttemptTimeout: null,
         patternCompleted: ticked.completionEvent,
         presentationProgress: null,
       };

@@ -1,20 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Hooks
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function useReveal(threshold = 0.2) {
+function useReveal(threshold = 0.15) {
   const ref = useRef<HTMLElement>(null);
   const [revealed, setRevealed] = useState(false);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const io = new IntersectionObserver(
-      ([e]) => { if (e.isIntersecting) { setRevealed(true); io.disconnect(); } },
+      ([e]) => {
+        if (e.isIntersecting) {
+          setRevealed(true);
+          io.disconnect();
+        }
+      },
       { threshold }
     );
     io.observe(el);
@@ -22,27 +24,6 @@ function useReveal(threshold = 0.2) {
   }, [threshold]);
   return [ref, revealed] as const;
 }
-
-function useCountUp(target: number, duration = 600, active = false) {
-  const [val, setVal] = useState(0);
-  useEffect(() => {
-    if (!active) return;
-    let start: number | null = null;
-    const tick = (ts: number) => {
-      if (!start) start = ts;
-      const p = Math.min((ts - start) / duration, 1);
-      const eased = 1 - (1 - p) ** 3;
-      setVal(Math.round(eased * target));
-      if (p < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }, [active, target, duration]);
-  return val;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   RASQ Arc Mark
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 function ArcMark({ size = 20, animate = false }: { size?: number; animate?: boolean }) {
   return (
@@ -79,43 +60,100 @@ function ArcMark({ size = 20, animate = false }: { size?: number; animate?: bool
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Section 1 — Navbar (52px sticky)
-   ═══════════════════════════════════════════════════════════════════════════ */
+function ChevronIcon({ muted = false }: { muted?: boolean }) {
+  return (
+    <svg
+      className={`h-4 w-4 transition ${muted ? "text-white/15 group-hover:text-white/40" : "text-white/20 group-hover:text-[#5DCAA5]/60"}`}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden="true"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+    </svg>
+  );
+}
+
+/**
+ * Abstract movement arc — a single geometric curve suggesting a guided
+ * shoulder-reach path. Deliberately NOT anatomical: no joints, no skeleton,
+ * no pose-estimation-style points. Brand teal only.
+ */
+function MovementArc({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      className={`pointer-events-none absolute inset-0 h-full w-full ${className}`}
+      viewBox="0 0 400 300"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M120 230C120 230 150 120 240 90C300 70 340 100 350 130"
+        stroke="var(--rasq-mint, #5DCAA5)"
+        strokeWidth="2"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+      <circle cx="120" cy="230" r="4" fill="var(--rasq-teal, #1D9E75)" opacity="0.7" />
+      <circle cx="350" cy="130" r="4" fill="var(--rasq-mint, #5DCAA5)" opacity="0.85" />
+    </svg>
+  );
+}
+
+/**
+ * Graded placeholder for real RASQ rehabilitation photography.
+ *
+ * No stock or decorative photo is embedded here — sourcing/licensing a real
+ * photograph of a person for a healthcare brand's public site is a decision
+ * outside what can be made unilaterally in this pass. This component is the
+ * exact crop, grade, and motion treatment the real asset drops into
+ * unchanged: replace the empty frame's background with the licensed image
+ * and everything layered on top of it (UI card, arc, copy) stays correct.
+ */
+function PhotoFrame({
+  children,
+  className = "",
+  drift = false,
+}: {
+  children?: React.ReactNode;
+  className?: string;
+  drift?: boolean;
+}) {
+  return (
+    <div className={`rasq-photo-frame relative rounded-[var(--rasq-r-lg)] border border-[var(--rasq-border)] ${className}`}>
+      <div className={`absolute inset-0 ${drift ? "rasq-photo-drift" : ""}`} aria-hidden="true" />
+      {children}
+    </div>
+  );
+}
 
 function Navbar() {
   return (
-    <header
-      className="sticky top-0 z-50 border-b border-[#1E2D42] bg-[#080E14]"
-      style={{ height: "52px" }}
-    >
-      <div className="mx-auto flex h-full max-w-6xl items-center justify-between px-6">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2">
+    <header className="sticky top-0 z-50 border-b border-[var(--rasq-border)] bg-[var(--rasq-void)]/95">
+      <div className="mx-auto flex h-[52px] max-w-6xl items-center justify-between px-6">
+        <Link href="/" className="flex items-center gap-2.5">
           <ArcMark size={20} animate />
           <span
-            className="text-[15px] font-bold tracking-[-0.03em] text-white"
+            className="text-[15px] font-semibold tracking-[-0.02em] text-white"
             style={{ fontFamily: "var(--rasq-font-display)" }}
           >
             RASQ
           </span>
         </Link>
 
-        {/* Primary nav — action-oriented, no Solutions, no Support */}
-        <nav className="hidden items-center gap-0.5 md:flex">
+        <nav className="hidden items-center gap-1 md:flex" aria-label="Primary">
           {(
             [
-              ["Assess",    "#platform"],
-              ["Treat",     "#platform"],
-              ["Track",     "#platform"],
+              ["Platform", "#platform"],
               ["Providers", "#providers"],
-              ["Patients",  "#patients"],
+              ["Patients", "#patients"],
             ] as [string, string][]
           ).map(([label, href]) => (
             <a
               key={label}
               href={href}
-              className="rounded-[7px] px-3.5 py-2 text-sm text-white/40 transition-colors hover:bg-[#0F1825] hover:text-white"
+              className="rounded-[var(--rasq-r-btn)] px-3.5 py-2 text-sm text-white/50 transition-colors hover:text-white"
             >
               {label}
             </a>
@@ -124,268 +162,344 @@ function Navbar() {
 
         <Link
           href="/login"
-          className="rounded-[7px] border border-[#1E2D42] bg-[#0F1825] px-5 py-2 text-sm font-semibold text-white transition hover:border-[#1D9E75]/40 hover:text-[#5DCAA5]"
+          className="rounded-[var(--rasq-r-btn)] border border-[var(--rasq-border)] px-4 py-2 text-sm font-medium text-white transition hover:border-[var(--rasq-teal)]/35"
         >
-          Login
+          Sign in
         </Link>
       </div>
     </header>
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Section 2 — Hero (55 / 45 grid)
-   ═══════════════════════════════════════════════════════════════════════════ */
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReduced(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return reduced;
+}
 
-function HeroSection() {
-  const [statsRef, statsRevealed] = useReveal(0.4);
-  const c1 = useCountUp(94, 600, statsRevealed);
-  const c2 = useCountUp(12, 600, statsRevealed);
-  const c3 = useCountUp(6, 600, statsRevealed);
+function AmbientTravelNode({
+  pathId,
+  duration,
+  begin = 0,
+  tone = "teal",
+  reducedMotion,
+  staticCx,
+  staticCy,
+}: {
+  pathId: string;
+  duration: number;
+  begin?: number;
+  tone?: "teal" | "mint";
+  reducedMotion: boolean;
+  staticCx: number;
+  staticCy: number;
+}) {
+  if (reducedMotion) {
+    return (
+      <circle
+        cx={staticCx}
+        cy={staticCy}
+        r="1.5"
+        className={`rasq-ambient-node rasq-ambient-node--static rasq-ambient-node--${tone}`}
+      />
+    );
+  }
 
   return (
-    <section
-      className="relative overflow-hidden bg-[#080E14]"
-      id="hero"
-    >
-      {/* Subtle ambient glow — behind left copy only */}
+    <circle r="1.5" className={`rasq-ambient-node rasq-ambient-node--${tone}`}>
+      <animateMotion
+        dur={`${duration}s`}
+        repeatCount="indefinite"
+        begin={`${begin}s`}
+        rotate="auto"
+        calcMode="spline"
+        keyTimes="0;0.5;1"
+        keySplines="0.42 0 0.2 1; 0.42 0 0.2 1"
+      >
+        <mpath href={`#${pathId}`} />
+      </animateMotion>
+      <animate
+        attributeName="opacity"
+        values="0;0.34;0.34;0"
+        keyTimes="0;0.1;0.9;1"
+        dur={`${duration}s`}
+        repeatCount="indefinite"
+        begin={`${begin}s`}
+      />
+    </circle>
+  );
+}
+
+function PageAmbientLines() {
+  const reducedMotion = usePrefersReducedMotion();
+
+  return (
+    <div className="rasq-page-ambient" aria-hidden="true">
+      <svg
+        className="rasq-page-ambient__svg"
+        viewBox="0 0 1440 5200"
+        preserveAspectRatio="xMidYMin slice"
+        fill="none"
+      >
+        <defs>
+          <filter id="rasq-ambient-node-soft" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="0.45" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Hero — active linework */}
+        <g className="rasq-ambient-flow rasq-ambient-flow--a">
+          <path
+            id="rasq-ambient-path-hero-a"
+            className="rasq-ambient-line"
+            d="M-40 120 C 220 40, 420 260, 680 180 S 1180 60, 1520 220"
+          />
+          <path
+            id="rasq-ambient-path-hero-b"
+            className="rasq-ambient-line rasq-ambient-line--mint"
+            d="M120 420 C 360 320, 520 540, 780 460 S 1120 340, 1480 500"
+          />
+          <AmbientTravelNode
+            pathId="rasq-ambient-path-hero-a"
+            duration={14}
+            begin={0}
+            tone="teal"
+            reducedMotion={reducedMotion}
+            staticCx={680}
+            staticCy={180}
+          />
+          <AmbientTravelNode
+            pathId="rasq-ambient-path-hero-b"
+            duration={16}
+            begin={5}
+            tone="mint"
+            reducedMotion={reducedMotion}
+            staticCx={780}
+            staticCy={460}
+          />
+        </g>
+        <g className="rasq-ambient-flow rasq-ambient-flow--b">
+          <path
+            className="rasq-ambient-line"
+            d="M80 760 C 300 660, 480 880, 740 780 S 1080 640, 1420 820"
+          />
+        </g>
+
+        {/* Trust / workflow — sparse */}
+        <g className="rasq-ambient-flow rasq-ambient-flow--c rasq-ambient-zone--quiet">
+          <path
+            className="rasq-ambient-line rasq-ambient-line--mint"
+            d="M960 1180 C 760 1080, 540 1280, 320 1180 S -40 1020, -120 1120"
+          />
+        </g>
+
+        {/* Guided rehabilitation — medium */}
+        <g className="rasq-ambient-flow rasq-ambient-flow--d rasq-ambient-zone--medium">
+          <path
+            id="rasq-ambient-path-guided-a"
+            className="rasq-ambient-line"
+            d="M-60 2100 C 180 1980, 420 2220, 700 2100 S 1140 1940, 1480 2080"
+          />
+          <path
+            className="rasq-ambient-line rasq-ambient-line--mint"
+            d="M200 2480 C 440 2360, 620 2580, 900 2460 S 1280 2300, 1520 2440"
+          />
+          <AmbientTravelNode
+            pathId="rasq-ambient-path-guided-a"
+            duration={12}
+            begin={2}
+            tone="teal"
+            reducedMotion={reducedMotion}
+            staticCx={700}
+            staticCy={2100}
+          />
+        </g>
+
+        {/* Progress / access — quiet again */}
+        <g className="rasq-ambient-flow rasq-ambient-flow--e rasq-ambient-zone--quiet">
+          <path
+            className="rasq-ambient-line"
+            d="M1180 3020 C 980 2920, 720 3140, 480 3040 S 120 2880, -80 2980"
+          />
+        </g>
+
+        {/* Capabilities — lines return */}
+        <g className="rasq-ambient-flow rasq-ambient-flow--f">
+          <path
+            id="rasq-ambient-path-cap-a"
+            className="rasq-ambient-line rasq-ambient-line--mint"
+            d="M-40 3680 C 220 3560, 460 3800, 740 3680 S 1120 3520, 1500 3660"
+          />
+          <path
+            className="rasq-ambient-line"
+            d="M140 4040 C 380 3920, 560 4140, 820 4020 S 1180 3860, 1460 4000"
+          />
+          <AmbientTravelNode
+            pathId="rasq-ambient-path-cap-a"
+            duration={15}
+            begin={7}
+            tone="mint"
+            reducedMotion={reducedMotion}
+            staticCx={740}
+            staticCy={3680}
+          />
+        </g>
+
+        {/* Footer approach — fading */}
+        <g className="rasq-ambient-flow rasq-ambient-flow--g rasq-ambient-zone--quiet">
+          <path
+            className="rasq-ambient-line rasq-ambient-line--mint"
+            d="M900 4620 C 700 4520, 460 4740, 220 4640 S -120 4480, -200 4580"
+          />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function HeroPreview() {
+  return (
+    <div className="relative mx-auto w-full max-w-[420px] lg:max-w-none">
       <div
-        className="pointer-events-none absolute left-0 top-0 h-[520px] w-[520px] opacity-[0.06]"
-        style={{
-          background:
-            "radial-gradient(ellipse at 30% 40%, var(--rasq-teal) 0%, transparent 68%)",
-        }}
+        className="rasq-hero-ambient absolute -left-8 top-6 h-[360px] w-[360px] opacity-80 lg:-left-12 lg:top-0 lg:h-[440px] lg:w-[440px]"
+        aria-hidden="true"
       />
 
-      <div className="relative mx-auto max-w-6xl px-6 py-20 lg:py-28">
-        <div className="grid items-center gap-12 lg:grid-cols-[55fr_45fr] lg:gap-16">
-
-          {/* ── Left: Copy ── */}
-          <div className="flex flex-col">
-
-            {/* Eyebrow */}
+      <div className="rasq-preview-stack relative">
+        <div
+          className="relative overflow-hidden rounded-[var(--rasq-r-lg)] border border-[var(--rasq-border)] bg-[var(--rasq-base)] shadow-[0_32px_64px_-40px_rgba(0,0,0,0.85)]"
+          aria-hidden="true"
+        >
+          <div className="relative aspect-[4/5] w-full min-h-[320px] sm:min-h-[380px] lg:min-h-[440px]">
+            <div className="absolute inset-0">
+              <Image
+                src="/images/futuristic_motion_tracking_portrait.png"
+                alt=""
+                fill
+                priority
+                sizes="(max-width: 1024px) 420px, 520px"
+                className="object-cover object-[42%_38%]"
+              />
+            </div>
             <div
-              className="rasq-stagger-item inline-flex w-fit items-center gap-2 rounded-[6px] border border-[#1E2D42] bg-[#0F1825] px-3 py-1.5"
+              className="pointer-events-none absolute inset-0 rounded-[var(--rasq-r-lg)]"
+              style={{
+                background:
+                  "linear-gradient(180deg, color-mix(in srgb, var(--rasq-void) 18%, transparent) 0%, transparent 28%, transparent 72%, color-mix(in srgb, var(--rasq-void) 24%, transparent) 100%), linear-gradient(90deg, color-mix(in srgb, var(--rasq-void) 12%, transparent) 0%, transparent 18%, transparent 82%, color-mix(in srgb, var(--rasq-void) 16%, transparent) 100%)",
+              }}
+            />
+            <div
+              className="pointer-events-none absolute inset-0 rounded-[var(--rasq-r-lg)] ring-1 ring-inset ring-[var(--rasq-teal)]/10"
+              aria-hidden="true"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const HERO_VALUES = [
+  {
+    label: "Structured assessments",
+    desc: "In clinic or through secure remote links.",
+  },
+  {
+    label: "Guided rehabilitation",
+    desc: "Clinician-directed plans and guided sessions.",
+  },
+  {
+    label: "Progress tracking",
+    desc: "Session completion and adherence, reviewed by your therapist.",
+  },
+];
+
+function HeroSection() {
+  return (
+    <section className="relative overflow-hidden bg-transparent" id="hero">
+      <div className="mx-auto max-w-6xl px-6 py-16 lg:py-24">
+        <div className="grid items-start gap-14 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
+          <div>
+            <div
+              className="rasq-stagger-item inline-flex items-center rounded-[6px] border border-[var(--rasq-border)] bg-[var(--rasq-base)] px-3 py-1.5"
               style={{ animationDelay: "0ms" }}
             >
               <span
-                className="h-1.5 w-1.5 rounded-full bg-[#1D9E75]"
-                style={{ boxShadow: "0 0 6px #1D9E75" }}
-              />
-              <span
-                className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#5DCAA5]/80"
+                className="text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--rasq-mint)]/75"
                 style={{ fontFamily: "var(--rasq-font-mono)" }}
               >
-                CLINIC-LED REMOTE REHABILITATION PLATFORM
+                Clinic-led rehabilitation platform
               </span>
             </div>
 
-            {/* Headline */}
             <h1
-              className="rasq-stagger-item mt-6 text-[2.4rem] font-bold leading-[1.08] tracking-[-0.025em] text-white lg:text-[2.85rem]"
+              className="rasq-stagger-item mt-6 max-w-xl text-[2.35rem] font-semibold leading-[1.08] tracking-[-0.025em] text-white lg:text-[2.85rem]"
               style={{
-                animationDelay: "40ms",
+                animationDelay: "60ms",
                 fontFamily: "var(--rasq-font-display)",
               }}
             >
-              Clinic-led remote rehabilitation<br />
-              <span className="text-white/55">from assessment to progress tracking.</span>
+              Rehabilitation, connected from assessment to progress.
             </h1>
 
-            {/* Tagline — muted, below headline, not competing */}
             <p
-              className="rasq-stagger-item mt-4 text-sm font-semibold uppercase tracking-[0.12em] text-white/30"
-              style={{ animationDelay: "80ms" }}
+              className="rasq-stagger-item mt-5 max-w-lg text-base leading-7 text-white/55"
+              style={{ animationDelay: "120ms" }}
+            >
+              AI-assisted rehabilitation that helps clinicians assess, guide rehabilitation,
+              and follow patient progress — with the clinician at the center of care.
+            </p>
+
+            <p
+              className="rasq-stagger-item mt-4 text-sm font-medium tracking-[0.06em] text-white/30"
+              style={{ animationDelay: "160ms" }}
             >
               Rehabilitation, precisely.
             </p>
 
-            {/* Subheadline */}
-            <p
-              className="rasq-stagger-item mt-4 max-w-xl text-base leading-7 text-white/45"
-              style={{ animationDelay: "120ms" }}
-            >
-              RASQ by Creative Motion Lab — a clinic-led remote rehabilitation platform.
-              Assess patients, assign plans, track adherence, and export clinical reports
-              from one clinician workspace.
-            </p>
-
-            {/* CTAs */}
             <div
               className="rasq-stagger-item mt-8 flex flex-wrap items-center gap-3"
-              style={{ animationDelay: "160ms" }}
+              style={{ animationDelay: "200ms" }}
             >
               <Link
                 href="/login?role=clinician"
-                className="rounded-[7px] bg-[#1D9E75] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#179165]"
+                className="rounded-[var(--rasq-r-btn)] bg-[var(--rasq-teal)] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[#179165]"
               >
-                For Providers
+                For providers
               </Link>
               <a
                 href="#patients"
-                className="rounded-[7px] border border-[#1E2D42] bg-[#0F1825] px-6 py-2.5 text-sm font-semibold text-white/70 transition hover:border-[#1D9E75]/30 hover:text-white"
+                className="rounded-[var(--rasq-r-btn)] border border-[var(--rasq-border)] bg-[var(--rasq-base)] px-6 py-2.5 text-sm font-medium text-white/75 transition hover:border-[var(--rasq-teal)]/30 hover:text-white"
               >
-                For Patients
+                Patient access
               </a>
             </div>
 
-            {/* Stats */}
-            <p
-              className="rasq-stagger-item mt-10 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-white/25"
-              style={{ animationDelay: "200ms" }}
-            >
-              Illustrative data
-            </p>
             <div
-              ref={statsRef as React.RefObject<HTMLDivElement>}
-              className="rasq-stagger-item mt-2 grid grid-cols-3 divide-x divide-[#1E2D42] border border-[#1E2D42] rounded-[10px] overflow-hidden"
-              style={{ animationDelay: "200ms" }}
+              className="rasq-stagger-item mt-10 grid grid-cols-1 divide-y divide-[var(--rasq-border)] rounded-[10px] border border-[var(--rasq-border)] sm:grid-cols-3 sm:divide-x sm:divide-y-0"
+              style={{ animationDelay: "240ms" }}
             >
-              {[
-                { val: c1, suffix: "%", label: "Session adherence" },
-                { val: c2, suffix: "+", label: "Assessment templates" },
-                { val: c3, suffix: " pathways", label: "Specialty rehab" },
-              ].map(({ val, suffix, label }) => (
-                <div key={label} className="flex flex-col items-center px-4 py-4 bg-[#0F1825]">
-                  <span
-                    className="text-2xl font-bold text-white"
-                    style={{ fontFamily: "var(--rasq-font-mono)" }}
-                  >
-                    {val}
-                    <span className="text-sm text-[#5DCAA5]">{suffix}</span>
-                  </span>
-                  <span className="mt-1 text-[11px] text-white/35 text-center leading-4">{label}</span>
+              {HERO_VALUES.map(({ label, desc }) => (
+                <div key={label} className="flex flex-col gap-1.5 bg-[var(--rasq-base)] px-5 py-4">
+                  <span className="text-sm font-semibold text-white">{label}</span>
+                  <span className="text-xs leading-5 text-white/40">{desc}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* ── Right: Live product UI cards — in a styled viewport wrapper ── */}
-          <div
-            className="rasq-stagger-item rounded-[10px] p-8 flex flex-col gap-3"
-            style={{
-              animationDelay: "100ms",
-              background: "#0B1220",
-              border: "0.5px solid #1E2D42",
-            }}
-          >
-            {/* Card 1 — Patient recovery card */}
-            <div
-              className="rounded-[10px] p-5"
-              style={{
-                background: "var(--rasq-card)",
-                border: "0.5px solid var(--rasq-border)",
-              }}
-            >
-              {/* Card header */}
-              <div className="flex items-center justify-between">
-                <span
-                  className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/30"
-                  style={{ fontFamily: "var(--rasq-font-mono)" }}
-                >
-                  Patient
-                </span>
-                <span
-                  className="text-[10px] font-semibold text-[#5DCAA5]"
-                  style={{ fontFamily: "var(--rasq-font-mono)" }}
-                >
-                  Week 4 / 8
-                </span>
-              </div>
-
-              {/* Patient info */}
-              <div className="mt-3 flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-white">Sarah Al-Ahmad</p>
-                  <p className="mt-0.5 text-xs text-white/40">
-                    ACL Rehabilitation &nbsp;·&nbsp; Phase 2
-                  </p>
-                </div>
-                <span className="mt-0.5 rounded-[5px] border border-[#1D9E75]/25 bg-[#1D9E75]/10 px-2 py-0.5 text-[10px] font-semibold text-[#5DCAA5]">
-                  Active
-                </span>
-              </div>
-
-              {/* Progress bar */}
-              <div className="mt-4">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-[11px] text-white/35">Recovery Progress</span>
-                  <span
-                    className="text-[11px] font-semibold text-[#5DCAA5]"
-                    style={{ fontFamily: "var(--rasq-font-mono)" }}
-                  >
-                    67%
-                  </span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-[#1E2D42]">
-                  <div
-                    className="h-full rounded-full bg-[#1D9E75]"
-                    style={{ width: "67%" }}
-                  />
-                </div>
-              </div>
-
-              {/* Metrics row */}
-              <div className="mt-4 grid grid-cols-3 divide-x divide-[#1E2D42] rounded-[8px] border border-[#1E2D42] overflow-hidden">
-                {[
-                  { label: "Knee Bend", val: "108°" },
-                  { label: "Leg Balance", val: "74%" },
-                  { label: "Sessions", val: "8/12" },
-                ].map(({ label, val }) => (
-                  <div key={label} className="flex flex-col items-center px-2 py-2.5">
-                    <span
-                      className="text-sm font-bold text-white"
-                      style={{ fontFamily: "var(--rasq-font-mono)" }}
-                    >
-                      {val}
-                    </span>
-                    <span className="mt-0.5 text-[10px] text-white/30 text-center leading-3">
-                      {label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Card 2 — RASQ Intelligence */}
-            <div
-              className="rounded-[10px] p-5"
-              style={{
-                background: "var(--rasq-card)",
-                border: "0.5px solid var(--rasq-border)",
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <span
-                  className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/30"
-                  style={{ fontFamily: "var(--rasq-font-mono)" }}
-                >
-                  RASQ Intelligence
-                </span>
-                <span className="rounded-[5px] border border-[#1D9E75]/20 bg-[#1D9E75]/8 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[#5DCAA5]/70">
-                  AI · Draft
-                </span>
-              </div>
-
-              <ul className="mt-4 space-y-3">
-                {[
-                  "Phase 2 clearance criteria met. Consider advancing to dynamic control exercises next session.",
-                  "Load symmetry improved 11% since last assessment. Single-leg progression recommended.",
-                ].map((item) => (
-                  <li key={item} className="flex gap-2.5">
-                    <span
-                      className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1D9E75]"
-                      style={{ marginTop: "5px" }}
-                    />
-                    <span className="text-xs leading-5 text-white/55">{item}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <p className="mt-4 border-t border-[#1E2D42] pt-3 text-[10px] text-white/20">
-                Clinical decision support · Therapist review required before implementing
-              </p>
-            </div>
+          <div className="rasq-stagger-item" style={{ animationDelay: "100ms" }}>
+            <HeroPreview />
           </div>
         </div>
       </div>
@@ -393,25 +507,21 @@ function HeroSection() {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Section 3 — Trust bar
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 function TrustBar() {
   const [ref, revealed] = useReveal(0.3);
 
   const items = [
     "Clinical workflows co-designed with rehabilitation specialists",
-    "Tokenised patient access — no login required for remote assessments",
+    "Secure clinic links — no public sign-up for remote assessments",
     "Export-ready clinical reports — structured for clinician review and referral",
   ];
 
   return (
     <section
       ref={ref as React.RefObject<HTMLElement>}
-      className={`border-y border-[#1E2D42] bg-[#0B1220] rasq-reveal ${revealed ? "is-revealed" : ""}`}
+      className={`border-y border-[var(--rasq-border)] bg-[var(--rasq-card)]/82 rasq-reveal ${revealed ? "is-revealed" : ""}`}
     >
-      <div className="mx-auto grid max-w-6xl grid-cols-1 divide-y divide-[#1E2D42] px-6 py-0 md:grid-cols-3 md:divide-x md:divide-y-0">
+      <div className="mx-auto grid max-w-6xl grid-cols-1 divide-y divide-[var(--rasq-border)] px-6 py-0 md:grid-cols-3 md:divide-x md:divide-y-0">
         {items.map((text) => (
           <div key={text} className="px-6 py-5">
             <span className="text-sm leading-5 text-white/45">{text}</span>
@@ -422,16 +532,11 @@ function TrustBar() {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Section 4 — Workflow (5 steps + animated connector)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 const WORKFLOW_STEPS = [
-  { num: "01", label: "Assess", desc: "Structured MSK and functional assessments — in-clinic or via secure remote links." },
-  { num: "02", label: "Report", desc: "Review patient submissions and generate clinician-reviewed clinical reports." },
-  { num: "03", label: "Plan", desc: "Assign rehabilitation plans and share secure patient portal access." },
-  { num: "04", label: "Track", desc: "Patient sessions and adherence tracking with session-level outcome data." },
-  { num: "05", label: "Export", desc: "Progress snapshots and export-ready clinical reports for your records." },
+  { num: "01", label: "Assess", desc: "Structured functional assessments — in clinic or through secure remote links." },
+  { num: "02", label: "Plan", desc: "Prescribe rehabilitation plans and issue secure clinic access to patients." },
+  { num: "03", label: "Track", desc: "Monitor guided sessions, adherence, and progress across the care pathway." },
+  { num: "04", label: "Report", desc: "Export clinical reports structured for review, referral, and records." },
 ];
 
 function WorkflowSection() {
@@ -441,49 +546,49 @@ function WorkflowSection() {
     <section
       id="platform"
       ref={ref as React.RefObject<HTMLElement>}
-      className="bg-[#080E14] py-20 lg:py-28"
+      className="bg-transparent py-16 lg:py-24"
     >
       <div className="mx-auto max-w-6xl px-6">
-        {/* Header */}
         <div className={`rasq-reveal ${revealed ? "is-revealed" : ""}`}>
           <p
-            className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#1D9E75]"
+            className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--rasq-mint)]/75"
             style={{ fontFamily: "var(--rasq-font-mono)" }}
           >
             Platform
           </p>
           <h2
-            className="mt-2 text-2xl font-bold tracking-tight text-white lg:text-3xl"
+            className="mt-3 max-w-2xl text-2xl font-semibold tracking-tight text-white lg:text-[1.75rem]"
             style={{ fontFamily: "var(--rasq-font-display)" }}
           >
             One platform. Assessment through recovery.
           </h2>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-white/40">
+            A connected workspace for assessment, plan assignment, session review,
+            and export-ready reporting.
+          </p>
         </div>
 
-        {/* Steps */}
         <div
-          className={`rasq-reveal-children mt-12 grid grid-cols-1 gap-8 sm:grid-cols-5 ${revealed ? "is-revealed" : ""}`}
+          className={`rasq-reveal-children mt-12 grid grid-cols-1 gap-8 sm:grid-cols-4 ${revealed ? "is-revealed" : ""}`}
         >
           {WORKFLOW_STEPS.map((step, i) => (
             <div key={step.num} className="relative flex flex-col">
-              {/* Connector — rendered as sibling overlay, not inside the step */}
               {i < WORKFLOW_STEPS.length - 1 && (
                 <div
-                  className={`rasq-connector absolute left-[calc(100%+0px)] top-[22px] hidden h-px w-full bg-[#1E2D42] sm:block ${revealed ? "is-revealed" : ""}`}
+                  className={`rasq-connector absolute top-[22px] hidden h-px bg-[var(--rasq-border)] sm:block ${revealed ? "is-revealed" : ""}`}
                   style={{ width: "calc(100% - 44px)", left: "calc(50% + 22px)" }}
                 />
               )}
-              {/* Step badge */}
-              <div className="flex h-11 w-11 items-center justify-center rounded-[8px] border border-[#1E2D42] bg-[#0F1825]">
+              <div className="flex h-11 w-11 items-center justify-center rounded-[8px] border border-[var(--rasq-border)] bg-[var(--rasq-base)]">
                 <span
-                  className="text-xs font-bold text-[#5DCAA5]"
+                  className="text-xs font-medium text-[var(--rasq-mint)]"
                   style={{ fontFamily: "var(--rasq-font-mono)" }}
                 >
                   {step.num}
                 </span>
               </div>
-              <p className="mt-3 text-sm font-semibold text-white">{step.label}</p>
-              <p className="mt-1.5 text-xs leading-5 text-white/35">{step.desc}</p>
+              <p className="mt-3 text-sm font-medium text-white">{step.label}</p>
+              <p className="mt-1.5 text-xs leading-5 text-white/40">{step.desc}</p>
             </div>
           ))}
         </div>
@@ -492,86 +597,142 @@ function WorkflowSection() {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Section 5 — Intelligence proof
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-const RECOVERY_TIMELINE = [
-  { week: "Week 1", title: "Initial Assessment", detail: "Pain 6/10 · ROM 72° · Phase 1 initiated" },
-  { week: "Week 3", title: "Progress Check", detail: "Pain 3/10 · ROM 88° · Movement quality improving" },
-  { week: "Week 6", title: "Phase Transition", detail: "Phase 1 complete · Cleared for Phase 2 exercises" },
-  { week: "Week 8", title: "Strength Review", detail: "Load symmetry 74% · Dynamic control exercises added" },
-  { week: "Week 10", title: "Return Assessment", detail: "Return to sport evaluation — scheduled", pending: true },
-];
-
-const INTELLIGENCE_ITEMS = [
-  { signal: "Movement quality", value: "87/100", status: "On track", note: "Consistent with Phase 2 progression targets" },
-  { signal: "Load symmetry", value: "74%", status: "Improving", note: "+11% since initial assessment · Single-leg progression indicated" },
-  { signal: "Range of motion", value: "108°", status: "On track", note: "Target 130° · Continue current exercise protocol" },
-];
-
-function IntelligenceSection() {
+function GuidedRehabilitationSection() {
   const [ref, revealed] = useReveal(0.15);
 
   return (
     <section
       ref={ref as React.RefObject<HTMLElement>}
-      className="bg-[#0B1220] py-20 lg:py-28"
+      className="bg-transparent py-16 lg:py-24"
+    >
+      <div className="mx-auto max-w-6xl px-6">
+        <div className={`grid items-start gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16`}>
+          <div className={`rasq-reveal ${revealed ? "is-revealed" : ""}`}>
+            <p
+              className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--rasq-mint)]/75"
+              style={{ fontFamily: "var(--rasq-font-mono)" }}
+            >
+              Guided rehabilitation
+            </p>
+            <h2
+              className="mt-3 text-2xl font-semibold tracking-tight text-white lg:text-[1.75rem]"
+              style={{ fontFamily: "var(--rasq-font-display)" }}
+            >
+              Guided movement. Clinician-reviewed progress.
+            </h2>
+            <p className="mt-4 max-w-md text-sm leading-6 text-white/45">
+              Patients follow clinician-prescribed guided sessions while RASQ structures
+              session information for therapist review and follow-up.
+            </p>
+          </div>
+
+          <div
+            className={`rasq-reveal relative ${revealed ? "is-revealed" : ""}`}
+            style={{ transitionDelay: "100ms" }}
+          >
+            <PhotoFrame drift className="aspect-[16/10] w-full">
+              <MovementArc className="opacity-80" />
+            </PhotoFrame>
+
+            <div
+              className="absolute bottom-4 right-4 z-10 w-[62%] max-w-[240px] rounded-[var(--rasq-r-card)] border border-[var(--rasq-border)] bg-[var(--rasq-base)]/95 p-4 shadow-[0_20px_40px_-24px_rgba(0,0,0,0.8)] backdrop-blur-sm sm:bottom-6 sm:right-6"
+              aria-hidden="true"
+            >
+              <div className="flex items-center justify-between">
+                <span
+                  className="text-[9px] font-medium uppercase tracking-[0.1em] text-white/30"
+                  style={{ fontFamily: "var(--rasq-font-mono)" }}
+                >
+                  Clinical review
+                </span>
+                <span className="rounded-[5px] border border-[var(--rasq-teal)]/20 bg-[var(--rasq-teal)]/8 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.06em] text-[var(--rasq-mint)]/70">
+                  Draft
+                </span>
+              </div>
+              <ul className="mt-2.5 space-y-1.5">
+                {["Session notes ready for review", "Adherence reviewed by clinician"].map((item) => (
+                  <li key={item} className="flex gap-1.5">
+                    <span className="mt-[5px] h-1 w-1 shrink-0 rounded-full bg-[var(--rasq-teal)]" aria-hidden="true" />
+                    <span className="text-[10px] leading-4 text-white/55">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <p className="relative z-10 mt-4 text-[11px] leading-5 text-white/30">
+              Illustrative session — example UI overlay only, not a real patient record.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const PROGRESS_TIMELINE = [
+  { step: "Initial assessment", detail: "Structured functional assessment completed." },
+  { step: "Plan assigned", detail: "Rehabilitation plan reviewed and assigned by clinician." },
+  { step: "Guided sessions", detail: "Patient completes clinician-prescribed guided sessions." },
+  { step: "Progress review", detail: "Adherence and session completion reviewed by therapist." },
+  { step: "Follow-up assessment", detail: "Next structured assessment scheduled.", pending: true },
+];
+
+const REVIEW_ITEMS = [
+  { signal: "Adherence", status: "On track", note: "Consistent session completion this phase." },
+  { signal: "Session notes", status: "Ready for review", note: "Draft notes prepared for clinician sign-off." },
+  { signal: "Plan progress", status: "On schedule", note: "Aligned with the assigned rehabilitation plan." },
+];
+
+function ProgressJourneySection() {
+  const [ref, revealed] = useReveal(0.15);
+
+  return (
+    <section
+      ref={ref as React.RefObject<HTMLElement>}
+      className="bg-[var(--rasq-card)]/78 py-16 lg:py-24"
     >
       <div className="mx-auto max-w-6xl px-6">
         <div className={`rasq-reveal ${revealed ? "is-revealed" : ""}`}>
           <p
-            className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#1D9E75]"
+            className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--rasq-mint)]/75"
             style={{ fontFamily: "var(--rasq-font-mono)" }}
           >
-            Intelligence proof
+            Progress
           </p>
           <h2
-            className="mt-2 text-2xl font-bold tracking-tight text-white lg:text-3xl"
+            className="mt-3 max-w-2xl text-2xl font-semibold tracking-tight text-white lg:text-[1.75rem]"
             style={{ fontFamily: "var(--rasq-font-display)" }}
           >
-            From first session to full recovery.
+            From assessment to ongoing progress.
           </h2>
           <p className="mt-3 max-w-lg text-sm leading-6 text-white/40">
-            RASQ supports the clinician workflow from remote assessment through plan
-            assignment and progress review — with decision-support drafts for therapist review.
+            RASQ supports the clinician workflow from assessment through plan assignment
+            and progress review — with draft clinical notes for therapist review.
           </p>
         </div>
 
         <div className="mt-12 grid items-start gap-10 lg:grid-cols-2">
-          {/* Recovery timeline */}
           <div className={`rasq-reveal ${revealed ? "is-revealed" : ""}`} style={{ transitionDelay: "80ms" }}>
-            <p className="mb-5 text-xs font-semibold uppercase tracking-[0.1em] text-white/30">
-              Patient journey — Sarah Al-Ahmad
+            <p className="mb-5 text-xs font-medium uppercase tracking-[0.1em] text-white/30">
+              Illustrative session journey
             </p>
             <div className="relative space-y-0">
-              {/* Vertical connector line */}
-              <div className="absolute left-[11px] top-3 bottom-3 w-px bg-[#1E2D42]" />
-              {RECOVERY_TIMELINE.map((item) => (
-                <div key={item.week} className="relative flex gap-5 pb-6 last:pb-0">
+              <div className="absolute left-[11px] top-3 bottom-3 w-px bg-[var(--rasq-border)]" />
+              {PROGRESS_TIMELINE.map((item) => (
+                <div key={item.step} className="relative flex gap-5 pb-6 last:pb-0">
                   <div
-                    className={`relative z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
-                      item.pending
-                        ? "border-[#1E2D42] bg-[#0B1220]"
-                        : "border-[#1D9E75]/40 bg-[#0B1220]"
+                    className={`relative z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-[var(--rasq-card)] ${
+                      item.pending ? "border-[var(--rasq-border)]" : "border-[var(--rasq-teal)]/40"
                     }`}
                   >
                     {item.pending ? (
-                      <span className="h-2 w-2 rounded-full border border-[#1E2D42]" />
+                      <span className="h-2 w-2 rounded-full border border-[var(--rasq-border)]" />
                     ) : (
-                      <span className="h-2 w-2 rounded-full bg-[#1D9E75]" />
+                      <span className="h-2 w-2 rounded-full bg-[var(--rasq-teal)]" />
                     )}
                   </div>
                   <div className="flex-1 pt-0.5">
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className="text-[10px] font-bold text-[#5DCAA5]"
-                        style={{ fontFamily: "var(--rasq-font-mono)" }}
-                      >
-                        {item.week}
-                      </span>
-                      <span className="text-sm font-semibold text-white">{item.title}</span>
-                    </div>
+                    <span className="text-sm font-medium text-white">{item.step}</span>
                     <p className="mt-0.5 text-xs text-white/35">{item.detail}</p>
                   </div>
                 </div>
@@ -579,54 +740,41 @@ function IntelligenceSection() {
             </div>
           </div>
 
-          {/* RASQ Intelligence panel */}
           <div
-            className={`rasq-reveal rounded-[10px] ${revealed ? "is-revealed" : ""}`}
-            style={{
-              background: "var(--rasq-card)",
-              border: "0.5px solid var(--rasq-border)",
-              transitionDelay: "140ms",
-            }}
+            className={`rasq-reveal rounded-[var(--rasq-r-lg)] border border-[var(--rasq-border)] bg-[var(--rasq-base)] ${revealed ? "is-revealed" : ""}`}
+            style={{ transitionDelay: "140ms" }}
           >
-            <div className="flex items-center justify-between border-b border-[#1E2D42] px-5 py-4">
+            <div className="flex items-center justify-between border-b border-[var(--rasq-border)] px-5 py-4">
               <div className="flex items-center gap-2">
                 <ArcMark size={14} />
                 <span
-                  className="text-xs font-bold text-white"
+                  className="text-xs font-medium text-white"
                   style={{ fontFamily: "var(--rasq-font-mono)" }}
                 >
-                  RASQ Intelligence
+                  Clinical review
                 </span>
               </div>
-              <span className="rounded-[5px] border border-[#1D9E75]/20 bg-[#1D9E75]/8 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[#5DCAA5]/70">
-                Week 8 · Draft
+              <span className="rounded-[5px] border border-[var(--rasq-teal)]/20 bg-[var(--rasq-teal)]/8 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--rasq-mint)]/70">
+                Draft
               </span>
             </div>
 
-            <div className="divide-y divide-[#1E2D42]">
-              {INTELLIGENCE_ITEMS.map((item) => (
+            <div className="divide-y divide-[var(--rasq-border)]">
+              {REVIEW_ITEMS.map((item) => (
                 <div key={item.signal} className="px-5 py-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-white/55">{item.signal}</span>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="text-sm font-bold text-white"
-                        style={{ fontFamily: "var(--rasq-font-mono)" }}
-                      >
-                        {item.value}
-                      </span>
-                      <span className="rounded-[5px] bg-[#1D9E75]/10 px-2 py-0.5 text-[10px] font-semibold text-[#5DCAA5]">
-                        {item.status}
-                      </span>
-                    </div>
+                    <span className="text-xs font-medium text-white/55">{item.signal}</span>
+                    <span className="rounded-[5px] bg-[var(--rasq-teal)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--rasq-mint)]">
+                      {item.status}
+                    </span>
                   </div>
                   <p className="mt-1 text-[11px] leading-4 text-white/30">{item.note}</p>
                 </div>
               ))}
             </div>
 
-            <div className="border-t border-[#1E2D42] px-5 py-3">
-              <p className="text-[10px] text-white/20">
+            <div className="border-t border-[var(--rasq-border)] px-5 py-3">
+              <p className="text-[10px] text-white/25">
                 Clinical decision support · Not a diagnosis · Therapist review required
               </p>
             </div>
@@ -637,136 +785,152 @@ function IntelligenceSection() {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Section 6 — Dual pathway (dark provider / light patient)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function DualPathwaySection() {
-  const [ref, revealed] = useReveal(0.15);
+function AccessSection() {
+  const [ref, revealed] = useReveal();
 
   return (
     <section
       id="providers"
       ref={ref as React.RefObject<HTMLElement>}
-      className={`rasq-reveal overflow-hidden ${revealed ? "is-revealed" : ""}`}
+      className="bg-[var(--rasq-base)]/82 py-16 lg:py-24"
     >
-      <div className="mx-auto max-w-6xl px-6 py-20 lg:py-28">
+      <div className="mx-auto max-w-6xl px-6">
         <div className={`rasq-reveal ${revealed ? "is-revealed" : ""}`}>
           <p
-            className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#1D9E75]"
+            className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--rasq-mint)]/75"
             style={{ fontFamily: "var(--rasq-font-mono)" }}
           >
             Access
           </p>
           <h2
-            className="mt-2 text-2xl font-bold tracking-tight text-white lg:text-3xl"
+            className="mt-3 max-w-xl text-2xl font-semibold tracking-tight text-white lg:text-[1.75rem]"
             style={{ fontFamily: "var(--rasq-font-display)" }}
           >
-            Built for providers and patients.
+            Built for clinical teams and patients.
           </h2>
         </div>
 
-        <div className="mt-10 grid grid-cols-1 overflow-hidden rounded-[12px] border border-[#1E2D42] lg:grid-cols-2">
-
-          {/* Provider — dark */}
-          <div
-            className={`rasq-reveal flex flex-col p-8 ${revealed ? "is-revealed" : ""}`}
-            style={{ background: "var(--rasq-base)", transitionDelay: "80ms" }}
-          >
-            <div className="flex h-10 w-10 items-center justify-center rounded-[8px] border border-[#1E2D42] bg-[#0F1825] text-[#5DCAA5]">
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z" />
-              </svg>
+        <div
+          className={`rasq-reveal mt-10 grid grid-cols-1 overflow-hidden rounded-[var(--rasq-r-lg)] border border-[var(--rasq-border)] shadow-[0_32px_64px_-48px_rgba(0,0,0,0.8)] lg:grid-cols-2 ${revealed ? "is-revealed" : ""}`}
+          style={{ transitionDelay: "80ms" }}
+        >
+          <div className="flex flex-col p-8 lg:p-10" style={{ background: "var(--rasq-void)" }}>
+            <div
+              className="rounded-[var(--rasq-r-card)] border border-[var(--rasq-border)] bg-[var(--rasq-card)] p-3.5"
+              aria-hidden="true"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-medium uppercase tracking-[0.1em] text-white/30" style={{ fontFamily: "var(--rasq-font-mono)" }}>
+                  Patients
+                </span>
+                <span className="rounded-[4px] border border-[var(--rasq-teal)]/25 bg-[var(--rasq-teal)]/10 px-1.5 py-0.5 text-[8px] font-medium text-[var(--rasq-mint)]">
+                  3 active plans
+                </span>
+              </div>
+              <div className="mt-2.5 space-y-1.5">
+                {["Lower limb rehabilitation", "Upper limb recovery"].map((row) => (
+                  <div key={row} className="flex items-center justify-between rounded-[5px] border border-[var(--rasq-border)] bg-[var(--rasq-void)] px-2.5 py-1.5">
+                    <span className="text-[10px] text-white/50">{row}</span>
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--rasq-teal)]" />
+                  </div>
+                ))}
+              </div>
             </div>
-            <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/25">
-              For Providers
+            <p className="mt-5 text-xs font-medium uppercase tracking-[0.1em] text-white/35">
+              For providers
             </p>
             <h3
-              className="mt-1.5 text-xl font-bold text-white"
+              className="mt-2 text-xl font-semibold text-white"
               style={{ fontFamily: "var(--rasq-font-display)" }}
             >
-              Provider Workspace
+              Clinician workspace
             </h3>
-            <p className="mt-2.5 text-sm leading-6 text-white/40">
-              Manage patients, run assessments, prescribe rehabilitation plans,
-              review clinical reports, and track outcomes — for solo therapists
-              to multidisciplinary teams.
+            <p className="mt-3 max-w-md text-sm leading-6 text-white/45">
+              Manage patients, run assessments, assign plans, and review progress
+              from a single clinical workspace.
             </p>
-            <div className="mt-6 space-y-2">
+            <div className="mt-7 space-y-2">
               <Link
                 href="/login?role=clinician"
-                className="flex items-center justify-between rounded-[7px] border border-[#1D9E75]/25 bg-[#1D9E75]/10 px-4 py-3 transition hover:bg-[#1D9E75]/16 group"
+                className="group flex items-center justify-between rounded-[var(--rasq-r-btn)] border border-[var(--rasq-teal)]/25 bg-[var(--rasq-teal)]/10 px-4 py-3 transition hover:bg-[var(--rasq-teal)]/14"
               >
                 <div>
-                  <p className="text-sm font-semibold text-white">Clinician Workspace</p>
-                  <p className="text-xs text-white/35">Patients · Assessments · Plans · Sessions</p>
+                  <p className="text-sm font-medium text-white">Clinician sign in</p>
+                  <p className="text-xs text-white/40">Patients · Assessments · Plans · Sessions</p>
                 </div>
-                <svg className="h-4 w-4 text-white/20 transition group-hover:text-[#5DCAA5]/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                </svg>
+                <ChevronIcon />
               </Link>
               <Link
                 href="/login?role=admin"
-                className="flex items-center justify-between rounded-[7px] border border-[#1E2D42] bg-[#0F1825] px-4 py-3 transition hover:border-[#1D9E75]/20 group"
+                className="group flex items-center justify-between rounded-[var(--rasq-r-btn)] border border-[var(--rasq-border)] bg-[var(--rasq-card)] px-4 py-3 transition hover:border-[var(--rasq-teal)]/20"
               >
                 <div>
-                  <p className="text-sm font-semibold text-white/70">Admin Workspace</p>
-                  <p className="text-xs text-white/25">Clinicians · Assignments · Overview</p>
+                  <p className="text-sm font-medium text-white/80">Admin workspace</p>
+                  <p className="text-xs text-white/30">Clinicians · Assignments · Overview</p>
                 </div>
-                <svg className="h-4 w-4 text-white/15 transition group-hover:text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                </svg>
+                <ChevronIcon muted />
               </Link>
             </div>
           </div>
 
-          {/* Patient — light warm surface, all explicit hex values */}
           <div
             id="patients"
-            className={`rasq-reveal flex flex-col border-t border-[#1E2D42] p-8 lg:border-l lg:border-t-0 ${revealed ? "is-revealed" : ""}`}
-            style={{ background: "#F4F6F5", transitionDelay: "140ms" }}
+            className="flex flex-col border-t border-[var(--rasq-border)] p-8 lg:border-l lg:border-t-0 lg:p-10"
+            style={{ background: "var(--rasq-warm)" }}
           >
             <div
-              className="flex h-10 w-10 items-center justify-center rounded-[8px] border border-[#d1dbd6] bg-white text-[#1D9E75]"
+              className="rounded-[var(--rasq-r-card)] border border-[var(--rasq-warm-bd)] bg-white p-3.5"
+              aria-hidden="true"
             >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-              </svg>
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--rasq-warm-tx2)]" style={{ fontFamily: "var(--rasq-font-mono)" }}>
+                  Today
+                </span>
+                <span className="rounded-[4px] border border-[var(--rasq-teal)]/25 bg-[var(--rasq-teal)]/10 px-1.5 py-0.5 text-[8px] font-medium text-[var(--rasq-teal)]">
+                  1 session
+                </span>
+              </div>
+              <div className="mt-2.5 rounded-[5px] border border-[var(--rasq-warm-bd)] bg-[var(--rasq-warm)] px-2.5 py-2">
+                <p className="text-[10px] font-medium text-[var(--rasq-warm-tx)]">Guided session 9</p>
+                <p className="mt-0.5 text-[9px] text-[var(--rasq-warm-tx2)]">10–15 min · Assigned by your therapist</p>
+              </div>
             </div>
-            <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#4a7060]">
-              For Patients
+            <p className="mt-5 text-xs font-medium uppercase tracking-[0.1em] text-[var(--rasq-warm-tx2)]">
+              For patients
             </p>
             <h3
-              className="mt-1.5 text-xl font-bold text-[#0f2e22]"
+              className="mt-2 text-xl font-semibold text-[var(--rasq-warm-tx)]"
               style={{ fontFamily: "var(--rasq-font-display)" }}
             >
-              Patient Portal
+              Patient portal
             </h3>
-            <p className="mt-2.5 text-sm leading-6 text-[#4a7060]">
-              View your plan, complete guided sessions, track progress, and access
-              appointments through a secure clinic invitation.
+            <p className="mt-3 max-w-md text-sm leading-6 text-[var(--rasq-warm-tx2)]">
+              View your plan, complete guided sessions, and track progress through
+              the secure link provided by your clinic.
             </p>
-            <div className="mt-6 space-y-2">
+            <div className="mt-7 space-y-2">
               <div
-                className="rounded-[7px] border border-[#d1dbd6] bg-white px-4 py-3 text-[#0f2e22]"
+                className="rounded-[var(--rasq-r-btn)] border border-[var(--rasq-warm-bd)] bg-white px-4 py-3"
                 role="note"
               >
-                <p className="text-sm font-semibold">Use the secure link from your therapist</p>
-                <p className="mt-0.5 text-xs text-[#4a7060]">
-                  Real patients receive a unique clinic link — not this website&apos;s demo pages.
+                <p className="text-sm font-medium text-[var(--rasq-warm-tx)]">
+                  Use the link from your therapist
+                </p>
+                <p className="mt-1 text-xs leading-5 text-[var(--rasq-warm-tx2)]">
+                  Patient access is issued by your clinic — not through public sign-up.
                 </p>
               </div>
               <Link
                 href="/assessment-access"
-                className="group flex items-center justify-between rounded-[7px] border border-[#d1dbd6] bg-white px-4 py-3 text-[#0f2e22] transition hover:border-[#1D9E75]/40"
+                className="group flex items-center justify-between rounded-[var(--rasq-r-btn)] border border-[var(--rasq-warm-bd)] bg-white px-4 py-3 text-[var(--rasq-warm-tx)] transition hover:border-[var(--rasq-teal)]/35"
               >
                 <div>
-                  <p className="text-sm font-semibold">I have an assessment link</p>
-                  <p className="text-xs text-[#4a7060]">
+                  <p className="text-sm font-medium">I have an assessment link</p>
+                  <p className="text-xs text-[var(--rasq-warm-tx2)]">
                     Enter your token to begin a remote assessment
                   </p>
                 </div>
-                <svg className="h-4 w-4 text-[#0f2e22] opacity-25 transition group-hover:opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="h-4 w-4 text-[var(--rasq-warm-tx)] opacity-25 transition group-hover:opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                 </svg>
               </Link>
@@ -778,97 +942,77 @@ function DualPathwaySection() {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Section 7 — Future vision (RASQ Sense + RASQ Motion)
-   ═══════════════════════════════════════════════════════════════════════════ */
+const CAPABILITY_CARDS = [
+  {
+    id: "assessment",
+    name: "Remote assessment",
+    tagline: "Secure, clinic-issued access",
+    desc:
+      "Patients complete structured remote assessments through a secure clinic link — no public sign-up, no separate login.",
+    specs: ["Secure clinic links", "No public sign-up", "Clinician-reviewed submissions"],
+  },
+  {
+    id: "reporting",
+    name: "Structured reporting",
+    tagline: "Export-ready documentation",
+    desc:
+      "Session and progress data compiled into clinician-reviewed reports, structured for referral and records.",
+    specs: ["Clinician-reviewed", "Referral-ready", "Structured for records"],
+  },
+];
 
-function FutureVisionSection() {
+function CapabilitiesSection() {
   const [ref, revealed] = useReveal(0.15);
-
-  const cards = [
-    {
-      id: "sense",
-      name: "RASQ Sense",
-      tagline: "Wearable motion intelligence",
-      desc:
-        "Continuous biomechanical data beyond the session — IMU-based motion capture, real-time load tracking, and movement quality scoring between clinic visits.",
-      specs: ["IMU motion capture", "Real-time load analysis", "Between-session data"],
-    },
-    {
-      id: "motion",
-      name: "RASQ Motion",
-      tagline: "Extended reality rehabilitation",
-      desc:
-        "Immersive, XR-guided rehabilitation sessions. Guided movement. Measurable outcomes. Clinician-prescribed protocols delivered in extended reality.",
-      specs: ["XR-guided sessions", "Clinician-prescribed", "Measurable outcomes"],
-    },
-  ];
 
   return (
     <section
       ref={ref as React.RefObject<HTMLElement>}
-      className="bg-[#080E14] py-20 lg:py-28"
+      className="bg-transparent py-16 lg:py-24"
     >
       <div className="mx-auto max-w-6xl px-6">
         <div className={`rasq-reveal ${revealed ? "is-revealed" : ""}`}>
           <p
-            className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#1D9E75]"
+            className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--rasq-mint)]/75"
             style={{ fontFamily: "var(--rasq-font-mono)" }}
           >
-            What&apos;s next
+            Capabilities
           </p>
           <h2
-            className="mt-2 text-2xl font-bold tracking-tight text-white lg:text-3xl"
+            className="mt-3 max-w-2xl text-2xl font-semibold tracking-tight text-white lg:text-[1.75rem]"
             style={{ fontFamily: "var(--rasq-font-display)" }}
           >
-            Rehabilitation intelligence, extended.
+            Built for how care actually happens.
           </h2>
-          <p className="mt-3 max-w-lg text-sm leading-6 text-white/40">
-            Rehabilitation intelligence, wherever care happens.
-          </p>
         </div>
 
         <div
           className={`mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 rasq-reveal-children ${revealed ? "is-revealed" : ""}`}
         >
-          {cards.map((card) => (
+          {CAPABILITY_CARDS.map((card) => (
             <div
               key={card.id}
-              className="relative flex flex-col rounded-[10px] p-6"
-              style={{
-                background: "var(--rasq-card)",
-                border: "0.5px solid var(--rasq-border)",
-              }}
+              className="relative flex flex-col rounded-[var(--rasq-r-card)] border border-[var(--rasq-border)] bg-[var(--rasq-card)] p-6"
             >
-              {/* Coming soon badge */}
-              <span
-                className="absolute right-4 top-4 rounded-[5px] border border-[#1E2D42] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-white/25"
-                style={{ fontFamily: "var(--rasq-font-mono)" }}
-              >
-                Coming 2026
-              </span>
-
-              {/* Icon */}
-              <div className="flex h-10 w-10 items-center justify-center rounded-[8px] border border-[#1E2D42] bg-[#0B1220] text-[#5DCAA5]">
-                {card.id === "sense" ? (
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <div className="flex h-10 w-10 items-center justify-center rounded-[8px] border border-[var(--rasq-border)] bg-[var(--rasq-base)] text-[var(--rasq-mint)]">
+                {card.id === "assessment" ? (
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9.348 14.651a3.75 3.75 0 010-5.303m5.304-.002a3.75 3.75 0 010 5.304m-7.425 2.122a6.75 6.75 0 010-9.546m9.546 0a6.75 6.75 0 010 9.546M5.106 18.894c-3.808-3.808-3.808-9.98 0-13.789m13.788 0c3.808 3.808 3.808 9.981 0 13.79M12 12h.008v.007H12V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
                   </svg>
                 ) : (
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33" />
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3-15H6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 006 21h12a2.25 2.25 0 002.25-2.25V6.108c0-.464-.184-.909-.513-1.237l-3.109-3.109A1.5 1.5 0 0015.516 1.5H15.75z" />
                   </svg>
                 )}
               </div>
 
               <p
-                className="mt-5 text-xs font-semibold uppercase tracking-[0.1em] text-[#5DCAA5]/60"
+                className="mt-5 text-xs font-medium uppercase tracking-[0.1em] text-[var(--rasq-mint)]/60"
                 style={{ fontFamily: "var(--rasq-font-mono)" }}
               >
                 {card.tagline}
               </p>
               <h3
-                className="mt-1 text-lg font-bold text-white"
+                className="mt-1 text-lg font-semibold text-white"
                 style={{ fontFamily: "var(--rasq-font-display)" }}
               >
                 {card.name}
@@ -878,7 +1022,7 @@ function FutureVisionSection() {
               <ul className="mt-5 space-y-1.5">
                 {card.specs.map((spec) => (
                   <li key={spec} className="flex items-center gap-2 text-xs text-white/30">
-                    <span className="h-1 w-1 rounded-full bg-[#1D9E75]/50" />
+                    <span className="h-1 w-1 rounded-full bg-[var(--rasq-teal)]/50" />
                     {spec}
                   </li>
                 ))}
@@ -891,78 +1035,71 @@ function FutureVisionSection() {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Section 8 — Footer
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 function Footer() {
   return (
-    <footer className="border-t border-[#1E2D42] bg-[#080E14]">
+    <footer className="relative z-10 border-t border-[var(--rasq-border)] bg-transparent">
       <div className="mx-auto max-w-6xl px-6 py-12">
-        <div className="grid grid-cols-1 gap-10 sm:grid-cols-[1fr_auto_auto_auto]">
-          {/* Brand */}
+        <div className="grid grid-cols-1 gap-10 sm:grid-cols-[1.2fr_auto_auto]">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
               <ArcMark size={18} />
               <span
-                className="text-[15px] font-bold tracking-[-0.03em] text-white"
+                className="text-[15px] font-semibold tracking-[-0.02em] text-white"
                 style={{ fontFamily: "var(--rasq-font-display)" }}
               >
                 RASQ
               </span>
             </div>
-            <p className="mt-2.5 text-xs leading-5 text-white/30">
-              Rehabilitation, precisely.
+            <p className="mt-3 max-w-sm text-sm leading-6 text-white/40">
+              Rehabilitation, precisely. Supports therapist review — not a substitute
+              for clinical judgment.
             </p>
-            <p className="mt-4 text-[11px] text-white/20">
-              RASQ by Creative Motion Lab
-            </p>
+            <p className="mt-5 text-xs text-white/25">RASQ by Creative Motion Lab</p>
           </div>
 
-          {/* Platform */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-white/25">Platform</p>
+            <p className="text-xs font-medium uppercase tracking-[0.1em] text-white/30">
+              Access
+            </p>
             <ul className="mt-3 space-y-2.5">
-              {[["Clinician Workspace", "/login?role=clinician"], ["Patient access", "#patients"], ["Admin Workspace", "/login?role=admin"], ["Remote Assessment", "/assessment-access"]].map(([l, h]) => (
-                <li key={h}>
-                  <Link href={h} className="text-xs text-white/35 transition hover:text-white">{l}</Link>
+              {[
+                ["Clinician sign in", "/login?role=clinician"],
+                ["Patient assessment link", "/assessment-access"],
+                ["Admin sign in", "/login?role=admin"],
+              ].map(([label, href]) => (
+                <li key={href}>
+                  <Link href={href} className="text-sm text-white/45 transition hover:text-white">
+                    {label}
+                  </Link>
                 </li>
               ))}
             </ul>
           </div>
 
-          {/* Product */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-white/25">Product</p>
+            <p className="text-xs font-medium uppercase tracking-[0.1em] text-white/30">
+              Governance
+            </p>
             <ul className="mt-3 space-y-2.5">
-              {[["Assessments", "#platform"], ["Treatment Plans", "#platform"], ["Therapy Sessions", "#platform"], ["RASQ Sense", "#"], ["RASQ Motion", "#"]].map(([l, h]) => (
-                <li key={l}>
-                  <a href={h} className="text-xs text-white/35 transition hover:text-white">{l}</a>
+              {[
+                ["Clinical safety", "/clinical-safety"],
+                ["Intended use", "/intended-use"],
+                ["Privacy", "/privacy"],
+                ["Terms", "/terms"],
+              ].map(([label, href]) => (
+                <li key={href}>
+                  <Link href={href} className="text-sm text-white/45 transition hover:text-white">
+                    {label}
+                  </Link>
                 </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Security */}
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-white/25">Trust</p>
-            <ul className="mt-3 space-y-2.5">
-              {["Privacy-conscious", "Tokenised patient access", "Export-ready reports", "Clinical-grade UX"].map((l) => (
-                <li key={l} className="text-xs text-white/35">{l}</li>
               ))}
             </ul>
           </div>
         </div>
 
-        <div className="mt-10 flex flex-col items-start justify-between gap-4 border-t border-[#1E2D42] pt-8 sm:flex-row sm:items-center">
-          <p className="text-[11px] text-white/20">
+        <div className="mt-10 border-t border-[var(--rasq-border)] pt-6">
+          <p className="text-xs text-white/25">
             © 2026 Creative Motion Lab. All rights reserved.
-          </p>
-          <p
-            className="text-[11px] text-white/15"
-            style={{ fontFamily: "var(--rasq-font-mono)" }}
-          >
-            Secure · Privacy-conscious · Built for clinical workflows
           </p>
         </div>
       </div>
@@ -970,23 +1107,23 @@ function Footer() {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Page
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 export default function HomePage() {
   return (
     <div
-      className="min-h-screen bg-[#080E14] text-white"
+      className="relative min-h-screen bg-[var(--rasq-void)] text-white"
       style={{ fontFamily: "var(--rasq-font-body)" }}
     >
+      <PageAmbientLines />
       <Navbar />
-      <HeroSection />
-      <TrustBar />
-      <WorkflowSection />
-      <IntelligenceSection />
-      <DualPathwaySection />
-      <FutureVisionSection />
+      <main className="relative z-10">
+        <HeroSection />
+        <TrustBar />
+        <WorkflowSection />
+        <GuidedRehabilitationSection />
+        <ProgressJourneySection />
+        <AccessSection />
+        <CapabilitiesSection />
+      </main>
       <Footer />
     </div>
   );

@@ -20,7 +20,16 @@ export function tickTargetLifecycleIfActive(
   input: TargetLifecycleTickInput,
 ): TargetLifecycleGatedTickResult {
   if (!shouldTickTargetLifecycle(sessionState)) {
-    return { state, hitEvent: null, ticked: false };
+    // Not active: no attempt starts, and — critically — no attempt expires. Attempt time
+    // only advances while the block is active, so a paused or safety-held session cannot
+    // time an attempt out.
+    return {
+      state,
+      hitEvent: null,
+      attemptStartedEvents: [],
+      attemptTimeoutEvent: null,
+      ticked: false,
+    };
   }
   const result = tickTargetLifecycle(state, input);
   return { ...result, ticked: true };

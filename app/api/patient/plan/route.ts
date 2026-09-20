@@ -41,6 +41,10 @@ import {
   LoadCatalogSessionForPlaybackError,
 } from "../../../lib/rehab-programs/load-catalog-session-for-playback";
 import type { ProgramSession } from "../../../lib/rehab-programs/rehab-program-types";
+import {
+  serializeClinicalPrescribedSideFromDb,
+  type ClinicalPrescribedSide,
+} from "../../../lib/clinical/clinical-prescribed-side";
 
 // Re-export for portal consumers
 export type { PatientLifetimeSummary };
@@ -71,6 +75,11 @@ export type PatientSession = {
    * this route calls toSessionDefinition() or renders it.
    */
   catalogSession?: ProgramSession | null;
+  /**
+   * Therapist-authored unilateral treatment side stored on plan_sessions.
+   * Read-only; sourced from the database, never from patient input.
+   */
+  prescribedSide: ClinicalPrescribedSide | null;
 };
 
 export type PatientPlanData = {
@@ -183,6 +192,7 @@ export function mapPlanSessionRowsToPatientSessions(
     status:        s.status as PatientSession["status"],
     scheduledAt:   s.scheduled_at,
     completedAt:   s.completed_at,
+    prescribedSide: serializeClinicalPrescribedSideFromDb(s.prescribed_side),
     ...(s.source_program_session_id
       ? { catalogSession: catalogSessionById.get(s.id) ?? null }
       : {}),

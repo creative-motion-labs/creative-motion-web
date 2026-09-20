@@ -132,6 +132,7 @@ type RemoteAssessmentListRow = {
   expires_at: string;
   created_at: string;
   submitted_at: string | null;
+  assessment_id: string | null;
 };
 
 /**
@@ -166,7 +167,7 @@ export async function GET(req: NextRequest) {
   const { data: rows, error: queryError } = await adminClient
     .from("remote_assessment_requests")
     .select(
-      "token, patient_id, assessment_type, included_sections, status, expires_at, created_at, submitted_at",
+      "token, patient_id, assessment_type, included_sections, status, expires_at, created_at, submitted_at, assessment_id",
     )
     .eq("patient_id", patientId)
     .eq("provider_id", user.id)
@@ -190,6 +191,7 @@ export async function GET(req: NextRequest) {
     expiresAt: row.expires_at,
     createdAt: row.created_at,
     submittedAt: row.submitted_at,
+    assessmentId: row.assessment_id,
   }));
 
   return NextResponse.json(result);

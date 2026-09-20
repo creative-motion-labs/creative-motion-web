@@ -50,7 +50,6 @@ export function PatientJourneyTimeline({ events, patientName }: PatientJourneyTi
         <div>
           <h2
             className="text-[12px] font-medium text-[#F9FAFB]"
-            style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
           >
             Rehabilitation Journey
           </h2>

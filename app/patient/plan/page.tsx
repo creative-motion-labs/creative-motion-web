@@ -148,7 +148,7 @@ function PatientPlanPageContent() {
 
   if (!plan) {
     return (
-      <main className="min-h-screen bg-[#F4F6F5]" style={{ fontFamily: "var(--font-inter, ui-sans-serif, sans-serif)" }}>
+      <main className="font-ui-en min-h-screen bg-[#F4F6F5]">
         <div className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-center">
           <p className="text-sm font-medium text-amber-900">
             ⚠️ This is a demo page for illustration only. If you are a patient, please use the secure link provided by your clinic.
@@ -185,7 +185,7 @@ function PatientPlanPageContent() {
   const completedSessions = plan.sessions.filter((s) => s.status === "completed").length;
 
   return (
-    <main className="min-h-screen bg-[#F4F6F5]" style={{ fontFamily: "var(--font-inter, ui-sans-serif, sans-serif)" }}>
+    <main className="font-ui-en min-h-screen bg-[#F4F6F5]">
 
       <div className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-center">
         <p className="text-sm font-medium text-amber-900">
@@ -207,7 +207,6 @@ function PatientPlanPageContent() {
               </span>
               <h1
                 className="mt-2 text-xl font-bold text-[#0f2e22]"
-                style={{ fontFamily: "var(--font-geist, var(--font-inter), sans-serif)" }}
               >
                 {plan.phaseName}
               </h1>

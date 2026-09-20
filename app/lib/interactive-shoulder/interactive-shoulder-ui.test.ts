@@ -41,6 +41,13 @@ describe("interactiveShoulderUi", () => {
     assert.ok(!en.interactionPatternsLabel(1, 2).includes("Clinical Accuracy"));
     assert.ok(en.blockCompleteTitle.length > 0);
     assert.ok(ar.blockCompleteTitle.length > 0);
+    assert.ok(en.readyLabel.length > 0);
+    assert.ok(ar.readyLabel.length > 0);
+    assert.ok(en.sessionCompleteTitle.length > 0);
+    assert.ok(ar.sessionCompleteTitle.length > 0);
+    assert.ok(en.goodReachFeedback.length > 0);
+    assert.ok(ar.goodReachFeedback.length > 0);
+    assert.notEqual(en.goodReachFeedback, ar.goodReachFeedback);
     assert.ok(en.devMouseSimulation.includes("Development"));
     assert.ok(ar.devMouseSimulation.includes("محاكاة"));
   });
