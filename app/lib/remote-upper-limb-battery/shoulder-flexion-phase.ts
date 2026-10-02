@@ -1,8 +1,15 @@
 /**
  * Shoulder Flexion — phase and rep FSM.
  * Same threshold-crossing pattern as abduction, distinct elevation metric.
+ * Reps require confirmed rest, then confirmed peak, then confirmed return.
  */
 
+import {
+  createMovementRepConfirmationState,
+  noteUnusableConfirmationFrame,
+  noteUsableRestPeakFrame,
+  resetMovementRepConfirmation,
+} from "@/app/lib/movement-rep-confirmation";
 import type {
   ShoulderFlexionPhase,
   ShoulderFlexionThresholds,
@@ -15,6 +22,9 @@ export type ShoulderFlexionPhaseState = {
   hasReachedPeakThisRep: boolean;
   consecutiveUnusableFrames: number;
   completedPeaksDeg: number[];
+  restStreak: number;
+  peakStreak: number;
+  cycleArmed: boolean;
 };
 
 export function createShoulderFlexionPhaseState(): ShoulderFlexionPhaseState {
@@ -25,6 +35,7 @@ export function createShoulderFlexionPhaseState(): ShoulderFlexionPhaseState {
     hasReachedPeakThisRep: false,
     consecutiveUnusableFrames: 0,
     completedPeaksDeg: [],
+    ...createMovementRepConfirmationState(),
   };
 }
 
@@ -32,9 +43,8 @@ export function resetShoulderFlexionPhaseState(state: ShoulderFlexionPhaseState)
   state.phase = "resting";
   state.repCount = 0;
   state.peakElevationDegrees = null;
-  state.hasReachedPeakThisRep = false;
-  state.consecutiveUnusableFrames = 0;
   state.completedPeaksDeg = [];
+  resetMovementRepConfirmation(state);
 }
 
 function updatePeak(state: ShoulderFlexionPhaseState, elevationDegrees: number): void {
@@ -50,61 +60,47 @@ export function tickShoulderFlexionPhase(
   thresholds: ShoulderFlexionThresholds,
 ): void {
   if (elevationDegrees === null) {
-    state.consecutiveUnusableFrames += 1;
-    if (state.consecutiveUnusableFrames >= thresholds.poseLostUnknownMinTicks) {
+    if (noteUnusableConfirmationFrame(state, thresholds.poseLostUnknownMinTicks)) {
       state.phase = "unknown";
     }
     return;
   }
 
-  state.consecutiveUnusableFrames = 0;
-  const peakLowerThreshold =
-    thresholds.peakMinElevationDegrees - thresholds.peakLowerHysteresisDegrees;
+  const inRest = elevationDegrees <= thresholds.restingMaxElevationDegrees;
+  const inPeak = elevationDegrees >= thresholds.peakMinElevationDegrees;
+  if (!inRest) {
+    if (state.phase === "resting" || state.phase === "unknown") {
+      state.peakElevationDegrees = elevationDegrees;
+    } else {
+      updatePeak(state, elevationDegrees);
+    }
+  }
 
-  switch (state.phase) {
-    case "resting":
-    case "unknown": {
-      if (elevationDegrees > thresholds.restingMaxElevationDegrees) {
-        state.phase = "raising";
-        state.peakElevationDegrees = elevationDegrees;
-        state.hasReachedPeakThisRep = false;
-      } else {
-        state.phase = "resting";
-      }
-      break;
+  const { peakConfirmed, shouldCountRep } = noteUsableRestPeakFrame(state, {
+    inRest,
+    inPeak,
+  });
+
+  if (shouldCountRep) {
+    state.repCount += 1;
+    if (state.peakElevationDegrees !== null) {
+      state.completedPeaksDeg.push(state.peakElevationDegrees);
     }
-    case "raising": {
-      updatePeak(state, elevationDegrees);
-      if (elevationDegrees >= thresholds.peakMinElevationDegrees) {
-        state.phase = "peak_flexion";
-        state.hasReachedPeakThisRep = true;
-      } else if (elevationDegrees <= thresholds.restingMaxElevationDegrees) {
-        state.phase = "resting";
-      }
-      break;
-    }
-    case "peak_flexion": {
-      updatePeak(state, elevationDegrees);
-      if (elevationDegrees < peakLowerThreshold) {
-        state.phase = "lowering";
-      }
-      break;
-    }
-    case "lowering": {
-      updatePeak(state, elevationDegrees);
-      if (elevationDegrees >= thresholds.peakMinElevationDegrees) {
-        state.phase = "peak_flexion";
-      } else if (elevationDegrees <= thresholds.restingMaxElevationDegrees) {
-        state.phase = "resting";
-        if (state.hasReachedPeakThisRep) {
-          state.repCount += 1;
-          if (state.peakElevationDegrees !== null) {
-            state.completedPeaksDeg.push(state.peakElevationDegrees);
-          }
-        }
-        state.hasReachedPeakThisRep = false;
-      }
-      break;
-    }
+  }
+
+  if (inRest) {
+    state.phase = "resting";
+    return;
+  }
+  if (peakConfirmed) {
+    state.phase = "peak_flexion";
+    return;
+  }
+  if (state.hasReachedPeakThisRep) {
+    state.phase = "lowering";
+    return;
+  }
+  if (!inRest) {
+    state.phase = "raising";
   }
 }

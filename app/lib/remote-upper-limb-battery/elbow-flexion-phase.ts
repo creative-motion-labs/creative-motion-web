@@ -1,8 +1,15 @@
 /**
  * Elbow Flexion — phase and rep FSM.
  * Tracks decreasing interior angle for flexion, increasing for return.
+ * Reps require confirmed rest, then confirmed peak, then confirmed return.
  */
 
+import {
+  createMovementRepConfirmationState,
+  noteUnusableConfirmationFrame,
+  noteUsableRestPeakFrame,
+  resetMovementRepConfirmation,
+} from "@/app/lib/movement-rep-confirmation";
 import type { ElbowFlexionPhase, ElbowFlexionThresholds } from "./elbow-flexion-contract";
 
 export type ElbowFlexionPhaseState = {
@@ -12,6 +19,9 @@ export type ElbowFlexionPhaseState = {
   hasReachedPeakThisRep: boolean;
   consecutiveUnusableFrames: number;
   completedPeaksDeg: number[];
+  restStreak: number;
+  peakStreak: number;
+  cycleArmed: boolean;
 };
 
 export function createElbowFlexionPhaseState(): ElbowFlexionPhaseState {
@@ -22,6 +32,7 @@ export function createElbowFlexionPhaseState(): ElbowFlexionPhaseState {
     hasReachedPeakThisRep: false,
     consecutiveUnusableFrames: 0,
     completedPeaksDeg: [],
+    ...createMovementRepConfirmationState(),
   };
 }
 
@@ -29,9 +40,8 @@ export function resetElbowFlexionPhaseState(state: ElbowFlexionPhaseState): void
   state.phase = "resting";
   state.repCount = 0;
   state.peakFlexionAngleDegrees = null;
-  state.hasReachedPeakThisRep = false;
-  state.consecutiveUnusableFrames = 0;
   state.completedPeaksDeg = [];
+  resetMovementRepConfirmation(state);
 }
 
 function updatePeak(state: ElbowFlexionPhaseState, angleDegrees: number): void {
@@ -47,61 +57,47 @@ export function tickElbowFlexionPhase(
   thresholds: ElbowFlexionThresholds,
 ): void {
   if (interiorAngleDegrees === null) {
-    state.consecutiveUnusableFrames += 1;
-    if (state.consecutiveUnusableFrames >= thresholds.poseLostUnknownMinTicks) {
+    if (noteUnusableConfirmationFrame(state, thresholds.poseLostUnknownMinTicks)) {
       state.phase = "unknown";
     }
     return;
   }
 
-  state.consecutiveUnusableFrames = 0;
-  const peakRaiseThreshold =
-    thresholds.peakMaxInteriorAngleDegrees + thresholds.peakRaiseHysteresisDegrees;
+  const inRest = interiorAngleDegrees >= thresholds.restingMinInteriorAngleDegrees;
+  const inPeak = interiorAngleDegrees <= thresholds.peakMaxInteriorAngleDegrees;
+  if (!inRest) {
+    if (state.phase === "resting" || state.phase === "unknown") {
+      state.peakFlexionAngleDegrees = interiorAngleDegrees;
+    } else {
+      updatePeak(state, interiorAngleDegrees);
+    }
+  }
 
-  switch (state.phase) {
-    case "resting":
-    case "unknown": {
-      if (interiorAngleDegrees < thresholds.restingMinInteriorAngleDegrees) {
-        state.phase = "flexing";
-        state.peakFlexionAngleDegrees = interiorAngleDegrees;
-        state.hasReachedPeakThisRep = false;
-      } else {
-        state.phase = "resting";
-      }
-      break;
+  const { peakConfirmed, shouldCountRep } = noteUsableRestPeakFrame(state, {
+    inRest,
+    inPeak,
+  });
+
+  if (shouldCountRep) {
+    state.repCount += 1;
+    if (state.peakFlexionAngleDegrees !== null) {
+      state.completedPeaksDeg.push(state.peakFlexionAngleDegrees);
     }
-    case "flexing": {
-      updatePeak(state, interiorAngleDegrees);
-      if (interiorAngleDegrees <= thresholds.peakMaxInteriorAngleDegrees) {
-        state.phase = "peak_flexion";
-        state.hasReachedPeakThisRep = true;
-      } else if (interiorAngleDegrees >= thresholds.restingMinInteriorAngleDegrees) {
-        state.phase = "resting";
-      }
-      break;
-    }
-    case "peak_flexion": {
-      updatePeak(state, interiorAngleDegrees);
-      if (interiorAngleDegrees > peakRaiseThreshold) {
-        state.phase = "extending";
-      }
-      break;
-    }
-    case "extending": {
-      updatePeak(state, interiorAngleDegrees);
-      if (interiorAngleDegrees <= thresholds.peakMaxInteriorAngleDegrees) {
-        state.phase = "peak_flexion";
-      } else if (interiorAngleDegrees >= thresholds.restingMinInteriorAngleDegrees) {
-        state.phase = "resting";
-        if (state.hasReachedPeakThisRep) {
-          state.repCount += 1;
-          if (state.peakFlexionAngleDegrees !== null) {
-            state.completedPeaksDeg.push(state.peakFlexionAngleDegrees);
-          }
-        }
-        state.hasReachedPeakThisRep = false;
-      }
-      break;
-    }
+  }
+
+  if (inRest) {
+    state.phase = "resting";
+    return;
+  }
+  if (peakConfirmed) {
+    state.phase = "peak_flexion";
+    return;
+  }
+  if (state.hasReachedPeakThisRep) {
+    state.phase = "extending";
+    return;
+  }
+  if (!inRest) {
+    state.phase = "flexing";
   }
 }

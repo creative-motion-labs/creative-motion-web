@@ -50,40 +50,28 @@ export type RemoteUpperLimbBatteryPayload = {
 export type RemoteUpperLimbBatteryTestDefinition = {
   id: RemoteUpperLimbBatteryTestId;
   title: string;
-  instruction: string;
   requiredReps: number;
-  setupInstruction?: string;
 };
 
 export const REMOTE_UPPER_LIMB_BATTERY_TESTS: readonly RemoteUpperLimbBatteryTestDefinition[] = [
   {
     id: "shoulderAbduction",
     title: "Shoulder Abduction",
-    setupInstruction:
-      "Stand facing the camera with your upper body and right arm fully visible.",
-    instruction:
-      "Raise your right arm out to the side as high as comfortably possible, then return your arm to your side.",
     requiredReps: 3,
   },
   {
     id: "shoulderFlexion",
     title: "Shoulder Flexion",
-    instruction:
-      "Keep your right side facing the camera. Raise your right arm forward and upward as high as comfortably possible, then return your arm to your side.",
     requiredReps: 3,
   },
   {
     id: "elbowFlexion",
     title: "Elbow Flexion",
-    instruction:
-      "Keep your side facing the camera. Keep your upper arm near your side. Bend your right elbow, bringing your hand toward your shoulder, then straighten it again.",
     requiredReps: 3,
   },
   {
     id: "functionalReach",
     title: "Functional Reach",
-    instruction:
-      "Keep your right side facing the camera. Raise your right arm forward to shoulder height. Keep your feet still. Reach forward as far as you comfortably can without taking a step, then return to the starting position.",
     requiredReps: 1,
   },
 ];

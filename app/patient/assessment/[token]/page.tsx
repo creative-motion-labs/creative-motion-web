@@ -4,12 +4,16 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RemoteUpperLimbBatterySession } from "@/app/components/patient/RemoteUpperLimbBatterySession";
 import { getInitialPositionInstruction } from "@/app/lib/remote-upper-limb-battery/battery-patient-copy";
-import type { RemoteUpperLimbBatteryPayload, RemoteUpperLimbBatterySide } from "@/app/lib/remote-upper-limb-battery/types";
+import {
+  PRESCRIBED_SIDE_UNAVAILABLE_MESSAGE,
+  type BatteryPrescribedSide,
+} from "@/app/lib/remote-upper-limb-battery/battery-prescribed-side";
+import type { RemoteUpperLimbBatteryPayload } from "@/app/lib/remote-upper-limb-battery/types";
 import { submitRemoteUpperLimbBatteryResult } from "@/app/lib/remote-upper-limb-battery/submit-battery-client";
 
 type RemoteAssessmentContext = {
   assignmentId: string;
-  testedSide: RemoteUpperLimbBatterySide;
+  prescribedSide: BatteryPrescribedSide | null;
   patientFirstName: string | null;
 };
 
@@ -138,9 +142,15 @@ export default function PatientRemoteUlmsAssessmentPage() {
 
         {!submitError ? (
           <>
-            <p className="mt-4 text-sm leading-relaxed text-white/60">
-              {getInitialPositionInstruction(context.testedSide)}
-            </p>
+            {context.prescribedSide ? (
+              <p className="mt-4 text-sm leading-relaxed text-white/60">
+                {getInitialPositionInstruction(context.prescribedSide)}
+              </p>
+            ) : (
+              <p className="mt-4 text-sm leading-relaxed text-rose-200/90">
+                {PRESCRIBED_SIDE_UNAVAILABLE_MESSAGE}
+              </p>
+            )}
 
             <div className="mt-5 rounded-[10px] border border-amber-400/20 bg-amber-400/5 px-4 py-3.5">
               <p className="text-[11px] font-bold uppercase tracking-wider text-amber-200/90">
@@ -152,13 +162,15 @@ export default function PatientRemoteUlmsAssessmentPage() {
               </p>
             </div>
 
-            <RemoteUpperLimbBatterySession
-              key={sessionKey}
-              testedSide={context.testedSide}
-              disabled={submitting}
-              onBatteryComplete={handleBatteryComplete}
-              onCancel={handleCancelAndRestart}
-            />
+            {context.prescribedSide ? (
+              <RemoteUpperLimbBatterySession
+                key={sessionKey}
+                prescribedSide={context.prescribedSide}
+                disabled={submitting}
+                onBatteryComplete={handleBatteryComplete}
+                onCancel={handleCancelAndRestart}
+              />
+            ) : null}
 
             {submitting ? (
               <p className="mt-4 text-sm text-white/55">

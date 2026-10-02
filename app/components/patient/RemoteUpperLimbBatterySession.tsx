@@ -40,16 +40,24 @@ import {
   getTrackingLostStatus,
 } from "@/app/lib/remote-upper-limb-battery/battery-patient-copy";
 import {
-  cancelBatterySpeech,
   resetBatterySpeech,
   resetBatterySpeechForTest,
-  resolveBatteryMovementSpeechCue,
+  resolveBatteryRepCountSpeechCue,
   resolveBatteryTestStartSpeechCue,
   speakBatteryCue,
   speakBatteryTestCompleted,
-  type BatterySpeechCue,
 } from "@/app/lib/remote-upper-limb-battery/battery-speech";
-import type { RemoteUpperLimbBatteryPayload, RemoteUpperLimbBatterySide } from "@/app/lib/remote-upper-limb-battery/types";
+import {
+  preloadBatteryBoothVoiceAssets,
+  resetBoothVoiceGuidance,
+} from "@/app/lib/booth/booth-voice-guidance";
+import { MovementFocusAnatomyCard } from "@/app/components/patient/remote-upper-limb-battery/MovementFocusAnatomyCard";
+import {
+  formatResolvedPrescribedSideDevLabel,
+  resolveBatteryPrescribedSideForPatientDisplay,
+} from "@/app/lib/remote-upper-limb-battery/battery-prescribed-side";
+import type { BatteryPrescribedSide } from "@/app/lib/remote-upper-limb-battery/battery-prescribed-side";
+import type { RemoteUpperLimbBatteryPayload } from "@/app/lib/remote-upper-limb-battery/types";
 import {
   isBatteryProcessorTrackingUsable,
   resolveBatteryTrackingRejection,
@@ -60,7 +68,7 @@ const COUNTDOWN_INTERVAL_MS = 1000;
 const IS_DEV = process.env.NODE_ENV === "development";
 
 type RemoteUpperLimbBatterySessionProps = {
-  testedSide: RemoteUpperLimbBatterySide;
+  prescribedSide: BatteryPrescribedSide;
   disabled?: boolean;
   onBatteryComplete: (payload: RemoteUpperLimbBatteryPayload) => void;
   onCancel?: () => void;
@@ -70,27 +78,13 @@ function isTrackingUsable(snapshot: BatteryCameraSnapshot | null): boolean {
   return isBatteryProcessorTrackingUsable(snapshot?.processor);
 }
 
-function repSpeechCue(completed: number): BatterySpeechCue | null {
-  if (completed === 1) return "rep-one";
-  if (completed === 2) return "rep-two";
-  if (completed === 3) return "rep-three";
-  return null;
-}
-
-function movementSpeechCue(
-  testId: ReturnType<typeof getActiveBatteryTestId>,
-  phase: string,
-  hasReachedPeak = false,
-): BatterySpeechCue | null {
-  return resolveBatteryMovementSpeechCue({ testId, phase, hasReachedPeak });
-}
-
 export function RemoteUpperLimbBatterySession({
-  testedSide,
+  prescribedSide,
   disabled = false,
   onBatteryComplete,
   onCancel,
 }: RemoteUpperLimbBatterySessionProps) {
+  const resolvedPrescribedSide = resolveBatteryPrescribedSideForPatientDisplay(prescribedSide, false);
   const [orchestrator, setOrchestrator] = useState<BatteryOrchestratorState>(
     createBatteryOrchestratorState,
   );
@@ -100,20 +94,35 @@ export function RemoteUpperLimbBatterySession({
   const [assessmentStarted, setAssessmentStarted] = useState(false);
   const [holdStillVisible, setHoldStillVisible] = useState(false);
   const [repositionReady, setRepositionReady] = useState(false);
+  const [voiceGuidanceEnabled, setVoiceGuidanceEnabled] = useState(true);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cameraRef = useRef<BatteryCameraSession | null>(null);
-  const processorRef = useRef<BatteryTestProcessor>(createPreviewPositionProcessor(testedSide));
+  const processorRef = useRef<BatteryTestProcessor>(createPreviewPositionProcessor(resolvedPrescribedSide));
   const stableSinceRef = useRef<number | null>(null);
   const lastProcessorRepRef = useRef(0);
-  const lastMovementCueRef = useRef<string | null>(null);
   const finalizedTestIndexRef = useRef(-1);
   const testProcessorArmedRef = useRef(false);
   const testStartCueSpokenRef = useRef(false);
-  const functionalReachPeakSeenRef = useRef(false);
   const repositionCueSpokenRef = useRef(false);
+  const boothMovementCueSpokenRef = useRef(false);
   const onBatteryCompleteRef = useRef(onBatteryComplete);
+
+  const speakGuidedBatteryCue = useCallback(
+    (
+      cue: Parameters<typeof speakBatteryCue>[0],
+      scope?: string,
+      options?: { allowRepeat?: boolean },
+    ) => {
+      if (!voiceGuidanceEnabled) return;
+      speakBatteryCue(cue, resolvedPrescribedSide, scope, {
+        ...options,
+        muted: !voiceGuidanceEnabled,
+      });
+    },
+    [resolvedPrescribedSide, voiceGuidanceEnabled],
+  );
 
   useEffect(() => {
     onBatteryCompleteRef.current = onBatteryComplete;
@@ -136,7 +145,7 @@ export function RemoteUpperLimbBatterySession({
   const trackingRejection = resolveBatteryTrackingRejection(processorSnapshot);
   const landmarkDebug = processorSnapshot?.landmarkVisibility;
 
-  const overviewLines = useMemo(() => getBatteryOverviewLines(testedSide), [testedSide]);
+  const overviewLines = useMemo(() => getBatteryOverviewLines(resolvedPrescribedSide), [resolvedPrescribedSide]);
 
   const bindProcessor = useCallback((processor: BatteryTestProcessor) => {
     processorRef.current = processor;
@@ -146,40 +155,41 @@ export function RemoteUpperLimbBatterySession({
   }, []);
 
   const bindPreviewProcessor = useCallback(() => {
-    bindProcessor(createPreviewPositionProcessor(testedSide));
-  }, [bindProcessor, testedSide]);
+    bindProcessor(createPreviewPositionProcessor(resolvedPrescribedSide));
+  }, [bindProcessor, resolvedPrescribedSide]);
 
   useEffect(() => {
     const camera = new BatteryCameraSession({
       onSnapshot: (snapshot) => setCameraSnapshot(snapshot),
     });
     cameraRef.current = camera;
+    camera.setMotionGuidanceSide(resolvedPrescribedSide);
     bindPreviewProcessor();
+    preloadBatteryBoothVoiceAssets();
 
     return () => {
       resetBatterySpeech();
+      resetBoothVoiceGuidance();
       camera.stop();
       cameraRef.current = null;
     };
-  }, [bindPreviewProcessor]);
+  }, [bindPreviewProcessor, resolvedPrescribedSide]);
 
   const armActiveTestProcessor = useCallback(
     (testId: ReturnType<typeof getActiveBatteryTestId>) => {
-      const processor = createBatteryTestProcessor(testId, testedSide);
+      const processor = createBatteryTestProcessor(testId, resolvedPrescribedSide);
       processor.reset();
       bindProcessor(processor);
       processor.beginMovementTracking();
       lastProcessorRepRef.current = 0;
-      lastMovementCueRef.current = null;
       testProcessorArmedRef.current = true;
-      testStartCueSpokenRef.current = false;
-      functionalReachPeakSeenRef.current = false;
-      const startCue = resolveBatteryTestStartSpeechCue(testId);
-      speakBatteryCue(startCue, testedSide, `${testId}-start`);
-      lastMovementCueRef.current = `${testId}:${startCue}`;
-      testStartCueSpokenRef.current = true;
+      if (!testStartCueSpokenRef.current) {
+        const startCue = resolveBatteryTestStartSpeechCue(testId);
+        speakGuidedBatteryCue(startCue, `${testId}-start`);
+        testStartCueSpokenRef.current = true;
+      }
     },
-    [bindProcessor, testedSide],
+    [bindProcessor, resolvedPrescribedSide, speakGuidedBatteryCue],
   );
 
   const handleStartCamera = useCallback(async () => {
@@ -203,13 +213,24 @@ export function RemoteUpperLimbBatterySession({
     finalizedTestIndexRef.current = -1;
     testProcessorArmedRef.current = false;
     testStartCueSpokenRef.current = false;
-    functionalReachPeakSeenRef.current = false;
     repositionCueSpokenRef.current = false;
+    boothMovementCueSpokenRef.current = false;
     setRepositionReady(false);
     setOrchestrator(startBatteryAssessment(createBatteryOrchestratorState()));
     bindPreviewProcessor();
-    speakBatteryCue("get-ready", testedSide, "assessment");
-  }, [assessmentStarted, bindPreviewProcessor, disabled, positionReady, testedSide]);
+    boothMovementCueSpokenRef.current = false;
+    if (voiceGuidanceEnabled) {
+      speakGuidedBatteryCue("face-camera-setup", "assessment");
+    }
+  }, [
+    assessmentStarted,
+    bindPreviewProcessor,
+    disabled,
+    positionReady,
+    speakGuidedBatteryCue,
+    resolvedPrescribedSide,
+    voiceGuidanceEnabled,
+  ]);
 
   const handleRetryCurrentTest = useCallback(() => {
     resetBatterySpeechForTest();
@@ -220,7 +241,7 @@ export function RemoteUpperLimbBatterySession({
     lastProcessorRepRef.current = 0;
     testProcessorArmedRef.current = false;
     testStartCueSpokenRef.current = false;
-    functionalReachPeakSeenRef.current = false;
+    boothMovementCueSpokenRef.current = false;
     if (orchestrator.phase === "reposition_side") {
       finalizedTestIndexRef.current = 0;
     } else {
@@ -232,6 +253,7 @@ export function RemoteUpperLimbBatterySession({
 
   const handleCancelAssessment = useCallback(() => {
     resetBatterySpeech();
+    resetBoothVoiceGuidance();
     setAssessmentStarted(false);
     setHoldStillVisible(false);
     setRepositionReady(false);
@@ -240,7 +262,6 @@ export function RemoteUpperLimbBatterySession({
     finalizedTestIndexRef.current = -1;
     testProcessorArmedRef.current = false;
     testStartCueSpokenRef.current = false;
-    functionalReachPeakSeenRef.current = false;
     setOrchestrator(cancelBatteryAssessment(createBatteryOrchestratorState()));
     bindPreviewProcessor();
     onCancel?.();
@@ -257,14 +278,14 @@ export function RemoteUpperLimbBatterySession({
       stableSinceRef.current = null;
       setHoldStillVisible(false);
       setRepositionReady(false);
-      cancelBatterySpeech();
       return;
     }
 
     if (orchestrator.phase === "reposition_side") {
       if (!repositionCueSpokenRef.current) {
         repositionCueSpokenRef.current = true;
-        speakBatteryCue("reposition-side", testedSide, "reposition");
+        speakGuidedBatteryCue("rest-before-next", "reposition-rest");
+        speakGuidedBatteryCue("reposition-side", "reposition");
       }
 
       const now = performance.now();
@@ -280,7 +301,7 @@ export function RemoteUpperLimbBatterySession({
             const next = completeSideReposition(current);
             bindPreviewProcessor();
             testProcessorArmedRef.current = false;
-            resetBatterySpeechForTest();
+            resetBatterySpeechForTest(false);
             stableSinceRef.current = null;
             setHoldStillVisible(false);
             setRepositionReady(false);
@@ -292,15 +313,22 @@ export function RemoteUpperLimbBatterySession({
     }
 
     if (orchestrator.phase === "positioning") {
+      if (activeTestId === "functionalReach" && !repositionCueSpokenRef.current) {
+        repositionCueSpokenRef.current = true;
+        speakGuidedBatteryCue("reposition-side", "functionalReach-orient");
+      }
+
       const now = performance.now();
       if (stableSinceRef.current === null) {
         stableSinceRef.current = now;
         setHoldStillVisible(true);
-        speakBatteryCue("stand-still", testedSide, `position-${activeTestId}`);
+        if (activeTestId !== "functionalReach" && activeTestId !== "shoulderAbduction") {
+          speakGuidedBatteryCue("stand-still", `position-${activeTestId}`);
+        }
       } else if (now - stableSinceRef.current >= POSITION_STABLE_MS) {
         setHoldStillVisible(true);
         setOrchestrator((current) => beginBatteryCountdown(current, 3));
-        speakBatteryCue("countdown-three", testedSide, `countdown-${activeTestId}`);
+        speakGuidedBatteryCue("countdown-three", `countdown-${activeTestId}`);
       }
     }
   }, [
@@ -309,7 +337,7 @@ export function RemoteUpperLimbBatterySession({
     bindPreviewProcessor,
     cameraSnapshot,
     orchestrator.phase,
-    testedSide,
+    resolvedPrescribedSide,
     trackingLost,
   ]);
 
@@ -319,15 +347,15 @@ export function RemoteUpperLimbBatterySession({
       setOrchestrator((current) => {
         if (current.phase !== "countdown" || current.countdown === null) return current;
         if (current.countdown === 3) {
-          speakBatteryCue("countdown-two", testedSide, `countdown-${activeTestId}`);
+          speakGuidedBatteryCue("countdown-two", `countdown-${activeTestId}`);
         } else if (current.countdown === 2) {
-          speakBatteryCue("countdown-one", testedSide, `countdown-${activeTestId}`);
+          speakGuidedBatteryCue("countdown-one", `countdown-${activeTestId}`);
         }
         return tickBatteryCountdown(current);
       });
     }, COUNTDOWN_INTERVAL_MS);
     return () => window.clearTimeout(timer);
-  }, [activeTestId, orchestrator.countdown, orchestrator.phase, testedSide, trackingLost]);
+  }, [activeTestId, orchestrator.countdown, orchestrator.phase, resolvedPrescribedSide, trackingLost]);
 
   useEffect(() => {
     if (!assessmentStarted) return;
@@ -335,6 +363,27 @@ export function RemoteUpperLimbBatterySession({
     if (testProcessorArmedRef.current) return;
     armActiveTestProcessor(activeTestId);
   }, [activeTestId, armActiveTestProcessor, assessmentStarted, orchestrator.phase]);
+
+  useEffect(() => {
+    if (!assessmentStarted || !voiceGuidanceEnabled || !trackingLost) return;
+    speakGuidedBatteryCue("tracking-lost", "tracking", { allowRepeat: true });
+  }, [assessmentStarted, speakGuidedBatteryCue, trackingLost, voiceGuidanceEnabled]);
+
+  useEffect(() => {
+    if (!assessmentStarted || !voiceGuidanceEnabled) return;
+    if (orchestrator.phase !== "test_active" || trackingLost) return;
+    if (!isTrackingUsable(cameraSnapshot)) return;
+    if (boothMovementCueSpokenRef.current) return;
+    boothMovementCueSpokenRef.current = true;
+    speakGuidedBatteryCue("movement-smooth-comfort", `battery-${activeTestId}`);
+  }, [
+    activeTestId,
+    assessmentStarted,
+    cameraSnapshot,
+    orchestrator.phase,
+    trackingLost,
+    voiceGuidanceEnabled,
+  ]);
 
   useEffect(() => {
     if (orchestrator.phase !== "test_active" || trackingLost) return;
@@ -345,28 +394,29 @@ export function RemoteUpperLimbBatterySession({
     if (processor.repCount > lastProcessorRepRef.current) {
       const completed = processor.repCount;
       lastProcessorRepRef.current = completed;
-      const cue = repSpeechCue(completed);
-      if (cue) speakBatteryCue(cue, testedSide, `${activeTestId}-rep`);
+      if (IS_DEV) {
+        console.info("[battery-rep]", {
+          testId: activeTestId,
+          orchestratorPhase: orchestrator.phase,
+          processorPhase: processor.movementPhase,
+          currentAngleDeg: processor.currentAngleDeg,
+          repCount: completed,
+          reason: processor.lastRepAcceptReason,
+          trackingEnabled: processor.movementTrackingEnabled,
+        });
+      }
+      const cue = resolveBatteryRepCountSpeechCue(completed, requiredReps);
+      if (cue) speakGuidedBatteryCue(cue, `${activeTestId}-rep-${completed}`);
       setOrchestrator((current) => recordBatteryRepCompleted(current, processor.lastRepPeak));
     }
-
-    if (processor.movementPhase === "peak") {
-      functionalReachPeakSeenRef.current = true;
-    }
-
-    const movementCue = movementSpeechCue(
-      activeTestId,
-      processor.movementPhase,
-      functionalReachPeakSeenRef.current,
-    );
-    if (movementCue) {
-      const key = `${activeTestId}:${movementCue}`;
-      if (lastMovementCueRef.current !== key) {
-        lastMovementCueRef.current = key;
-        speakBatteryCue(movementCue, testedSide, key, { allowRepeat: true });
-      }
-    }
-  }, [activeTestId, cameraSnapshot?.processor, orchestrator.phase, testedSide, trackingLost]);
+  }, [
+    activeTestId,
+    cameraSnapshot?.processor,
+    orchestrator.phase,
+    requiredReps,
+    resolvedPrescribedSide,
+    trackingLost,
+  ]);
 
   useEffect(() => {
     if (orchestrator.phase !== "test_completed") return;
@@ -392,7 +442,7 @@ export function RemoteUpperLimbBatterySession({
             trackingQuality,
           });
 
-    speakBatteryTestCompleted(activeTestId, testedSide);
+    speakBatteryTestCompleted(activeTestId, resolvedPrescribedSide);
 
     setOrchestrator((current) => {
       const next = completeBatteryTest(current, result);
@@ -400,7 +450,6 @@ export function RemoteUpperLimbBatterySession({
         bindPreviewProcessor();
         testProcessorArmedRef.current = false;
         testStartCueSpokenRef.current = false;
-        functionalReachPeakSeenRef.current = false;
         repositionCueSpokenRef.current = false;
         setRepositionReady(false);
         resetBatterySpeechForTest(false);
@@ -417,36 +466,48 @@ export function RemoteUpperLimbBatterySession({
     orchestrator.repsCompleted,
     orchestrator.testIndex,
     requiredReps,
-    testedSide,
+    resolvedPrescribedSide,
   ]);
 
   useEffect(() => {
     if (orchestrator.phase !== "assessment_completed" || orchestrator.submitAttempted) return;
     const payload = buildBatteryPayload({
-      testedSide,
+      testedSide: resolvedPrescribedSide,
       results: orchestrator.results,
     });
-    speakBatteryCue("assessment-completed", testedSide, "assessment-done");
+    if (voiceGuidanceEnabled) {
+      speakGuidedBatteryCue("assessment-completed", "assessment-done");
+    }
     setOrchestrator((current) => markBatterySubmitting(current));
     onBatteryCompleteRef.current(payload);
-  }, [orchestrator.phase, orchestrator.results, orchestrator.submitAttempted, testedSide]);
+  }, [
+    orchestrator.phase,
+    orchestrator.results,
+    orchestrator.submitAttempted,
+    speakGuidedBatteryCue,
+    resolvedPrescribedSide,
+    voiceGuidanceEnabled,
+  ]);
 
   const statusLine = useMemo(() => {
     if (!assessmentStarted) {
-      return getInitialPositionInstruction(testedSide);
+      return getInitialPositionInstruction(resolvedPrescribedSide);
     }
     if (trackingLost) {
-      return getTrackingLostStatus(testedSide);
+      return getTrackingLostStatus(resolvedPrescribedSide);
     }
     if (orchestrator.phase === "reposition_side") {
       if (repositionReady) return "Position detected";
-      return getRepositionInstruction(testedSide);
+      return getRepositionInstruction(resolvedPrescribedSide);
+    }
+    if (orchestrator.phase === "positioning" && activeTestId === "functionalReach") {
+      return getRepositionInstruction(resolvedPrescribedSide);
     }
     if (holdStillVisible && orchestrator.phase === "positioning") {
       return getHoldStillStatus();
     }
     if (orchestrator.phase === "positioning") {
-      const setup = getTestSetupInstruction(activeTestId, testedSide);
+      const setup = getTestSetupInstruction(activeTestId, resolvedPrescribedSide);
       if (setup && activeOrientation === "face_camera") return setup;
     }
     if (orchestrator.phase === "countdown" && orchestrator.countdown !== null) {
@@ -457,12 +518,12 @@ export function RemoteUpperLimbBatterySession({
       orchestrator.phase === "test_completed" ||
       orchestrator.phase === "positioning"
     ) {
-      return getMovementInstruction(activeTestId, testedSide);
+      return getMovementInstruction(activeTestId, resolvedPrescribedSide);
     }
     if (orchestrator.phase === "assessment_completed" || orchestrator.phase === "submitting") {
       return "Assessment completed.";
     }
-    return getPositioningStatus(testedSide, positionReady);
+    return getPositioningStatus(resolvedPrescribedSide, positionReady);
   }, [
     activeOrientation,
     activeTestId,
@@ -472,7 +533,7 @@ export function RemoteUpperLimbBatterySession({
     orchestrator.phase,
     positionReady,
     repositionReady,
-    testedSide,
+    resolvedPrescribedSide,
     trackingLost,
   ]);
 
@@ -497,6 +558,7 @@ export function RemoteUpperLimbBatterySession({
       activeTestId,
       repsForLabel,
       requiredReps,
+      resolvedPrescribedSide,
     );
   }, [
     activeTestId,
@@ -506,6 +568,7 @@ export function RemoteUpperLimbBatterySession({
     orchestrator.testIndex,
     repositionReady,
     requiredReps,
+    resolvedPrescribedSide,
   ]);
 
   const showRecoveryControls =
@@ -515,6 +578,11 @@ export function RemoteUpperLimbBatterySession({
 
   return (
     <section className="mt-6">
+      {IS_DEV ? (
+        <p className="mb-3 text-xs font-medium text-white/40">
+          Resolved prescribed side: {formatResolvedPrescribedSideDevLabel(resolvedPrescribedSide)}
+        </p>
+      ) : null}
       {!assessmentStarted ? (
         <div className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
           <h2 className="text-lg font-bold text-white">Remote Upper-Limb Assessment</h2>
@@ -527,19 +595,35 @@ export function RemoteUpperLimbBatterySession({
         </div>
       ) : null}
 
-      <div className="mt-5 overflow-hidden rounded-[10px] border border-[#1E2D42] bg-black">
-        <div className="relative mx-auto aspect-[4/3] w-full max-w-xl bg-black">
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            className="absolute inset-0 h-full w-full object-cover opacity-0"
-          />
-          <canvas
-            ref={canvasRef}
-            className="absolute inset-0 h-full w-full object-cover"
-          />
+      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="overflow-hidden rounded-[10px] border border-[#1E2D42] bg-black">
+          <div className="relative mx-auto aspect-[4/3] w-full max-w-xl bg-black">
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              className="absolute inset-0 h-full w-full object-cover opacity-0"
+            />
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            {previewActive &&
+            assessmentStarted &&
+            !trackingLost &&
+            isTrackingUsable(cameraSnapshot) ? (
+              <span
+                className="absolute left-3 top-3 rounded-[5px] bg-black/55 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#5DCAA5]"
+              >
+                Motion guidance active
+              </span>
+            ) : null}
+          </div>
         </div>
+        <MovementFocusAnatomyCard
+          activeTestId={assessmentStarted ? activeTestId : null}
+          prescribedSide={resolvedPrescribedSide}
+        />
       </div>
 
       {cameraError ? (
@@ -561,8 +645,18 @@ export function RemoteUpperLimbBatterySession({
       {IS_DEV && assessmentStarted && processorSnapshot ? (
         <div className="mt-3 rounded-[7px] border border-dashed border-white/15 bg-black/40 p-3 font-mono text-[10px] leading-relaxed text-white/45">
           <p>dev tracking — not shown to patients in production</p>
-          <p>testedSide: {testedSide}</p>
-          <p>phase: {orchestrator.phase}</p>
+          <p>resolvedPrescribedSide: {resolvedPrescribedSide}</p>
+          <p>orchestrator phase: {orchestrator.phase}</p>
+          <p>processor phase: {processorSnapshot.movementPhase}</p>
+          <p>
+            current angle:{" "}
+            {processorSnapshot.currentAngleDeg === null
+              ? "n/a"
+              : `${processorSnapshot.currentAngleDeg.toFixed(1)}°`}
+          </p>
+          <p>repCount: {processorSnapshot.repCount}</p>
+          <p>tracking armed: {String(processorSnapshot.movementTrackingEnabled)}</p>
+          <p>rep accept reason: {processorSnapshot.lastRepAcceptReason ?? "none yet"}</p>
           <p>trackingReady: {String(processorSnapshot.trackingReady)}</p>
           <p>trackingQuality: {processorSnapshot.trackingQuality}</p>
           <p>rejection: {trackingRejection}</p>
@@ -583,7 +677,19 @@ export function RemoteUpperLimbBatterySession({
         </div>
       ) : null}
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-white/70">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-[#1E2D42] bg-[#0B1220] accent-[#1D9E75]"
+            checked={voiceGuidanceEnabled}
+            onChange={(event) => setVoiceGuidanceEnabled(event.target.checked)}
+          />
+          Voice guidance
+        </label>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
         {!previewActive ? (
           <button
             type="button"

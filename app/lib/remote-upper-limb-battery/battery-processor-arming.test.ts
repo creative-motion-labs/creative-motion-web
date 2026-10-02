@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PoseLandmark } from "@/app/lib/cv/pose-landmark-overlay";
+import { MOVEMENT_REP_CONFIRM_MIN_TICKS } from "@/app/lib/movement-rep-confirmation";
 import {
   createElbowFlexionProcessor,
   createShoulderFlexionProcessor,
@@ -42,11 +43,15 @@ function ctx(frameIndex: number) {
   return { frameIndex, capturedAtMs: frameIndex * 33 };
 }
 
+function holdMode<T>(mode: T, ticks = MOVEMENT_REP_CONFIRM_MIN_TICKS): T[] {
+  return Array.from({ length: ticks }, () => mode);
+}
+
 function feedFlexionCycle(
   processor: ReturnType<typeof createShoulderFlexionProcessor>,
   startFrame: number,
 ) {
-  const sequence: Array<"rest" | "peak"> = ["rest", "rest", "peak", "peak", "peak", "rest", "rest"];
+  const sequence: Array<"rest" | "peak"> = [...holdMode("rest"), ...holdMode("peak"), ...holdMode("rest")];
   let snapshot = processor.processFrame(rightFlexionLandmarks("rest"), ctx(startFrame));
   for (const [index, mode] of sequence.entries()) {
     snapshot = processor.processFrame(rightFlexionLandmarks(mode), ctx(startFrame + index + 1));
@@ -59,13 +64,9 @@ function feedElbowCycle(
   startFrame: number,
 ) {
   const sequence: Array<"extended" | "flexed"> = [
-    "extended",
-    "extended",
-    "flexed",
-    "flexed",
-    "flexed",
-    "extended",
-    "extended",
+    ...holdMode("extended"),
+    ...holdMode("flexed"),
+    ...holdMode("extended"),
   ];
   let snapshot = processor.processFrame(rightElbowLandmarks("extended"), ctx(startFrame));
   for (const [index, mode] of sequence.entries()) {

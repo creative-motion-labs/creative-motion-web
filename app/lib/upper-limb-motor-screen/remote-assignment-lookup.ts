@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UpperLimbMotorScreenAssignmentsRow } from "@/app/lib/supabase/database.types";
 import { hashRemoteUlmsToken } from "./remote-assessment-token";
+import { readBatteryPrescribedSideFromUlmsAssignment } from "@/app/lib/remote-upper-limb-battery/battery-prescribed-side";
 import type { UpperLimbMotorScreenAssignment, UpperLimbSide } from "./types";
 
 export type RemoteUlmsAssignmentRow = Pick<
@@ -12,11 +13,11 @@ export type RemoteUlmsAssignmentLookupResult =
   | { ok: true; assignment: RemoteUlmsAssignmentRow }
   | { ok: false; httpStatus: 404 | 410 | 409; message: string };
 
-export function readRemoteUlmsTestedSide(
+/** Therapist-prescribed limb for remote battery — null when missing or invalid (no default). */
+export function readRemoteUlmsPrescribedSide(
   assignmentPayload: UpperLimbMotorScreenAssignment,
-): UpperLimbSide {
-  const side = assignmentPayload.taskAssignmentGroups?.[0]?.testedSide;
-  return side === "left" ? "left" : "right";
+): UpperLimbSide | null {
+  return readBatteryPrescribedSideFromUlmsAssignment(assignmentPayload);
 }
 
 export async function fetchRemoteUlmsAssignmentByToken(

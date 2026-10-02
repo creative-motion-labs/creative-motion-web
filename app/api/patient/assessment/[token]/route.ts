@@ -7,7 +7,7 @@ import {
 } from "@/app/lib/rate-limit";
 import {
   fetchRemoteUlmsAssignmentByToken,
-  readRemoteUlmsTestedSide,
+  readRemoteUlmsPrescribedSide,
 } from "@/app/lib/upper-limb-motor-screen/remote-assignment-lookup";
 import type { UpperLimbMotorScreenAssignment } from "@/app/lib/upper-limb-motor-screen/types";
 import { serviceUnavailableResponse } from "@/app/lib/api/safe-errors";
@@ -57,7 +57,7 @@ export async function GET(
 
   return NextResponse.json({
     assignmentId: lookup.assignment.id,
-    testedSide: readRemoteUlmsTestedSide(assignmentPayload),
+    prescribedSide: readRemoteUlmsPrescribedSide(assignmentPayload),
     status: lookup.assignment.status,
     expiresAt: lookup.assignment.token_expires_at,
     assessmentType: "upper_limb_motor_screen",

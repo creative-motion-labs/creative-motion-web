@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   getBatteryTestOrientation,
+  getFaceCameraSetupInstruction,
+  getSideRepositionInstruction,
   isSideViewTestId,
   requiresSideRepositionAfterTestIndex,
 } from "./battery-orientation";
@@ -120,5 +122,20 @@ describe("battery orientation flow", () => {
     assert.equal(requiresSideRepositionAfterTestIndex(0), true);
     assert.equal(requiresSideRepositionAfterTestIndex(1), false);
     assert.equal(requiresSideRepositionAfterTestIndex(2), false);
+  });
+
+  it("uses arm-in-view and side-specific orientation copy", () => {
+    assert.equal(
+      getFaceCameraSetupInstruction("right", "en"),
+      "Place your arm in view of the camera.",
+    );
+    assert.equal(
+      getSideRepositionInstruction("right", "en"),
+      "Turn sideways so your right side faces the camera.",
+    );
+    assert.equal(
+      getSideRepositionInstruction("left", "ar"),
+      "استدر جانبياً، واجعل جانبك الأيسر باتجاه الكاميرا.",
+    );
   });
 });

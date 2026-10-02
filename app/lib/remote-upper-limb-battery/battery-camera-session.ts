@@ -1,8 +1,9 @@
 "use client";
 
 import { DEFAULT_STS_CONFIG } from "@/app/lib/cv/bio-0-contracts";
-import { drawPoseLandmarkDots } from "@/app/lib/cv/pose-landmark-overlay";
 import type { PoseLandmark } from "@/app/lib/cv/pose-landmark-overlay";
+import { drawUpperLimbArmMotionGuidanceOverlay } from "@/app/lib/cv/upper-limb-arm-pose-overlay";
+import type { RemoteUpperLimbBatterySide } from "./types";
 import {
   PATIENT_CAMERA_NO_FRAMES_ERROR,
   releaseMediaStream,
@@ -19,6 +20,7 @@ import {
 } from "@/app/lib/cv/sit-to-stand-detector";
 import type { InputAcquisitionContext } from "@/app/lib/input-acquisition";
 import type { BatteryFrameProcessorSnapshot } from "./battery-frame-processors";
+import { withBatteryMirroredCameraPreviewDraw } from "./battery-camera-preview-mirror";
 
 type PoseLandmarkerInstance = {
   detectForVideo: (
@@ -60,9 +62,14 @@ export class BatteryCameraSession {
   private lastProcessedVideoTimeS: number | null = null;
   private videoEl: HTMLVideoElement | null = null;
   private canvasEl: HTMLCanvasElement | null = null;
+  private motionGuidanceSide: RemoteUpperLimbBatterySide | null = null;
 
   constructor(callbacks: BatteryCameraCallbacks) {
     this.callbacks = callbacks;
+  }
+
+  setMotionGuidanceSide(side: RemoteUpperLimbBatterySide | null): void {
+    this.motionGuidanceSide = side;
   }
 
   setFrameProcessor(
@@ -211,12 +218,23 @@ export class BatteryCameraSession {
       const nowMs = performance.now();
       const result = this.poseLandmarker.detectForVideo(video, this.detectTimestamp);
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
       const landmarks = result.landmarks?.[0] as PoseLandmark[] | undefined;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      withBatteryMirroredCameraPreviewDraw(ctx, canvas.width, () => {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (landmarks?.length && this.motionGuidanceSide) {
+          drawUpperLimbArmMotionGuidanceOverlay(
+            ctx,
+            landmarks,
+            canvas.width,
+            canvas.height,
+            this.motionGuidanceSide,
+          );
+        }
+      });
+
       if (landmarks?.length) {
-        drawPoseLandmarkDots(ctx, landmarks, canvas.width, canvas.height, "ready");
         if (this.processFrame) {
           const context: InputAcquisitionContext = {
             frameIndex: this.frameIndex,
