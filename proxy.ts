@@ -33,6 +33,8 @@ const PUBLIC_PREFIXES = [
   "/favicon.ico",
   "/fonts",
   "/images",
+  // Remote Upper-Limb Battery + booth prerecorded clips (public/); token patients have no session.
+  "/audio/booth/",
 ];
 
 const PUBLIC_PATHS = new Set([

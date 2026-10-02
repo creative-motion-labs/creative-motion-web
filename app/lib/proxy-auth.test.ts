@@ -141,4 +141,10 @@ describe("proxy.ts wiring", () => {
     assert.doesNotMatch(proxySource, /cmAuthed/);
     assert.match(proxySource, /resolveProxyAuthed/);
   });
+
+  it("exposes only booth audio under public/audio, not the whole /audio tree", () => {
+    assert.match(proxySource, /"\/audio\/booth\/"/);
+    assert.doesNotMatch(proxySource, /"\/audio\/",/);
+    assert.doesNotMatch(proxySource, /"\/audio"[,]/);
+  });
 });

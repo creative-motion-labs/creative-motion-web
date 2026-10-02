@@ -3,134 +3,109 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { resetBoothVoiceAudioPlaybackForTests } from "@/app/lib/booth/booth-voice-audio";
+import { resetBoothVoiceGuidance } from "@/app/lib/booth/booth-voice-guidance";
 import {
-  cancelBatterySpeech,
   resetBatterySpeech,
   resolveBatteryMovementSpeechCue,
+  resolveBatteryRepCountSpeechCue,
+  resolveBatterySpeechText,
   resolveBatteryTestStartSpeechCue,
+  setBatterySpeechLang,
   speakBatteryCue,
 } from "./battery-speech";
+import { resolveBatteryBoothVoiceCue } from "./battery-booth-voice-map";
 
-describe("battery speech", () => {
-  it("does not throw when speech synthesis is unavailable", () => {
-    resetBatterySpeech();
-    cancelBatterySpeech();
-    speakBatteryCue("stand-still", "right", "test");
-    speakBatteryCue("stand-still", "right", "test");
-  });
+function withFakeBoothAudio(run: (playedSrcs: string[]) => void): void {
+  const playedSrcs: string[] = [];
+  const previousWindow = (globalThis as { window?: unknown }).window;
+  const previousAudio = (globalThis as { Audio?: unknown }).Audio;
 
-  it("does not announce functional reach return until a peak was detected", () => {
-    assert.equal(
-      resolveBatteryMovementSpeechCue({
-        testId: "functionalReach",
-        phase: "rest",
-        hasReachedPeak: false,
-      }),
-      null,
-    );
-    assert.equal(
-      resolveBatteryMovementSpeechCue({
-        testId: "functionalReach",
-        phase: "peak",
-        hasReachedPeak: false,
-      }),
-      "functional-reach",
-    );
-    assert.equal(
-      resolveBatteryMovementSpeechCue({
-        testId: "functionalReach",
-        phase: "rest",
-        hasReachedPeak: true,
-      }),
-      "functional-return",
-    );
-  });
-
-  it("maps abduction movement cues from detected phase, not elapsed time", () => {
-    assert.equal(
-      resolveBatteryMovementSpeechCue({ testId: "shoulderAbduction", phase: "resting" }),
-      null,
-    );
-    assert.equal(
-      resolveBatteryMovementSpeechCue({ testId: "shoulderAbduction", phase: "raising" }),
-      "abduction-raise",
-    );
-    assert.equal(
-      resolveBatteryMovementSpeechCue({ testId: "shoulderAbduction", phase: "lowering" }),
-      "abduction-return",
-    );
-  });
-
-  it("starts each test with the current movement instruction", () => {
-    assert.equal(resolveBatteryTestStartSpeechCue("shoulderAbduction"), "abduction-raise");
-    assert.equal(resolveBatteryTestStartSpeechCue("shoulderFlexion"), "flexion-raise");
-    assert.equal(resolveBatteryTestStartSpeechCue("elbowFlexion"), "elbow-bend");
-    assert.equal(resolveBatteryTestStartSpeechCue("functionalReach"), "functional-reach");
-  });
-
-  it("maps elbow and flexion cues from detected phase", () => {
-    assert.equal(
-      resolveBatteryMovementSpeechCue({ testId: "elbowFlexion", phase: "flexing" }),
-      "elbow-bend",
-    );
-    assert.equal(
-      resolveBatteryMovementSpeechCue({ testId: "elbowFlexion", phase: "extending" }),
-      "elbow-straighten",
-    );
-    assert.equal(
-      resolveBatteryMovementSpeechCue({ testId: "elbowFlexion", phase: "resting" }),
-      null,
-    );
-    assert.equal(
-      resolveBatteryMovementSpeechCue({ testId: "shoulderFlexion", phase: "raising" }),
-      "flexion-raise",
-    );
-  });
-
-  it("cancels queued speech before speaking a new cue", () => {
-    const cancelCalls: number[] = [];
-    const speakCalls: string[] = [];
-    const previousWindow = (globalThis as { window?: unknown }).window;
-    const previousUtterance = (globalThis as { SpeechSynthesisUtterance?: unknown }).SpeechSynthesisUtterance;
-
-    class FakeUtterance {
-      text: string;
-      rate = 1;
-      constructor(text: string) {
-        this.text = text;
-      }
+  class FakeAudio {
+    src = "";
+    preload = "";
+    currentTime = 0;
+    constructor(src?: string) {
+      if (src) this.src = src;
     }
+    play() {
+      playedSrcs.push(this.src);
+      return Promise.resolve();
+    }
+    pause() {}
+  }
 
-    (globalThis as { SpeechSynthesisUtterance: unknown }).SpeechSynthesisUtterance = FakeUtterance;
-    (globalThis as { window: unknown }).window = {
-      speechSynthesis: {
-        cancel() {
-          cancelCalls.push(1);
-        },
-        speak(utterance: { text?: string }) {
-          speakCalls.push(utterance.text ?? "");
-        },
-      },
-    };
+  (globalThis as { Audio: unknown }).Audio = FakeAudio;
+  (globalThis as { window: unknown }).window = {};
 
-    try {
+  try {
+    run(playedSrcs);
+  } finally {
+    if (previousAudio === undefined) {
+      delete (globalThis as { Audio?: unknown }).Audio;
+    } else {
+      (globalThis as { Audio: unknown }).Audio = previousAudio;
+    }
+    if (previousWindow === undefined) {
+      delete (globalThis as { window?: unknown }).window;
+    } else {
+      (globalThis as { window: unknown }).window = previousWindow;
+    }
+    resetBoothVoiceAudioPlaybackForTests();
+  }
+}
+
+describe("battery speech (booth audio)", () => {
+  it("does not replay movement instructions from later phases", () => {
+    assert.equal(
+      resolveBatteryMovementSpeechCue({
+        testId: "functionalReach",
+        phase: "rest",
+        hasReachedPeak: false,
+      }),
+      null,
+    );
+  });
+
+  it("maps prescribed-side cues to booth assets", () => {
+    setBatterySpeechLang("en");
+    assert.equal(
+      resolveBatteryBoothVoiceCue("abduction-raise", "left", "en"),
+      "battery-abduction-raise-left-en",
+    );
+    assert.equal(
+      resolveBatterySpeechText("abduction-raise", "left"),
+      "Raise your left arm slowly out to the side.",
+    );
+  });
+
+  it("plays booth MP3 assets instead of speech synthesis", () => {
+    setBatterySpeechLang("en");
+    withFakeBoothAudio((played) => {
+      resetBoothVoiceGuidance();
       resetBatterySpeech();
-      speakBatteryCue("abduction-raise", "right", "test-a");
-      speakBatteryCue("abduction-return", "right", "test-a", { allowRepeat: true });
-      assert.equal(cancelCalls.length >= 2, true);
-      assert.equal(speakCalls.includes("Raise your right arm out to the side."), true);
-      assert.equal(speakCalls.includes("Return your arm to your side."), true);
-    } finally {
-      if (previousUtterance === undefined) {
-        delete (globalThis as { SpeechSynthesisUtterance?: unknown }).SpeechSynthesisUtterance;
-      } else {
-        (globalThis as { SpeechSynthesisUtterance: unknown }).SpeechSynthesisUtterance = previousUtterance;
-      }
-      if (previousWindow === undefined) {
-        delete (globalThis as { window?: unknown }).window;
-      } else {
-        (globalThis as { window: unknown }).window = previousWindow;
-      }
-    }
+      speakBatteryCue("face-camera-setup", "right", "assessment");
+      assert.equal(played.length, 1);
+      assert.match(played[0] ?? "", /battery-arm-in-view-en\.mp3\?v=/);
+      speakBatteryCue("face-camera-setup", "right", "assessment");
+      assert.equal(played.length, 1);
+    });
+  });
+
+  it("resolves rep count cues", () => {
+    assert.equal(resolveBatteryRepCountSpeechCue(1, 3), "rep-one");
+    assert.equal(resolveBatteryTestStartSpeechCue("shoulderAbduction"), "abduction-raise");
+  });
+
+  it("allows tracking-lost repeat via booth options", () => {
+    setBatterySpeechLang("en");
+    withFakeBoothAudio((played) => {
+      resetBoothVoiceGuidance();
+      resetBatterySpeech();
+      speakBatteryCue("tracking-lost", "right", "tracking", { allowRepeat: true });
+      speakBatteryCue("tracking-lost", "right", "tracking", { allowRepeat: true });
+      assert.ok(played.length >= 1);
+      assert.match(played[0] ?? "", /battery-tracking-lost-en\.mp3\?v=/);
+    });
   });
 });

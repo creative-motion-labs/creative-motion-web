@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PoseLandmark } from "@/app/lib/cv/pose-landmark-overlay";
+import { MOVEMENT_REP_CONFIRM_MIN_TICKS } from "@/app/lib/movement-rep-confirmation";
 import { createShoulderAbductionProcessor } from "./battery-frame-processors";
 
 const R_SHOULDER = 12;
@@ -37,10 +38,18 @@ function ctx(frameIndex: number) {
   return { frameIndex, capturedAtMs: frameIndex * 33 };
 }
 
+function holdAngle(angle: 0 | 90 | 180, ticks = MOVEMENT_REP_CONFIRM_MIN_TICKS): Array<0 | 90 | 180> {
+  return Array.from({ length: ticks }, () => angle);
+}
+
+function confirmedCycle(): Array<0 | 90 | 180> {
+  return [...holdAngle(0), ...holdAngle(180), ...holdAngle(0)];
+}
+
 describe("shoulder abduction battery processor", () => {
   it("does not accumulate reps before movement tracking is armed", () => {
     const processor = createShoulderAbductionProcessor("right");
-    const cycle: (0 | 90 | 180)[] = [0, 0, 90, 180, 180, 90, 0, 0];
+    const cycle = confirmedCycle();
     for (const [index, angle] of cycle.entries()) {
       const snapshot = processor.processFrame(withRightAbductionAngle(angle), ctx(index));
       assert.equal(snapshot.repCount, 0);
@@ -51,7 +60,7 @@ describe("shoulder abduction battery processor", () => {
   it("counts exactly three valid right-side reps", () => {
     const processor = createShoulderAbductionProcessor("right");
     processor.beginMovementTracking();
-    const cycle: (0 | 90 | 180)[] = [0, 0, 90, 180, 180, 90, 0, 0];
+    const cycle = confirmedCycle();
     let lastRepCount = 0;
 
     for (let rep = 0; rep < 3; rep += 1) {
@@ -64,5 +73,6 @@ describe("shoulder abduction battery processor", () => {
     assert.equal(lastRepCount, 3);
     const finalSnapshot = processor.processFrame(withRightAbductionAngle(0), ctx(999));
     assert.equal(finalSnapshot.completedPeaksDeg.length, 3);
+    assert.match(finalSnapshot.lastRepAcceptReason ?? "", /rest→peak→return/);
   });
 });

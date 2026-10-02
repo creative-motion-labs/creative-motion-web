@@ -1,85 +1,116 @@
 /**
- * Remote battery speech cues — one utterance per current state.
- * Previous speech is cancelled so cues cannot run ahead of the live phase.
+ * Remote battery voice — uses the same prerecorded booth HTMLAudio pipeline as Interactive Shoulder.
  */
 
-import { formatBatteryArmLabel, getBatteryTestDefinition, type RemoteUpperLimbBatterySide, type RemoteUpperLimbBatteryTestId } from "./types";
-import { getSideRepositionInstruction } from "./battery-orientation";
+import {
+  resetBoothVoiceGuidance,
+  speakBoothVoiceCue,
+  stopBoothVoicePlayback,
+} from "@/app/lib/booth/booth-voice-guidance";
+import { isRemoteBatteryBoothVoiceCue } from "@/app/lib/booth/booth-voice-manifest";
+import { getPrerecordedVoiceAudioProviderId } from "@/app/lib/booth/booth-voice-provider";
+import { resolveBatteryBoothVoiceCue } from "./battery-booth-voice-map";
+import {
+  getBatteryArmInViewCopy,
+  getBatteryAssessmentCompleteCopy,
+  getBatteryDoneCopy,
+  getBatteryMovementSmoothCopy,
+  getBatteryRepCountCopy,
+  getBatteryRestBeforeNextCopy,
+  getBatteryReturnToStartCopy,
+  getBatterySideRepositionCopy,
+  getBatteryStandStillCopy,
+  getBatteryTestStartVoiceCopy,
+  getBatteryTrackingLostCopy,
+  type BatteryVoiceLang,
+} from "./battery-voice-copy";
+import type { BatterySpeechCue } from "./battery-speech-cues";
+import type { RemoteUpperLimbBatterySide, RemoteUpperLimbBatteryTestId } from "./types";
 
-const spokenKeys = new Set<string>();
+export type { BatterySpeechCue } from "./battery-speech-cues";
 
-export type BatterySpeechCue =
-  | "stand-still"
-  | "get-ready"
-  | "reposition-side"
-  | "countdown-three"
-  | "countdown-two"
-  | "countdown-one"
-  | "abduction-raise"
-  | "abduction-return"
-  | "flexion-raise"
-  | "flexion-return"
-  | "elbow-bend"
-  | "elbow-straighten"
-  | "functional-side-setup"
-  | "functional-arm-height"
-  | "functional-feet-still"
-  | "functional-reach"
-  | "functional-return"
-  | "rep-one"
-  | "rep-two"
-  | "rep-three"
-  | "test-completed"
-  | "assessment-completed";
+let batteryVoiceLang: BatteryVoiceLang = "en";
 
-function resolveText(cue: BatterySpeechCue, side: RemoteUpperLimbBatterySide): string {
-  const arm = formatBatteryArmLabel(side);
+export function setBatterySpeechLang(lang: BatteryVoiceLang): void {
+  batteryVoiceLang = lang;
+}
+
+export function getBatterySpeechLang(): BatteryVoiceLang {
+  return batteryVoiceLang;
+}
+
+export function getBatteryVoiceAudioProviderId(): string {
+  return getPrerecordedVoiceAudioProviderId();
+}
+
+/** @deprecated Manifest scripts only — playback uses booth MP3 assets, not TTS. */
+export function resolveBatterySpeechText(
+  cue: BatterySpeechCue,
+  side: RemoteUpperLimbBatterySide,
+  lang: BatteryVoiceLang = batteryVoiceLang,
+): string {
   switch (cue) {
     case "stand-still":
-      return "Stand still.";
+      return getBatteryStandStillCopy(lang);
     case "get-ready":
-      return "Get ready.";
+      return "";
+    case "face-camera-setup":
+      return getBatteryArmInViewCopy(lang);
     case "reposition-side":
-      return getSideRepositionInstruction(side);
-    case "countdown-three":
-      return "Three.";
-    case "countdown-two":
-      return "Two.";
-    case "countdown-one":
-      return "One.";
-    case "abduction-raise":
-      return `Raise your ${arm} out to the side.`;
-    case "abduction-return":
-      return "Return your arm to your side.";
-    case "flexion-raise":
-      return `Raise your ${arm} forward.`;
-    case "flexion-return":
-      return "Return your arm to your side.";
-    case "elbow-bend":
-      return "Bend your elbow.";
-    case "elbow-straighten":
-      return "Straighten your elbow.";
     case "functional-side-setup":
-      return getSideRepositionInstruction(side);
-    case "functional-arm-height":
-      return "Raise your arm forward to shoulder height.";
-    case "functional-feet-still":
-      return "Keep your feet still.";
+      return getBatterySideRepositionCopy(side, lang);
+    case "tracking-lost":
+      return getBatteryTrackingLostCopy(lang);
+    case "movement-smooth-comfort":
+      return getBatteryMovementSmoothCopy(lang);
+    case "rest-before-next":
+      return getBatteryRestBeforeNextCopy(lang);
+    case "countdown-three":
+      return lang === "ar" ? "ثلاثة." : "Three.";
+    case "countdown-two":
+      return lang === "ar" ? "اثنان." : "Two.";
+    case "countdown-one":
+      return lang === "ar" ? "واحد." : "One.";
+    case "abduction-raise":
+      return getBatteryTestStartVoiceCopy("shoulderAbduction", side, lang);
+    case "flexion-raise":
+      return getBatteryTestStartVoiceCopy("shoulderFlexion", side, lang);
+    case "elbow-bend":
+      return getBatteryTestStartVoiceCopy("elbowFlexion", side, lang);
     case "functional-reach":
-      return "Reach forward as far as you comfortably can without taking a step.";
+      return getBatteryTestStartVoiceCopy("functionalReach", side, lang);
+    case "abduction-return":
+    case "flexion-return":
+    case "elbow-straighten":
     case "functional-return":
-      return "Return to the starting position.";
-    case "rep-one":
-      return "One of three.";
-    case "rep-two":
-      return "Two of three.";
-    case "rep-three":
-      return "Three of three.";
+      return getBatteryReturnToStartCopy(lang);
+    case "functional-arm-height":
+    case "functional-feet-still":
     case "test-completed":
-      return "Test completed.";
+      return "";
+    case "functional-done":
+      return getBatteryDoneCopy(lang);
+    case "rep-one":
+      return getBatteryRepCountCopy(1, lang) ?? "";
+    case "rep-two":
+      return getBatteryRepCountCopy(2, lang) ?? "";
+    case "rep-three":
+      return getBatteryRepCountCopy(3, lang) ?? "";
     case "assessment-completed":
-      return "Assessment completed.";
+      return getBatteryAssessmentCompleteCopy(lang);
   }
+}
+
+export function resolveBatteryRepCountSpeechCue(
+  completed: number,
+  requiredReps: number,
+): BatterySpeechCue | null {
+  if (completed < 1 || completed > requiredReps) return null;
+  if (requiredReps === 1) return "functional-done";
+  if (completed === 1) return "rep-one";
+  if (completed === 2) return "rep-two";
+  if (completed === 3) return "rep-three";
+  return null;
 }
 
 export function resolveBatteryTestStartSpeechCue(
@@ -97,89 +128,52 @@ export function resolveBatteryTestStartSpeechCue(
   }
 }
 
-export function resolveBatteryMovementSpeechCue(input: {
+export function resolveBatteryMovementSpeechCue(_input: {
   testId: RemoteUpperLimbBatteryTestId;
   phase: string;
   hasReachedPeak?: boolean;
 }): BatterySpeechCue | null {
-  const { testId, phase, hasReachedPeak = false } = input;
-  if (testId === "shoulderAbduction") {
-    if (phase === "raising") return "abduction-raise";
-    if (phase === "lowering") return "abduction-return";
-  }
-  if (testId === "shoulderFlexion") {
-    if (phase === "raising") return "flexion-raise";
-    if (phase === "lowering") return "flexion-return";
-  }
-  if (testId === "elbowFlexion") {
-    if (phase === "flexing") return "elbow-bend";
-    if (phase === "extending") return "elbow-straighten";
-  }
-  if (testId === "functionalReach") {
-    if (phase === "peak") return "functional-reach";
-    if (phase === "rest" && hasReachedPeak) return "functional-return";
-  }
   return null;
 }
 
 export function cancelBatterySpeech(): void {
-  if (typeof window !== "undefined" && typeof window.speechSynthesis !== "undefined") {
-    try {
-      window.speechSynthesis.cancel();
-    } catch {
-      // ignore
-    }
-  }
+  stopBoothVoicePlayback();
 }
 
 export function speakBatteryTestCompleted(
-  testId: RemoteUpperLimbBatteryTestId,
-  side: RemoteUpperLimbBatterySide,
+  _testId: RemoteUpperLimbBatteryTestId,
+  _side: RemoteUpperLimbBatterySide,
 ): void {
-  if (typeof window === "undefined" || typeof window.speechSynthesis === "undefined") return;
-  const key = `${testId}:completed:${side}`;
-  if (spokenKeys.has(key)) return;
-  spokenKeys.add(key);
-  cancelBatterySpeech();
-  try {
-    const utterance = new SpeechSynthesisUtterance(
-      `${getBatteryTestDefinition(testId).title} completed.`,
-    );
-    utterance.rate = 0.95;
-    window.speechSynthesis.speak(utterance);
-  } catch {
-    // optional
-  }
+  // No extra per-test completion line in Pilot 1.
 }
 
 export function speakBatteryCue(
   cue: BatterySpeechCue,
   side: RemoteUpperLimbBatterySide,
   scope = "global",
-  options?: { allowRepeat?: boolean },
+  options?: { allowRepeat?: boolean; muted?: boolean },
 ): void {
-  if (typeof window === "undefined" || typeof window.speechSynthesis === "undefined") return;
-  const key = `${scope}:${cue}:${side}`;
-  if (!options?.allowRepeat) {
-    if (spokenKeys.has(key)) return;
-    spokenKeys.add(key);
-  }
-  cancelBatterySpeech();
-  try {
-    const utterance = new SpeechSynthesisUtterance(resolveText(cue, side));
-    utterance.rate = 0.95;
-    window.speechSynthesis.speak(utterance);
-  } catch {
-    // optional
-  }
+  const boothCue = resolveBatteryBoothVoiceCue(cue, side, batteryVoiceLang);
+  if (!boothCue || !isRemoteBatteryBoothVoiceCue(boothCue)) return;
+
+  const boothScope = `remote-upper-limb-battery:${scope}:${side}`;
+  const isTrackingLost = cue === "tracking-lost";
+
+  speakBoothVoiceCue(boothCue, boothScope, {
+    muted: options?.muted,
+    allowRepeatKey: options?.allowRepeat ?? isTrackingLost,
+    skipCooldown: isTrackingLost,
+  });
 }
 
 export function resetBatterySpeech(): void {
-  spokenKeys.clear();
-  cancelBatterySpeech();
+  resetBoothVoiceGuidance();
 }
 
 export function resetBatterySpeechForTest(cancelQueued = true): void {
-  spokenKeys.clear();
-  if (cancelQueued) cancelBatterySpeech();
+  if (cancelQueued) {
+    resetBoothVoiceGuidance();
+  } else {
+    stopBoothVoicePlayback();
+  }
 }

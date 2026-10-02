@@ -57,6 +57,11 @@ export type BatteryFrameProcessorSnapshot = {
   completedPeaksDeg: number[];
   movementPhase: string;
   peakReachExtent: number | null;
+  /** Live metric used by the active test FSM. Debug/overlay only. */
+  currentAngleDeg: number | null;
+  /** Why the latest repCount increase was accepted. Debug/overlay only. */
+  lastRepAcceptReason: string | null;
+  movementTrackingEnabled: boolean;
 };
 
 export type BatteryTestProcessor = {
@@ -132,7 +137,20 @@ function idleMovementSnapshot(
     completedPeaksDeg: [],
     movementPhase: "idle",
     peakReachExtent: null,
+    currentAngleDeg: null,
+    lastRepAcceptReason: null,
+    movementTrackingEnabled: false,
   };
+}
+
+function describeCycleRepAccept(input: {
+  testId: "shoulderAbduction" | "shoulderFlexion" | "elbowFlexion";
+  peakDeg: number | null;
+  angleDeg: number | null;
+}): string {
+  const peak = input.peakDeg === null ? "n/a" : input.peakDeg.toFixed(1);
+  const angle = input.angleDeg === null ? "n/a" : input.angleDeg.toFixed(1);
+  return `${input.testId}: accepted rest→peak→return (peak ${peak}°, now ${angle}°)`;
 }
 
 export function createShoulderAbductionProcessor(side: RemoteUpperLimbBatterySide): BatteryTestProcessor {
@@ -141,6 +159,7 @@ export function createShoulderAbductionProcessor(side: RemoteUpperLimbBatterySid
   let lastRepPeak: number | null = null;
   let completedPeaks: number[] = [];
   let movementTrackingEnabled = false;
+  let lastRepAcceptReason: string | null = null;
 
   const resetTrackingState = () => {
     state = createShoulderAbductionReachDetectorState();
@@ -148,6 +167,7 @@ export function createShoulderAbductionProcessor(side: RemoteUpperLimbBatterySid
     lastRepPeak = null;
     completedPeaks = [];
     movementTrackingEnabled = false;
+    lastRepAcceptReason = null;
   };
 
   return {
@@ -181,6 +201,11 @@ export function createShoulderAbductionProcessor(side: RemoteUpperLimbBatterySid
         if (primary.peakAngleDegrees !== null) {
           completedPeaks.push(primary.peakAngleDegrees);
         }
+        lastRepAcceptReason = describeCycleRepAccept({
+          testId: "shoulderAbduction",
+          peakDeg: primary.peakAngleDegrees,
+          angleDeg: primary.abductionAngleDegrees,
+        });
         lastRepCount = primary.repCount;
       }
       return {
@@ -197,6 +222,9 @@ export function createShoulderAbductionProcessor(side: RemoteUpperLimbBatterySid
         completedPeaksDeg: [...completedPeaks],
         movementPhase: primary.phase,
         peakReachExtent: null,
+        currentAngleDeg: primary.abductionAngleDegrees,
+        lastRepAcceptReason,
+        movementTrackingEnabled: true,
       };
     },
   };
@@ -207,12 +235,14 @@ export function createShoulderFlexionProcessor(side: RemoteUpperLimbBatterySide)
   let lastRepCount = 0;
   let lastRepPeak: number | null = null;
   let movementTrackingEnabled = false;
+  let lastRepAcceptReason: string | null = null;
 
   const resetTrackingState = () => {
     state = createShoulderFlexionPhaseState();
     lastRepCount = 0;
     lastRepPeak = null;
     movementTrackingEnabled = false;
+    lastRepAcceptReason = null;
   };
 
   return {
@@ -252,6 +282,11 @@ export function createShoulderFlexionProcessor(side: RemoteUpperLimbBatterySide)
       tickShoulderFlexionPhase(state, elevation, DEFAULT_SHOULDER_FLEXION_THRESHOLDS);
       if (state.repCount > lastRepCount) {
         lastRepPeak = state.completedPeaksDeg.at(-1) ?? state.peakElevationDegrees;
+        lastRepAcceptReason = describeCycleRepAccept({
+          testId: "shoulderFlexion",
+          peakDeg: lastRepPeak,
+          angleDeg: elevation,
+        });
         lastRepCount = state.repCount;
       }
       return {
@@ -261,6 +296,9 @@ export function createShoulderFlexionProcessor(side: RemoteUpperLimbBatterySide)
         completedPeaksDeg: [...state.completedPeaksDeg],
         movementPhase: state.phase,
         peakReachExtent: null,
+        currentAngleDeg: elevation,
+        lastRepAcceptReason,
+        movementTrackingEnabled: true,
       };
     },
   };
@@ -271,12 +309,14 @@ export function createElbowFlexionProcessor(side: RemoteUpperLimbBatterySide): B
   let lastRepCount = 0;
   let lastRepPeak: number | null = null;
   let movementTrackingEnabled = false;
+  let lastRepAcceptReason: string | null = null;
 
   const resetTrackingState = () => {
     state = createElbowFlexionPhaseState();
     lastRepCount = 0;
     lastRepPeak = null;
     movementTrackingEnabled = false;
+    lastRepAcceptReason = null;
   };
 
   return {
@@ -308,6 +348,11 @@ export function createElbowFlexionProcessor(side: RemoteUpperLimbBatterySide): B
       tickElbowFlexionPhase(state, interiorAngle, DEFAULT_ELBOW_FLEXION_THRESHOLDS);
       if (state.repCount > lastRepCount) {
         lastRepPeak = state.completedPeaksDeg.at(-1) ?? state.peakFlexionAngleDegrees;
+        lastRepAcceptReason = describeCycleRepAccept({
+          testId: "elbowFlexion",
+          peakDeg: lastRepPeak,
+          angleDeg: interiorAngle,
+        });
         lastRepCount = state.repCount;
       }
       return {
@@ -317,6 +362,9 @@ export function createElbowFlexionProcessor(side: RemoteUpperLimbBatterySide): B
         completedPeaksDeg: [...state.completedPeaksDeg],
         movementPhase: state.phase,
         peakReachExtent: null,
+        currentAngleDeg: interiorAngle,
+        lastRepAcceptReason,
+        movementTrackingEnabled: true,
       };
     },
   };
@@ -332,6 +380,7 @@ export function createFunctionalReachProcessor(
   let peakReachExtent: number | null = null;
   let lastCompletedAttempts = 0;
   let consecutiveUnusableFrames = 0;
+  let lastRepAcceptReason: string | null = null;
 
   const resetTrackingState = () => {
     counter.resetBaseline();
@@ -342,6 +391,7 @@ export function createFunctionalReachProcessor(
     peakReachExtent = null;
     lastCompletedAttempts = 0;
     consecutiveUnusableFrames = 0;
+    lastRepAcceptReason = null;
   };
 
   const recalibrateAfterTrackingLoss = () => {
@@ -352,6 +402,7 @@ export function createFunctionalReachProcessor(
     peakReachExtent = null;
     lastCompletedAttempts = 0;
     consecutiveUnusableFrames = 0;
+    lastRepAcceptReason = null;
   };
 
   const beginMovementTracking = () => {
@@ -415,6 +466,8 @@ export function createFunctionalReachProcessor(
         completedAttempts > lastCompletedAttempts ? peakReachExtent : null;
       if (completedAttempts > lastCompletedAttempts) {
         lastCompletedAttempts = completedAttempts;
+        lastRepAcceptReason =
+          "functionalReach: accepted baseline→forward excursion→return to rest";
       }
 
       return {
@@ -431,6 +484,9 @@ export function createFunctionalReachProcessor(
         completedPeaksDeg: peakReachExtent !== null ? [peakReachExtent] : [],
         movementPhase: movementTrackingEnabled ? snapshot.repPhase : "idle",
         peakReachExtent,
+        currentAngleDeg: peakReachExtent,
+        lastRepAcceptReason,
+        movementTrackingEnabled,
       };
     },
   };
@@ -455,6 +511,9 @@ export function createPreviewPositionProcessor(side: RemoteUpperLimbBatterySide)
         completedPeaksDeg: [],
         movementPhase: "preview",
         peakReachExtent: null,
+        currentAngleDeg: null,
+        lastRepAcceptReason: null,
+        movementTrackingEnabled: false,
       };
     },
   };

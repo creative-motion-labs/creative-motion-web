@@ -36,6 +36,47 @@ describe("remote battery patient UX contract", () => {
     assert.match(source, /Cancel Assessment/);
   });
 
+  it("speaks each movement instruction once, then detected counts only", () => {
+    const source = readFileSync(SESSION, "utf8");
+    assert.match(source, /resolveBatteryTestStartSpeechCue/);
+    assert.match(source, /resolveBatteryRepCountSpeechCue/);
+    assert.equal(source.includes("resolveBatteryMovementSpeechCue"), false);
+    assert.match(source, /Voice guidance/);
+    assert.match(source, /speakGuidedBatteryCue/);
+    assert.match(source, /if \(!testStartCueSpokenRef\.current\)/);
+    assert.match(source, /processor\.repCount > lastProcessorRepRef/);
+  });
+
+  it("speaks face-camera setup once, then side orientation before Functional Reach movement", () => {
+    const source = readFileSync(SESSION, "utf8");
+    assert.match(source, /face-camera-setup/);
+    assert.match(source, /functionalReach-orient/);
+    assert.match(source, /resetBatterySpeechForTest\(false\)/);
+    assert.equal(source.includes('speakBatteryCue("get-ready"'), false);
+    assert.equal(source.includes("cancelBatterySpeech()"), false);
+    assert.match(
+      source,
+      /if \(activeTestId === "functionalReach" && !repositionCueSpokenRef\.current\)/,
+    );
+    assert.match(source, /if \(orchestrator\.phase !== "test_active"\) return;/);
+  });
+
+  it("wires prescribed side through anatomy, voice, and payload", () => {
+    const source = readFileSync(SESSION, "utf8");
+    assert.match(source, /prescribedSide=\{resolvedPrescribedSide\}/);
+    assert.match(source, /Resolved prescribed side:/);
+    assert.match(source, /testedSide: resolvedPrescribedSide/);
+    assert.equal(source.includes('instruction:\n      "Raise your right arm'), false);
+  });
+
+  it("arms movement tracking only after countdown reaches test_active", () => {
+    const source = readFileSync(SESSION, "utf8");
+    assert.match(source, /if \(orchestrator\.phase !== "test_active"\) return;/);
+    assert.match(source, /armActiveTestProcessor\(activeTestId\)/);
+    assert.match(source, /processor\.beginMovementTracking\(\)/);
+    assert.match(source, /createPreviewPositionProcessor/);
+  });
+
   it("submit failure path exposes Send Again and preserves payload", () => {
     const source = readFileSync(PAGE, "utf8");
     assert.match(source, /Send Again/);

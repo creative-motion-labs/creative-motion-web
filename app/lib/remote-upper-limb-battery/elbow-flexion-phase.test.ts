@@ -3,18 +3,38 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { MOVEMENT_REP_CONFIRM_MIN_TICKS } from "@/app/lib/movement-rep-confirmation";
 import { DEFAULT_ELBOW_FLEXION_THRESHOLDS } from "./elbow-flexion-contract";
 import {
   createElbowFlexionPhaseState,
   tickElbowFlexionPhase,
 } from "./elbow-flexion-phase";
 
+const N = MOVEMENT_REP_CONFIRM_MIN_TICKS;
+const REST = 150;
+const PEAK = 70;
+
+function hold(value: number | null, ticks = N): Array<number | null> {
+  return Array.from({ length: ticks }, () => value);
+}
+
+function runSequence(angles: Array<number | null>) {
+  const state = createElbowFlexionPhaseState();
+  for (const angle of angles) {
+    tickElbowFlexionPhase(state, angle, DEFAULT_ELBOW_FLEXION_THRESHOLDS);
+  }
+  return state;
+}
+
+function confirmedCycle(): number[] {
+  return [...hold(REST), ...hold(PEAK), ...hold(REST)] as number[];
+}
+
 describe("elbow flexion phase FSM", () => {
-  it("counts exactly three valid reps", () => {
+  it("counts exactly three valid sustained reps", () => {
     const state = createElbowFlexionPhaseState();
-    const cycle = [150, 120, 80, 80, 120, 150];
     for (let rep = 0; rep < 3; rep += 1) {
-      for (const angle of cycle) {
+      for (const angle of confirmedCycle()) {
         tickElbowFlexionPhase(state, angle, DEFAULT_ELBOW_FLEXION_THRESHOLDS);
       }
     }
@@ -22,33 +42,37 @@ describe("elbow flexion phase FSM", () => {
     assert.equal(state.completedPeaksDeg.length, 3);
   });
 
-  it("does not count duplicate reps while holding peak flexion", () => {
-    const state = createElbowFlexionPhaseState();
-    const sequence = [150, 120, 70, 70, 70, 120, 150];
-    for (const angle of sequence) {
-      tickElbowFlexionPhase(state, angle, DEFAULT_ELBOW_FLEXION_THRESHOLDS);
-    }
-    assert.equal(state.repCount, 1);
+  it("counts a real sustained rest→peak→rest cycle exactly once", () => {
+    assert.equal(runSequence(confirmedCycle()).repCount, 1);
   });
 
-  it("requires extension return before another rep counts", () => {
-    const state = createElbowFlexionPhaseState();
-    const sequence = [150, 120, 70, 120, 100, 70, 120, 150];
-    for (const angle of sequence) {
-      tickElbowFlexionPhase(state, angle, DEFAULT_ELBOW_FLEXION_THRESHOLDS);
-    }
-    assert.equal(state.repCount, 1);
+  it("does not count a one-frame peak spike", () => {
+    assert.equal(runSequence([...hold(REST), PEAK, ...hold(REST)]).repCount, 0);
+  });
+
+  it("does not complete a rep on a one-frame rest spike", () => {
+    assert.equal(runSequence([...hold(REST), ...hold(PEAK), REST, ...hold(PEAK)]).repCount, 0);
+  });
+
+  it("does not count when starting already flexed then extending to rest", () => {
+    const state = runSequence([...hold(PEAK), ...hold(REST)]);
+    assert.equal(state.repCount, 0);
+    assert.equal(state.cycleArmed, true);
+  });
+
+  it("does not double-count while holding still", () => {
+    assert.equal(runSequence(hold(REST, N * 4)).repCount, 0);
+    assert.equal(runSequence([...hold(REST), ...hold(PEAK, N * 4)]).repCount, 0);
+    assert.equal(runSequence([...hold(REST), ...hold(PEAK, N * 4), ...hold(REST)]).repCount, 1);
   });
 
   it("does not count a rep after tracking loss", () => {
-    const state = createElbowFlexionPhaseState();
-    tickElbowFlexionPhase(state, 150, DEFAULT_ELBOW_FLEXION_THRESHOLDS);
-    tickElbowFlexionPhase(state, 120, DEFAULT_ELBOW_FLEXION_THRESHOLDS);
-    tickElbowFlexionPhase(state, 70, DEFAULT_ELBOW_FLEXION_THRESHOLDS);
-    for (let i = 0; i < DEFAULT_ELBOW_FLEXION_THRESHOLDS.poseLostUnknownMinTicks; i += 1) {
-      tickElbowFlexionPhase(state, null, DEFAULT_ELBOW_FLEXION_THRESHOLDS);
-    }
-    tickElbowFlexionPhase(state, 150, DEFAULT_ELBOW_FLEXION_THRESHOLDS);
+    const state = runSequence([
+      ...hold(REST),
+      ...hold(PEAK),
+      ...hold(null, DEFAULT_ELBOW_FLEXION_THRESHOLDS.poseLostUnknownMinTicks),
+      ...hold(REST),
+    ]);
     assert.equal(state.repCount, 0);
   });
 });
