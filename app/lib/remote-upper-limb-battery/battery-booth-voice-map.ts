@@ -32,6 +32,7 @@ export function resolveBatteryBoothVoiceCue(
       return `battery-stand-still-${L}` as RemoteBatteryBoothVoiceCue;
     case "reposition-side":
     case "functional-side-setup":
+    case "side-view-setup":
       return `battery-reposition-${S}-${L}` as RemoteBatteryBoothVoiceCue;
     case "abduction-raise":
       return `battery-abduction-raise-${S}-${L}` as RemoteBatteryBoothVoiceCue;
@@ -64,8 +65,9 @@ export function resolveBatteryBoothVoiceCue(
     case "functional-return":
     case "functional-arm-height":
     case "functional-feet-still":
-    case "test-completed":
       return null;
+    case "test-completed":
+      return `battery-final-test-saving-${L}` as RemoteBatteryBoothVoiceCue;
     default:
       return null;
   }

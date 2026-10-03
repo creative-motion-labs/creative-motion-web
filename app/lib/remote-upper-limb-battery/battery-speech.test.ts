@@ -94,7 +94,26 @@ describe("battery speech (booth audio)", () => {
 
   it("resolves rep count cues", () => {
     assert.equal(resolveBatteryRepCountSpeechCue(1, 3), "rep-one");
+    assert.equal(resolveBatteryRepCountSpeechCue(3, 3, "shoulderAbduction"), "rep-three");
+    assert.equal(resolveBatteryRepCountSpeechCue(3, 3, "functionalReach"), "test-completed");
     assert.equal(resolveBatteryTestStartSpeechCue("shoulderAbduction"), "abduction-raise");
+  });
+
+  it("plays final test saving booth cue for functional reach rep three", () => {
+    setBatterySpeechLang("en");
+    withFakeBoothAudio((played) => {
+      resetBoothVoiceGuidance();
+      resetBatterySpeech();
+      speakBatteryCue("test-completed", "right", "functionalReach-final-saving", {
+        skipCooldown: true,
+      });
+      assert.equal(played.length, 1);
+      assert.match(played[0] ?? "", /battery-final-test-saving-en\.mp3\?v=/);
+      speakBatteryCue("test-completed", "right", "functionalReach-final-saving", {
+        skipCooldown: true,
+      });
+      assert.equal(played.length, 1);
+    });
   });
 
   it("allows tracking-lost repeat via booth options", () => {

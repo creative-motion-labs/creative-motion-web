@@ -8,11 +8,39 @@
  * Persisted peakReachExtent is displacement from baseline, not the raw extrema.
  */
 
+import { PATIENT_FUNCTIONAL_REACH_REP_CONFIG } from "@/app/lib/cv/cv-patient-config";
+import type { FunctionalReachRepConfig } from "@/app/lib/cv/functional-reach-detector";
 import type { PoseLandmark } from "@/app/lib/cv/pose-landmark-overlay";
 import { BLAZEPOSE_SIDE_INDICES } from "./battery-tracking";
 import type { RemoteUpperLimbBatterySide } from "./types";
 
 export const FUNCTIONAL_REACH_TRACKING_LOSS_RESET_TICKS = 8;
+
+/**
+ * Remote battery functional reach tuning — shorter baseline after positioning hold,
+ * and no inter-rep gate before the first forward peak (patient portal keeps 3s / 800ms).
+ */
+export const REMOTE_BATTERY_FUNCTIONAL_REACH_REP_CONFIG: FunctionalReachRepConfig = {
+  ...PATIENT_FUNCTIONAL_REACH_REP_CONFIG,
+  baselineDurationMs: 1_200,
+  minMsBetweenReps: 0,
+};
+
+export type BatteryFunctionalReachTiming = {
+  movementStartedAtMs: number | null;
+  baselineFinalizedAtMs: number | null;
+  forwardPeakRecognizedAtMs: number | null;
+  attemptCompletedAtMs: number | null;
+};
+
+export function createEmptyBatteryFunctionalReachTiming(): BatteryFunctionalReachTiming {
+  return {
+    movementStartedAtMs: null,
+    baselineFinalizedAtMs: null,
+    forwardPeakRecognizedAtMs: null,
+    attemptCompletedAtMs: null,
+  };
+}
 
 export function computeBatteryReachExtent(
   landmarks: readonly PoseLandmark[],

@@ -47,17 +47,14 @@ describe("remote battery patient UX contract", () => {
     assert.match(source, /processor\.repCount > lastProcessorRepRef/);
   });
 
-  it("speaks face-camera setup once, then side orientation before Functional Reach movement", () => {
+  it("speaks face-camera setup once, then side-view setup for side tests without countdown overlap", () => {
     const source = readFileSync(SESSION, "utf8");
     assert.match(source, /face-camera-setup/);
-    assert.match(source, /functionalReach-orient/);
+    assert.match(source, /side-view-setup/);
     assert.match(source, /resetBatterySpeechForTest\(false\)/);
     assert.equal(source.includes('speakBatteryCue("get-ready"'), false);
     assert.equal(source.includes("cancelBatterySpeech()"), false);
-    assert.match(
-      source,
-      /if \(activeTestId === "functionalReach" && !repositionCueSpokenRef\.current\)/,
-    );
+    assert.equal(source.includes("movement-smooth-comfort"), false);
     assert.match(source, /if \(orchestrator\.phase !== "test_active"\) return;/);
   });
 

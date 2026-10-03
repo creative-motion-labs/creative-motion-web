@@ -3,6 +3,7 @@ export type BatterySpeechCue =
   | "get-ready"
   | "face-camera-setup"
   | "reposition-side"
+  | "side-view-setup"
   | "tracking-lost"
   | "movement-smooth-comfort"
   | "rest-before-next"

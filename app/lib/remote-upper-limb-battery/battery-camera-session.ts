@@ -2,7 +2,6 @@
 
 import { DEFAULT_STS_CONFIG } from "@/app/lib/cv/bio-0-contracts";
 import type { PoseLandmark } from "@/app/lib/cv/pose-landmark-overlay";
-import { drawUpperLimbArmMotionGuidanceOverlay } from "@/app/lib/cv/upper-limb-arm-pose-overlay";
 import type { RemoteUpperLimbBatterySide } from "./types";
 import {
   PATIENT_CAMERA_NO_FRAMES_ERROR,
@@ -20,7 +19,7 @@ import {
 } from "@/app/lib/cv/sit-to-stand-detector";
 import type { InputAcquisitionContext } from "@/app/lib/input-acquisition";
 import type { BatteryFrameProcessorSnapshot } from "./battery-frame-processors";
-import { withBatteryMirroredCameraPreviewDraw } from "./battery-camera-preview-mirror";
+import { drawBatteryMirroredCameraPreview } from "./battery-camera-preview-mirror";
 
 type PoseLandmarkerInstance = {
   detectForVideo: (
@@ -221,18 +220,13 @@ export class BatteryCameraSession {
       const landmarks = result.landmarks?.[0] as PoseLandmark[] | undefined;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      withBatteryMirroredCameraPreviewDraw(ctx, canvas.width, () => {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        if (landmarks?.length && this.motionGuidanceSide) {
-          drawUpperLimbArmMotionGuidanceOverlay(
-            ctx,
-            landmarks,
-            canvas.width,
-            canvas.height,
-            this.motionGuidanceSide,
-          );
-        }
-      });
+      drawBatteryMirroredCameraPreview(
+        ctx,
+        video,
+        canvas,
+        landmarks,
+        this.motionGuidanceSide,
+      );
 
       if (landmarks?.length) {
         if (this.processFrame) {

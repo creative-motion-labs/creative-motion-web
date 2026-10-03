@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BatteryCameraSession, type BatteryCameraSnapshot } from "@/app/lib/remote-upper-limb-battery/battery-camera-session";
-import { getBatteryTestOrientation } from "@/app/lib/remote-upper-limb-battery/battery-orientation";
+import {
+  getBatteryTestOrientation,
+} from "@/app/lib/remote-upper-limb-battery/battery-orientation";
+import {
+  shouldSpeakSideViewSetupInPositioning,
+  sideViewSetupSpeechScope,
+} from "@/app/lib/remote-upper-limb-battery/battery-setup-voice-flow";
 import {
   createBatteryTestProcessor,
   createPreviewPositionProcessor,
@@ -19,6 +25,7 @@ import {
   createBatteryOrchestratorState,
   getActiveBatteryTestId,
   getActiveBatteryTestRequiredReps,
+  markBatterySubmitFailed,
   markBatterySubmitting,
   recordBatteryRepCompleted,
   retryCurrentBatteryTest,
@@ -35,18 +42,24 @@ import {
   getPositioningStatus,
   getRepositionInstruction,
   getRepositionProgressLabel,
+  getBatteryFinalTestSavingStatus,
+  getBatterySubmitFailedStatus,
   getTestProgressLabel,
   getTestSetupInstruction,
   getTrackingLostStatus,
 } from "@/app/lib/remote-upper-limb-battery/battery-patient-copy";
 import {
+  getBatterySpeechLang,
+  cancelBatterySpeech,
   resetBatterySpeech,
   resetBatterySpeechForTest,
   resolveBatteryRepCountSpeechCue,
+  resolveBatteryTestStartBoothVoiceCue,
   resolveBatteryTestStartSpeechCue,
   speakBatteryCue,
   speakBatteryTestCompleted,
 } from "@/app/lib/remote-upper-limb-battery/battery-speech";
+import { boothVoicePublicSrc } from "@/app/lib/booth/booth-voice-manifest";
 import {
   preloadBatteryBoothVoiceAssets,
   resetBoothVoiceGuidance,
@@ -72,6 +85,8 @@ type RemoteUpperLimbBatterySessionProps = {
   disabled?: boolean;
   onBatteryComplete: (payload: RemoteUpperLimbBatteryPayload) => void;
   onCancel?: () => void;
+  /** Set when parent submit fails so the session can show a recovery state. */
+  batterySubmitError?: string | null;
 };
 
 function isTrackingUsable(snapshot: BatteryCameraSnapshot | null): boolean {
@@ -83,6 +98,7 @@ export function RemoteUpperLimbBatterySession({
   disabled = false,
   onBatteryComplete,
   onCancel,
+  batterySubmitError = null,
 }: RemoteUpperLimbBatterySessionProps) {
   const resolvedPrescribedSide = resolveBatteryPrescribedSideForPatientDisplay(prescribedSide, false);
   const [orchestrator, setOrchestrator] = useState<BatteryOrchestratorState>(
@@ -106,17 +122,18 @@ export function RemoteUpperLimbBatterySession({
   const testProcessorArmedRef = useRef(false);
   const testStartCueSpokenRef = useRef(false);
   const repositionCueSpokenRef = useRef(false);
-  const boothMovementCueSpokenRef = useRef(false);
+  const sideViewSetupCueSpokenRef = useRef(false);
+  const finalTestSavingCueSpokenRef = useRef(false);
   const onBatteryCompleteRef = useRef(onBatteryComplete);
 
   const speakGuidedBatteryCue = useCallback(
     (
       cue: Parameters<typeof speakBatteryCue>[0],
       scope?: string,
-      options?: { allowRepeat?: boolean },
+      options?: { allowRepeat?: boolean; skipCooldown?: boolean },
     ) => {
-      if (!voiceGuidanceEnabled) return;
-      speakBatteryCue(cue, resolvedPrescribedSide, scope, {
+      if (!voiceGuidanceEnabled) return false;
+      return speakBatteryCue(cue, resolvedPrescribedSide, scope, {
         ...options,
         muted: !voiceGuidanceEnabled,
       });
@@ -177,16 +194,37 @@ export function RemoteUpperLimbBatterySession({
 
   const armActiveTestProcessor = useCallback(
     (testId: ReturnType<typeof getActiveBatteryTestId>) => {
-      const processor = createBatteryTestProcessor(testId, resolvedPrescribedSide);
-      processor.reset();
-      bindProcessor(processor);
-      processor.beginMovementTracking();
-      lastProcessorRepRef.current = 0;
-      testProcessorArmedRef.current = true;
+      if (!testProcessorArmedRef.current) {
+        const processor = createBatteryTestProcessor(testId, resolvedPrescribedSide);
+        processor.reset();
+        bindProcessor(processor);
+        processor.beginMovementTracking();
+        lastProcessorRepRef.current = 0;
+        testProcessorArmedRef.current = true;
+      }
       if (!testStartCueSpokenRef.current) {
         const startCue = resolveBatteryTestStartSpeechCue(testId);
-        speakGuidedBatteryCue(startCue, `${testId}-start`);
-        testStartCueSpokenRef.current = true;
+        const boothCueId = resolveBatteryTestStartBoothVoiceCue(
+          testId,
+          resolvedPrescribedSide,
+          getBatterySpeechLang(),
+        );
+        const audioUrl = boothCueId ? boothVoicePublicSrc(boothCueId) : null;
+        const played = speakGuidedBatteryCue(startCue, `${testId}-start`);
+        if (IS_DEV) {
+          console.info("[battery-test-start-voice]", {
+            testId,
+            phase: "test_active",
+            speechCue: startCue,
+            boothCueId,
+            lang: getBatterySpeechLang(),
+            audioUrl,
+            played,
+          });
+        }
+        if (played) {
+          testStartCueSpokenRef.current = true;
+        }
       }
     },
     [bindProcessor, resolvedPrescribedSide, speakGuidedBatteryCue],
@@ -214,11 +252,11 @@ export function RemoteUpperLimbBatterySession({
     testProcessorArmedRef.current = false;
     testStartCueSpokenRef.current = false;
     repositionCueSpokenRef.current = false;
-    boothMovementCueSpokenRef.current = false;
+    sideViewSetupCueSpokenRef.current = false;
+    finalTestSavingCueSpokenRef.current = false;
     setRepositionReady(false);
     setOrchestrator(startBatteryAssessment(createBatteryOrchestratorState()));
     bindPreviewProcessor();
-    boothMovementCueSpokenRef.current = false;
     if (voiceGuidanceEnabled) {
       speakGuidedBatteryCue("face-camera-setup", "assessment");
     }
@@ -241,7 +279,7 @@ export function RemoteUpperLimbBatterySession({
     lastProcessorRepRef.current = 0;
     testProcessorArmedRef.current = false;
     testStartCueSpokenRef.current = false;
-    boothMovementCueSpokenRef.current = false;
+    sideViewSetupCueSpokenRef.current = false;
     if (orchestrator.phase === "reposition_side") {
       finalizedTestIndexRef.current = 0;
     } else {
@@ -262,6 +300,7 @@ export function RemoteUpperLimbBatterySession({
     finalizedTestIndexRef.current = -1;
     testProcessorArmedRef.current = false;
     testStartCueSpokenRef.current = false;
+    sideViewSetupCueSpokenRef.current = false;
     setOrchestrator(cancelBatteryAssessment(createBatteryOrchestratorState()));
     bindPreviewProcessor();
     onCancel?.();
@@ -313,9 +352,15 @@ export function RemoteUpperLimbBatterySession({
     }
 
     if (orchestrator.phase === "positioning") {
-      if (activeTestId === "functionalReach" && !repositionCueSpokenRef.current) {
-        repositionCueSpokenRef.current = true;
-        speakGuidedBatteryCue("reposition-side", "functionalReach-orient");
+      if (
+        shouldSpeakSideViewSetupInPositioning(
+          orchestrator.phase,
+          activeTestId,
+          sideViewSetupCueSpokenRef.current,
+        )
+      ) {
+        sideViewSetupCueSpokenRef.current = true;
+        speakGuidedBatteryCue("side-view-setup", sideViewSetupSpeechScope(activeTestId));
       }
 
       const now = performance.now();
@@ -360,9 +405,9 @@ export function RemoteUpperLimbBatterySession({
   useEffect(() => {
     if (!assessmentStarted) return;
     if (orchestrator.phase !== "test_active") return;
-    if (testProcessorArmedRef.current) return;
+    if (testProcessorArmedRef.current && testStartCueSpokenRef.current) return;
     armActiveTestProcessor(activeTestId);
-  }, [activeTestId, armActiveTestProcessor, assessmentStarted, orchestrator.phase]);
+  }, [activeTestId, armActiveTestProcessor, assessmentStarted, orchestrator.phase, voiceGuidanceEnabled]);
 
   useEffect(() => {
     if (!assessmentStarted || !voiceGuidanceEnabled || !trackingLost) return;
@@ -370,26 +415,9 @@ export function RemoteUpperLimbBatterySession({
   }, [assessmentStarted, speakGuidedBatteryCue, trackingLost, voiceGuidanceEnabled]);
 
   useEffect(() => {
-    if (!assessmentStarted || !voiceGuidanceEnabled) return;
-    if (orchestrator.phase !== "test_active" || trackingLost) return;
-    if (!isTrackingUsable(cameraSnapshot)) return;
-    if (boothMovementCueSpokenRef.current) return;
-    boothMovementCueSpokenRef.current = true;
-    speakGuidedBatteryCue("movement-smooth-comfort", `battery-${activeTestId}`);
-  }, [
-    activeTestId,
-    assessmentStarted,
-    cameraSnapshot,
-    orchestrator.phase,
-    trackingLost,
-    voiceGuidanceEnabled,
-  ]);
-
-  useEffect(() => {
     if (orchestrator.phase !== "test_active" || trackingLost) return;
     const processor = cameraSnapshot?.processor;
-    if (!processor) return;
-    if (processor.movementPhase === "preview" || processor.movementPhase === "idle") return;
+    if (!processor?.movementTrackingEnabled) return;
 
     if (processor.repCount > lastProcessorRepRef.current) {
       const completed = processor.repCount;
@@ -405,8 +433,20 @@ export function RemoteUpperLimbBatterySession({
           trackingEnabled: processor.movementTrackingEnabled,
         });
       }
-      const cue = resolveBatteryRepCountSpeechCue(completed, requiredReps);
-      if (cue) speakGuidedBatteryCue(cue, `${activeTestId}-rep-${completed}`);
+      const cue = resolveBatteryRepCountSpeechCue(completed, requiredReps, activeTestId);
+      if (cue) {
+        if (cue === "test-completed") {
+          if (finalTestSavingCueSpokenRef.current) {
+            setOrchestrator((current) => recordBatteryRepCompleted(current, processor.lastRepPeak));
+            return;
+          }
+          cancelBatterySpeech();
+          finalTestSavingCueSpokenRef.current = true;
+          speakGuidedBatteryCue(cue, "functionalReach-final-saving", { skipCooldown: true });
+        } else {
+          speakGuidedBatteryCue(cue, `${activeTestId}-rep-${completed}`);
+        }
+      }
       setOrchestrator((current) => recordBatteryRepCompleted(current, processor.lastRepPeak));
     }
   }, [
@@ -451,6 +491,7 @@ export function RemoteUpperLimbBatterySession({
         testProcessorArmedRef.current = false;
         testStartCueSpokenRef.current = false;
         repositionCueSpokenRef.current = false;
+        sideViewSetupCueSpokenRef.current = false;
         setRepositionReady(false);
         resetBatterySpeechForTest(false);
         stableSinceRef.current = null;
@@ -470,12 +511,21 @@ export function RemoteUpperLimbBatterySession({
   ]);
 
   useEffect(() => {
+    if (!batterySubmitError) return;
+    setOrchestrator((current) =>
+      current.phase === "submitting" || current.phase === "assessment_completed"
+        ? markBatterySubmitFailed(current)
+        : current,
+    );
+  }, [batterySubmitError]);
+
+  useEffect(() => {
     if (orchestrator.phase !== "assessment_completed" || orchestrator.submitAttempted) return;
     const payload = buildBatteryPayload({
       testedSide: resolvedPrescribedSide,
       results: orchestrator.results,
     });
-    if (voiceGuidanceEnabled) {
+    if (voiceGuidanceEnabled && !finalTestSavingCueSpokenRef.current) {
       speakGuidedBatteryCue("assessment-completed", "assessment-done");
     }
     setOrchestrator((current) => markBatterySubmitting(current));
@@ -489,9 +539,22 @@ export function RemoteUpperLimbBatterySession({
     voiceGuidanceEnabled,
   ]);
 
+  const speechLang = getBatterySpeechLang();
+  const finalTestSavingActive =
+    orchestrator.testIndex === 3 &&
+    (orchestrator.phase === "test_completed" ||
+      orchestrator.phase === "assessment_completed" ||
+      orchestrator.phase === "submitting");
+
   const statusLine = useMemo(() => {
     if (!assessmentStarted) {
       return getInitialPositionInstruction(resolvedPrescribedSide);
+    }
+    if (orchestrator.phase === "submit_failed") {
+      return getBatterySubmitFailedStatus(speechLang);
+    }
+    if (finalTestSavingActive) {
+      return getBatteryFinalTestSavingStatus(speechLang);
     }
     if (trackingLost) {
       return getTrackingLostStatus(resolvedPrescribedSide);
@@ -500,15 +563,12 @@ export function RemoteUpperLimbBatterySession({
       if (repositionReady) return "Position detected";
       return getRepositionInstruction(resolvedPrescribedSide);
     }
-    if (orchestrator.phase === "positioning" && activeTestId === "functionalReach") {
-      return getRepositionInstruction(resolvedPrescribedSide);
+    if (orchestrator.phase === "positioning") {
+      const setup = getTestSetupInstruction(activeTestId, resolvedPrescribedSide);
+      if (setup) return setup;
     }
     if (holdStillVisible && orchestrator.phase === "positioning") {
       return getHoldStillStatus();
-    }
-    if (orchestrator.phase === "positioning") {
-      const setup = getTestSetupInstruction(activeTestId, resolvedPrescribedSide);
-      if (setup && activeOrientation === "face_camera") return setup;
     }
     if (orchestrator.phase === "countdown" && orchestrator.countdown !== null) {
       return String(orchestrator.countdown);
@@ -520,31 +580,29 @@ export function RemoteUpperLimbBatterySession({
     ) {
       return getMovementInstruction(activeTestId, resolvedPrescribedSide);
     }
-    if (orchestrator.phase === "assessment_completed" || orchestrator.phase === "submitting") {
-      return "Assessment completed.";
-    }
     return getPositioningStatus(resolvedPrescribedSide, positionReady);
   }, [
     activeOrientation,
     activeTestId,
     assessmentStarted,
+    finalTestSavingActive,
     holdStillVisible,
     orchestrator.countdown,
     orchestrator.phase,
     positionReady,
     repositionReady,
     resolvedPrescribedSide,
+    speechLang,
     trackingLost,
   ]);
 
   const progressLabel = useMemo(() => {
     if (!assessmentStarted) return null;
-    if (
-      orchestrator.phase === "assessment_completed" ||
-      orchestrator.phase === "submitting" ||
-      orchestrator.phase === "submit_failed"
-    ) {
-      return "Assessment completed";
+    if (orchestrator.phase === "submit_failed") {
+      return getBatterySubmitFailedStatus(speechLang);
+    }
+    if (finalTestSavingActive) {
+      return getBatteryFinalTestSavingStatus(speechLang);
     }
     if (orchestrator.phase === "reposition_side") {
       return getRepositionProgressLabel();
@@ -569,12 +627,16 @@ export function RemoteUpperLimbBatterySession({
     repositionReady,
     requiredReps,
     resolvedPrescribedSide,
+    finalTestSavingActive,
+    speechLang,
   ]);
 
   const showRecoveryControls =
     assessmentStarted &&
     orchestrator.phase !== "assessment_completed" &&
-    orchestrator.phase !== "submitting";
+    orchestrator.phase !== "submitting" &&
+    orchestrator.phase !== "submit_failed" &&
+    !finalTestSavingActive;
 
   return (
     <section className="mt-6">
@@ -602,7 +664,8 @@ export function RemoteUpperLimbBatterySession({
               ref={videoRef}
               playsInline
               muted
-              className="absolute inset-0 h-full w-full object-cover opacity-0"
+              className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-0"
+              aria-hidden
             />
             <canvas
               ref={canvasRef}
@@ -630,11 +693,22 @@ export function RemoteUpperLimbBatterySession({
         <p className="mt-3 text-sm text-rose-200">{cameraError}</p>
       ) : null}
 
-      <div className="mt-4 rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-4">
+      <div
+        className={`mt-4 rounded-[10px] border p-4 ${
+          finalTestSavingActive
+            ? "border-[#1D9E75]/40 bg-[#1D9E75]/10"
+            : orchestrator.phase === "submit_failed"
+              ? "border-rose-400/30 bg-rose-400/5"
+              : "border-[#1E2D42] bg-[#0F1825]"
+        }`}
+      >
         {progressLabel ? (
           <p className="whitespace-pre-line text-sm font-semibold text-[#1D9E75]">{progressLabel}</p>
         ) : null}
         <p className="mt-2 text-sm leading-relaxed text-white/70">{statusLine}</p>
+        {batterySubmitError && orchestrator.phase === "submit_failed" ? (
+          <p className="mt-3 text-sm text-rose-200">{batterySubmitError}</p>
+        ) : null}
         {assessmentStarted && activeTestId === "functionalReach" ? (
           <p className="mt-2 text-xs leading-relaxed text-white/45">
             Keep your feet still. Stepping is not automatically measured in this release.

@@ -46,8 +46,10 @@ describe("battery orchestrator", () => {
     }
 
     assert.equal(getActiveBatteryTestId(state), "functionalReach");
-    state = { ...state, phase: "test_active" };
-    state = recordBatteryRepCompleted(state, null);
+    for (let rep = 0; rep < 3; rep += 1) {
+      state = { ...state, phase: "test_active" };
+      state = recordBatteryRepCompleted(state, null);
+    }
     assert.equal(state.phase, "test_completed");
     state = completeBatteryTest(state, {
       testId: "functionalReach",

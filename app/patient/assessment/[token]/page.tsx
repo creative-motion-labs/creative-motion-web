@@ -10,6 +10,10 @@ import {
 } from "@/app/lib/remote-upper-limb-battery/battery-prescribed-side";
 import type { RemoteUpperLimbBatteryPayload } from "@/app/lib/remote-upper-limb-battery/types";
 import { submitRemoteUpperLimbBatteryResult } from "@/app/lib/remote-upper-limb-battery/submit-battery-client";
+import {
+  normalizeRemoteUlmsAssessmentToken,
+  REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE,
+} from "@/app/lib/upper-limb-motor-screen/remote-assessment-token";
 
 type RemoteAssessmentContext = {
   assignmentId: string;
@@ -20,7 +24,7 @@ type RemoteAssessmentContext = {
 export default function PatientRemoteUlmsAssessmentPage() {
   const params = useParams();
   const router = useRouter();
-  const token = String(params.token || "");
+  const token = normalizeRemoteUlmsAssessmentToken(String(params.token || ""));
 
   const [context, setContext] = useState<RemoteAssessmentContext | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,7 +38,7 @@ export default function PatientRemoteUlmsAssessmentPage() {
 
   useEffect(() => {
     if (!token) {
-      setLoadError("Invalid or expired link.");
+      setLoadError(REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE);
       setLoading(false);
       return;
     }
@@ -45,7 +49,7 @@ export default function PatientRemoteUlmsAssessmentPage() {
       .then(async (response) => {
         if (!response.ok) {
           const body = (await response.json().catch(() => null)) as { error?: string } | null;
-          setLoadError(body?.error ?? "Invalid or expired link.");
+          setLoadError(body?.error ?? REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE);
           return;
         }
         const data = (await response.json()) as RemoteAssessmentContext;
@@ -122,8 +126,19 @@ export default function PatientRemoteUlmsAssessmentPage() {
     return (
       <main className="min-h-screen bg-[#0B1220] px-6 py-8 text-white">
         <div className="mx-auto max-w-3xl">
-          <h1 className="text-2xl font-bold text-white">Assessment link unavailable</h1>
-          <p className="mt-3 text-sm leading-relaxed text-white/55">{loadError}</p>
+          <h1 className="text-2xl font-bold text-white">
+            {loadError === REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE
+              ? REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE
+              : "Assessment link unavailable"}
+          </h1>
+          {loadError !== REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE ? (
+            <p className="mt-3 text-sm leading-relaxed text-white/55">{loadError}</p>
+          ) : (
+            <p className="mt-3 text-sm leading-relaxed text-white/55">
+              This link may have expired or already been used. Contact your therapist for a new
+              link.
+            </p>
+          )}
         </div>
       </main>
     );
@@ -140,56 +155,40 @@ export default function PatientRemoteUlmsAssessmentPage() {
           <p className="mt-2 text-sm text-white/45">Hello, {context.patientFirstName}</p>
         ) : null}
 
-        {!submitError ? (
-          <>
-            {context.prescribedSide ? (
-              <p className="mt-4 text-sm leading-relaxed text-white/60">
-                {getInitialPositionInstruction(context.prescribedSide)}
-              </p>
-            ) : (
-              <p className="mt-4 text-sm leading-relaxed text-rose-200/90">
-                {PRESCRIBED_SIDE_UNAVAILABLE_MESSAGE}
-              </p>
-            )}
-
-            <div className="mt-5 rounded-[10px] border border-amber-400/20 bg-amber-400/5 px-4 py-3.5">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-amber-200/90">
-                For therapist review
-              </p>
-              <p className="mt-2 text-sm leading-relaxed text-white/55">
-                These movement checks may support your therapist&apos;s review. They are not
-                diagnostic and do not replace clinical examination.
-              </p>
-            </div>
-
-            {context.prescribedSide ? (
-              <RemoteUpperLimbBatterySession
-                key={sessionKey}
-                prescribedSide={context.prescribedSide}
-                disabled={submitting}
-                onBatteryComplete={handleBatteryComplete}
-                onCancel={handleCancelAndRestart}
-              />
-            ) : null}
-
-            {submitting ? (
-              <p className="mt-4 text-sm text-white/55">
-                Assessment completed. Sending your assessment to your therapist…
-              </p>
-            ) : null}
-          </>
-        ) : (
-          <section className="mt-6 rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
-            <h2 className="text-lg font-bold text-white">Assessment completed</h2>
-            <p className="mt-2 text-sm leading-relaxed text-white/55">
-              Your assessment could not be sent automatically. You can try again.
+        <>
+          {context.prescribedSide ? (
+            <p className="mt-4 text-sm leading-relaxed text-white/60">
+              {getInitialPositionInstruction(context.prescribedSide)}
             </p>
+          ) : (
+            <p className="mt-4 text-sm leading-relaxed text-rose-200/90">
+              {PRESCRIBED_SIDE_UNAVAILABLE_MESSAGE}
+            </p>
+          )}
 
-            <div className="mt-4 rounded-[7px] border border-rose-400/20 bg-rose-400/5 px-4 py-3">
-              <p className="text-sm text-rose-200">{submitError}</p>
-            </div>
+          <div className="mt-5 rounded-[10px] border border-amber-400/20 bg-amber-400/5 px-4 py-3.5">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-200/90">
+              For therapist review
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-white/55">
+              These movement checks may support your therapist&apos;s review. They are not
+              diagnostic and do not replace clinical examination.
+            </p>
+          </div>
 
-            <div className="mt-5 flex flex-wrap gap-2">
+          {context.prescribedSide ? (
+            <RemoteUpperLimbBatterySession
+              key={sessionKey}
+              prescribedSide={context.prescribedSide}
+              disabled={submitting}
+              batterySubmitError={submitError}
+              onBatteryComplete={handleBatteryComplete}
+              onCancel={handleCancelAndRestart}
+            />
+          ) : null}
+
+          {submitError ? (
+            <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
                 disabled={submitting}
@@ -207,8 +206,8 @@ export default function PatientRemoteUlmsAssessmentPage() {
                 Cancel Assessment
               </button>
             </div>
-          </section>
-        )}
+          ) : null}
+        </>
 
         <p className="mt-8 text-[11px] text-white/25">
           Need help? Contact your clinic if this link does not work.

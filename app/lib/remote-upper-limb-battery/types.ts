@@ -72,7 +72,7 @@ export const REMOTE_UPPER_LIMB_BATTERY_TESTS: readonly RemoteUpperLimbBatteryTes
   {
     id: "functionalReach",
     title: "Functional Reach",
-    requiredReps: 1,
+    requiredReps: 3,
   },
 ];
 

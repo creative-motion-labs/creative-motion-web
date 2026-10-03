@@ -13,7 +13,10 @@ import {
   createPreviewPositionProcessor,
   resolveFunctionalReachCompletedAttempts,
 } from "./battery-frame-processors";
-import { FUNCTIONAL_REACH_TRACKING_LOSS_RESET_TICKS } from "./battery-reach-extent";
+import {
+  FUNCTIONAL_REACH_TRACKING_LOSS_RESET_TICKS,
+  REMOTE_BATTERY_FUNCTIONAL_REACH_REP_CONFIG,
+} from "./battery-reach-extent";
 import {
   completeBatteryTest,
   createBatteryOrchestratorState,
@@ -24,7 +27,7 @@ import {
   buildRepTestResult,
 } from "./battery-orchestrator";
 
-const BASELINE_MS = PATIENT_FUNCTIONAL_REACH_REP_CONFIG.baselineDurationMs;
+const BASELINE_MS = REMOTE_BATTERY_FUNCTIONAL_REACH_REP_CONFIG.baselineDurationMs;
 const R_SHOULDER = 12;
 const R_WRIST = 16;
 const L_SHOULDER = 11;
@@ -128,15 +131,103 @@ describe("resolveFunctionalReachCompletedAttempts", () => {
       resolveFunctionalReachCompletedAttempts({
         movementTrackingEnabled: true,
         baselineReachExtent: 0.1,
+        internalRepCount: 2,
+        repPhase: "peak",
+      }),
+      1,
+    );
+    assert.equal(
+      resolveFunctionalReachCompletedAttempts({
+        movementTrackingEnabled: true,
+        baselineReachExtent: 0.1,
         internalRepCount: 1,
         repPhase: "rest",
       }),
       1,
     );
+    assert.equal(
+      resolveFunctionalReachCompletedAttempts({
+        movementTrackingEnabled: true,
+        baselineReachExtent: 0.1,
+        internalRepCount: 3,
+        repPhase: "rest",
+      }),
+      3,
+    );
   });
 });
 
 describe("functional reach battery processor", () => {
+  it("uses remote battery reach config distinct from patient portal tuning", () => {
+    assert.notEqual(
+      REMOTE_BATTERY_FUNCTIONAL_REACH_REP_CONFIG.baselineDurationMs,
+      PATIENT_FUNCTIONAL_REACH_REP_CONFIG.baselineDurationMs,
+    );
+    assert.equal(REMOTE_BATTERY_FUNCTIONAL_REACH_REP_CONFIG.minMsBetweenReps, 0);
+    assert.equal(
+      REMOTE_BATTERY_FUNCTIONAL_REACH_REP_CONFIG.minShoulderVisibility,
+      PATIENT_FUNCTIONAL_REACH_REP_CONFIG.minShoulderVisibility,
+    );
+    assert.equal(
+      REMOTE_BATTERY_FUNCTIONAL_REACH_REP_CONFIG.minWristVisibility,
+      PATIENT_FUNCTIONAL_REACH_REP_CONFIG.minWristVisibility,
+    );
+  });
+
+  it("recognizes forward peak promptly after baseline for the prescribed right arm", () => {
+    const movementStartMs = 50_000;
+    const processor = createFunctionalReachProcessor("right");
+    processor.beginMovementTracking();
+    feedExtent(processor, 0.1, movementStartMs, BASELINE_MS);
+    const forwardStartMs = movementStartMs + BASELINE_MS + 33;
+    let peakMs: number | null = null;
+    for (let t = forwardStartMs; t <= forwardStartMs + 500; t += 33) {
+      const snapshot = processor.processFrame(rightReachLandmarks(0.02), ctx(t));
+      if (snapshot.movementPhase === "peak" && peakMs === null) {
+        peakMs = t;
+      }
+    }
+    assert.ok(peakMs !== null);
+    const timing = processor.getFunctionalReachTiming?.();
+    assert.equal(timing?.movementStartedAtMs, movementStartMs);
+    assert.equal(timing?.forwardPeakRecognizedAtMs, peakMs);
+    assert.ok((peakMs as number) - movementStartMs < BASELINE_MS + 600);
+  });
+
+  it("recognizes forward peak promptly after baseline for the prescribed left arm", () => {
+    const movementStartMs = 60_000;
+    const processor = createFunctionalReachProcessor("left");
+    processor.beginMovementTracking();
+    feedExtent(processor, 0.1, movementStartMs, BASELINE_MS, leftReachLandmarks);
+    const forwardStartMs = movementStartMs + BASELINE_MS + 33;
+    let peakMs: number | null = null;
+    for (let t = forwardStartMs; t <= forwardStartMs + 500; t += 33) {
+      const snapshot = processor.processFrame(leftReachLandmarks(0.02), ctx(t));
+      if (snapshot.movementPhase === "peak" && peakMs === null) {
+        peakMs = t;
+      }
+    }
+    assert.ok(peakMs !== null);
+    assert.ok((peakMs as number) - movementStartMs < BASELINE_MS + 600);
+  });
+
+  it("completes a clear reach and return cycle within bounded timing", () => {
+    const movementStartMs = 70_000;
+    const processor = createFunctionalReachProcessor("right");
+    processor.beginMovementTracking();
+    feedExtent(processor, 0.1, movementStartMs, BASELINE_MS);
+    feedExtent(processor, 0.02, movementStartMs + BASELINE_MS + 100, 200);
+    feedExtent(processor, 0.02, movementStartMs + BASELINE_MS + 400, 200);
+    const snapshot = feedExtent(processor, 0.1, movementStartMs + BASELINE_MS + 700, 400);
+    assert.equal(snapshot.repCount, 1);
+    const timing = processor.getFunctionalReachTiming?.();
+    assert.ok(timing?.attemptCompletedAtMs !== null);
+    assert.ok(
+      (timing?.attemptCompletedAtMs as number) - movementStartMs <
+        BASELINE_MS + 1_500,
+    );
+  });
+
   it("does not count reps before movement tracking is armed", () => {
     const processor = createFunctionalReachProcessor("right");
     const snapshot = feedExtent(processor, 0.1, 0, BASELINE_MS + 2_000);
@@ -173,6 +264,24 @@ describe("functional reach battery processor", () => {
     processor.beginMovementTracking();
     const snapshot = feedExtent(processor, 0.1, 0, BASELINE_MS + 2_000);
     assert.equal(snapshot.repCount, 0);
+  });
+
+  it("counts three completed reach-and-return cycles for the battery UI", () => {
+    const processor = createFunctionalReachProcessor("right");
+    processor.beginMovementTracking();
+    const restExtent = 0.1;
+    const peakExtent = 0.02;
+    let startMs = 0;
+    feedExtent(processor, restExtent, startMs, BASELINE_MS);
+    let snapshot = processor.processFrame(rightReachLandmarks(restExtent), ctx(BASELINE_MS));
+    for (let rep = 0; rep < 3; rep += 1) {
+      startMs = BASELINE_MS + rep * 2_500 + 900;
+      feedExtent(processor, peakExtent, startMs, 200);
+      feedExtent(processor, peakExtent, startMs + 300, 200);
+      snapshot = feedExtent(processor, restExtent, startMs + 700, 400);
+      assert.equal(snapshot.repCount, rep + 1);
+    }
+    assert.equal(snapshot.repCount, 3);
   });
 
   it("completes exactly one attempt after reach and return", () => {
@@ -346,6 +455,14 @@ describe("functional reach battery completion wiring", () => {
     };
     assert.equal(getActiveBatteryTestId(state), "functionalReach");
     state = recordBatteryRepCompleted(state, 0.12);
+    assert.equal(state.repsCompleted, 1);
+    assert.equal(state.phase, "test_active");
+    state = { ...state, phase: "test_active" };
+    state = recordBatteryRepCompleted(state, 0.13);
+    assert.equal(state.repsCompleted, 2);
+    state = { ...state, phase: "test_active" };
+    state = recordBatteryRepCompleted(state, 0.14);
+    assert.equal(state.repsCompleted, 3);
     assert.equal(state.phase, "test_completed");
     state = completeBatteryTest(state, {
       testId: "functionalReach",
