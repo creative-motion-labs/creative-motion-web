@@ -5,7 +5,6 @@
 import { BLAZEPOSE_ACQUISITION_ADAPTER, type InputAcquisitionContext } from "@/app/lib/input-acquisition";
 import { FunctionalReachRepCounter } from "@/app/lib/cv/functional-reach-detector";
 import type { SagittalHipRepPhase } from "@/app/lib/cv/sagittal-hip-rep-core";
-import { PATIENT_FUNCTIONAL_REACH_REP_CONFIG } from "@/app/lib/cv/cv-patient-config";
 import type { PoseLandmark } from "@/app/lib/cv/pose-landmark-overlay";
 import { computeTorsoSpan } from "@/app/lib/cv/sagittal-hip-rep-core";
 import {
@@ -37,7 +36,10 @@ import {
 import {
   computeBatteryReachExtent,
   computeReachDisplacementFromBaseline,
+  createEmptyBatteryFunctionalReachTiming,
   FUNCTIONAL_REACH_TRACKING_LOSS_RESET_TICKS,
+  REMOTE_BATTERY_FUNCTIONAL_REACH_REP_CONFIG,
+  type BatteryFunctionalReachTiming,
 } from "./battery-reach-extent";
 import type { RemoteUpperLimbBatterySide } from "./types";
 
@@ -68,11 +70,15 @@ export type BatteryTestProcessor = {
   reset: () => void;
   beginMovementTracking: () => void;
   isMovementTrackingEnabled: () => boolean;
+  getFunctionalReachTiming?: () => BatteryFunctionalReachTiming;
   processFrame: (
     landmarks: readonly PoseLandmark[],
     context: InputAcquisitionContext,
   ) => BatteryFrameProcessorSnapshot;
 };
+
+const BATTERY_FUNCTIONAL_REACH_DEV_LOG =
+  typeof process !== "undefined" && process.env.NODE_ENV === "development";
 
 export type BatteryFunctionalReachProcessor = BatteryTestProcessor;
 
@@ -89,8 +95,12 @@ export function resolveFunctionalReachCompletedAttempts(input: {
   if (!input.movementTrackingEnabled) return 0;
   if (input.baselineReachExtent === null) return 0;
   if (input.internalRepCount < 1) return 0;
-  if (input.repPhase !== "rest") return 0;
-  return 1;
+  // Rise-polarity FSM increments internalRepCount at peak entry; only count
+  // finished cycles (return to rest). While forward, show prior completions.
+  if (input.repPhase !== "rest") {
+    return Math.max(0, input.internalRepCount - 1);
+  }
+  return input.internalRepCount;
 }
 
 function mapSide(side: RemoteUpperLimbBatterySide): ShoulderAbductionReachSide {
@@ -373,7 +383,8 @@ export function createElbowFlexionProcessor(side: RemoteUpperLimbBatterySide): B
 export function createFunctionalReachProcessor(
   side: RemoteUpperLimbBatterySide,
 ): BatteryFunctionalReachProcessor {
-  const counter = new FunctionalReachRepCounter(PATIENT_FUNCTIONAL_REACH_REP_CONFIG);
+  const reachConfig = REMOTE_BATTERY_FUNCTIONAL_REACH_REP_CONFIG;
+  const counter = new FunctionalReachRepCounter(reachConfig);
   let movementTrackingEnabled = false;
   let baselineStarted = false;
   let minReachExtent: number | null = null;
@@ -381,6 +392,15 @@ export function createFunctionalReachProcessor(
   let lastCompletedAttempts = 0;
   let consecutiveUnusableFrames = 0;
   let lastRepAcceptReason: string | null = null;
+  let timing = createEmptyBatteryFunctionalReachTiming();
+  let hadBaseline = false;
+  let hadPeakPhase = false;
+
+  const resetTiming = () => {
+    timing = createEmptyBatteryFunctionalReachTiming();
+    hadBaseline = false;
+    hadPeakPhase = false;
+  };
 
   const resetTrackingState = () => {
     counter.resetBaseline();
@@ -392,6 +412,7 @@ export function createFunctionalReachProcessor(
     lastCompletedAttempts = 0;
     consecutiveUnusableFrames = 0;
     lastRepAcceptReason = null;
+    resetTiming();
   };
 
   const recalibrateAfterTrackingLoss = () => {
@@ -403,6 +424,7 @@ export function createFunctionalReachProcessor(
     lastCompletedAttempts = 0;
     consecutiveUnusableFrames = 0;
     lastRepAcceptReason = null;
+    resetTiming();
   };
 
   const beginMovementTracking = () => {
@@ -410,16 +432,30 @@ export function createFunctionalReachProcessor(
     movementTrackingEnabled = true;
   };
 
+  const logReachTiming = (event: string, nowMs: number, extra?: Record<string, unknown>) => {
+    if (!BATTERY_FUNCTIONAL_REACH_DEV_LOG) return;
+    console.info("[battery-functional-reach-timing]", {
+      event,
+      testedSide: side,
+      nowMs,
+      movementStartedAtMs: timing.movementStartedAtMs,
+      msSinceMovementStart:
+        timing.movementStartedAtMs === null ? null : nowMs - timing.movementStartedAtMs,
+      ...extra,
+    });
+  };
+
   return {
     reset: resetTrackingState,
     beginMovementTracking,
     isMovementTrackingEnabled: () => movementTrackingEnabled,
+    getFunctionalReachTiming: () => timing,
     processFrame(landmarks, context) {
       const nowMs = context.capturedAtMs;
       const testedVisibility = readArmVisibility(landmarks, side);
       const trackingReady =
-        testedVisibility.shoulder >= PATIENT_FUNCTIONAL_REACH_REP_CONFIG.minShoulderVisibility &&
-        testedVisibility.wrist >= PATIENT_FUNCTIONAL_REACH_REP_CONFIG.minWristVisibility;
+        testedVisibility.shoulder >= reachConfig.minShoulderVisibility &&
+        testedVisibility.wrist >= reachConfig.minWristVisibility;
       const quality = visibilityQualityFromValues([
         testedVisibility.shoulder,
         testedVisibility.wrist,
@@ -429,6 +465,10 @@ export function createFunctionalReachProcessor(
         trackingReady && quality !== "poor" && quality !== "unknown" && reachExtent !== null;
 
       if (movementTrackingEnabled) {
+        if (timing.movementStartedAtMs === null) {
+          timing.movementStartedAtMs = nowMs;
+          logReachTiming("movement_tracking_started", nowMs);
+        }
         if (!trackingUsable) {
           consecutiveUnusableFrames += 1;
           if (consecutiveUnusableFrames >= FUNCTIONAL_REACH_TRACKING_LOSS_RESET_TICKS) {
@@ -440,6 +480,9 @@ export function createFunctionalReachProcessor(
           if (!baselineStarted) {
             counter.startBaselineWindow(nowMs);
             baselineStarted = true;
+            logReachTiming("baseline_window_started", nowMs, {
+              baselineDurationMs: reachConfig.baselineDurationMs,
+            });
           }
           const torsoSpan = computeTorsoSpan(landmarks as PoseLandmark[]);
           counter.driveFrame(reachExtent, nowMs, torsoSpan);
@@ -456,6 +499,29 @@ export function createFunctionalReachProcessor(
       }
 
       const snapshot = counter.getSnapshot();
+      if (
+        movementTrackingEnabled &&
+        snapshot.baselineReachExtent !== null &&
+        !hadBaseline
+      ) {
+        hadBaseline = true;
+        timing.baselineFinalizedAtMs = nowMs;
+        logReachTiming("baseline_finalized", nowMs, {
+          baselineReachExtent: snapshot.baselineReachExtent,
+        });
+      }
+      if (
+        movementTrackingEnabled &&
+        snapshot.repPhase === "peak" &&
+        !hadPeakPhase
+      ) {
+        hadPeakPhase = true;
+        timing.forwardPeakRecognizedAtMs = nowMs;
+        logReachTiming("forward_peak_recognized", nowMs, {
+          reachExtent,
+          peakReachExtent,
+        });
+      }
       const completedAttempts = resolveFunctionalReachCompletedAttempts({
         movementTrackingEnabled,
         baselineReachExtent: snapshot.baselineReachExtent,
@@ -466,6 +532,11 @@ export function createFunctionalReachProcessor(
         completedAttempts > lastCompletedAttempts ? peakReachExtent : null;
       if (completedAttempts > lastCompletedAttempts) {
         lastCompletedAttempts = completedAttempts;
+        timing.attemptCompletedAtMs = nowMs;
+        logReachTiming("attempt_completed", nowMs, {
+          peakReachExtent,
+          reachExtent,
+        });
         lastRepAcceptReason =
           "functionalReach: accepted baseline→forward excursion→return to rest";
       }

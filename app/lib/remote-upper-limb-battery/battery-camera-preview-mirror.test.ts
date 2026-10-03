@@ -5,23 +5,27 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import {
-  BATTERY_MIRRORED_CAMERA_PREVIEW_TRANSFORM,
-  withBatteryMirroredCameraPreviewDraw,
-} from "./battery-camera-preview-mirror";
+import { drawBatteryMirroredCameraPreview } from "./battery-camera-preview-mirror";
 import { resolveBatteryPrescribedSideForPatientDisplay } from "./battery-prescribed-side";
 import { BLAZEPOSE_SIDE_INDICES } from "./battery-tracking";
 
 const ROOT = process.cwd();
+const MIRROR_MODULE = join(ROOT, "app/lib/remote-upper-limb-battery/battery-camera-preview-mirror.ts");
 const CAMERA_SESSION = join(ROOT, "app/lib/remote-upper-limb-battery/battery-camera-session.ts");
 const SESSION_UI = join(ROOT, "app/components/patient/RemoteUpperLimbBatterySession.tsx");
+const OVERLAY = join(ROOT, "app/lib/cv/upper-limb-arm-pose-overlay.ts");
 
 describe("battery camera preview mirror", () => {
-  it("uses scaleX(-1) presentation constant", () => {
-    assert.equal(BATTERY_MIRRORED_CAMERA_PREVIEW_TRANSFORM, "scaleX(-1)");
+  it("applies exactly one horizontal mirror transform per preview draw", () => {
+    const mirrorSource = readFileSync(MIRROR_MODULE, "utf8");
+    assert.equal(mirrorSource.match(/ctx\.scale\(-1,\s*1\)/g)?.length, 1);
+    assert.equal(mirrorSource.includes("scaleX(-1)"), false);
+    assert.match(mirrorSource, /ctx\.translate\(width,\s*0\)/);
+    assert.match(mirrorSource, /ctx\.drawImage\(video/);
+    assert.match(mirrorSource, /drawUpperLimbArmMotionGuidanceOverlay/);
   });
 
-  it("applies horizontal mirror transform around preview draw only", () => {
+  it("sequences save, translate, scale, draw, restore once", () => {
     const calls: string[] = [];
     const ctx = {
       save() {
@@ -36,26 +40,44 @@ describe("battery camera preview mirror", () => {
       scale(x: number, y: number) {
         calls.push(`scale:${x},${y}`);
       },
+      drawImage() {
+        calls.push("drawImage");
+      },
     } as CanvasRenderingContext2D;
 
-    withBatteryMirroredCameraPreviewDraw(ctx, 640, () => {
-      calls.push("draw");
-    });
+    const video = {} as HTMLVideoElement;
+    const canvas = { width: 640, height: 480 } as HTMLCanvasElement;
 
-    assert.deepEqual(calls, ["save", "translate:640,0", "scale:-1,1", "draw", "restore"]);
+    drawBatteryMirroredCameraPreview(ctx, video, canvas, undefined, null);
+
+    assert.deepEqual(calls, [
+      "save",
+      "translate:640,0",
+      "scale:-1,1",
+      "drawImage",
+      "restore",
+    ]);
+  });
+
+  it("maps raw image-space x to screen-right under a single mirror", () => {
+    const width = 640;
+    const imageSpaceX = 0.2 * width;
+    const screenX = width - imageSpaceX;
+    assert.equal(screenX, 0.8 * width);
   });
 
   it("mirrors video and overlay together while processors receive raw landmarks", () => {
     const source = readFileSync(CAMERA_SESSION, "utf8");
-    const mirrorStart = source.indexOf("withBatteryMirroredCameraPreviewDraw(ctx,");
-    assert.ok(mirrorStart >= 0);
-    const mirrorClose = source.indexOf("});", mirrorStart);
-    const processCall = source.indexOf("this.processFrame(landmarks", mirrorStart);
-    assert.ok(mirrorClose >= 0 && processCall > mirrorClose);
-    const mirrorBlock = source.slice(mirrorStart, mirrorClose);
-    assert.match(mirrorBlock, /drawImage\(video/);
-    assert.match(mirrorBlock, /drawUpperLimbArmMotionGuidanceOverlay/);
-    assert.equal(mirrorBlock.includes("processFrame"), false);
+    const detectIdx = source.indexOf("detectForVideo(video");
+    const drawIdx = source.indexOf("drawBatteryMirroredCameraPreview(");
+    const processIdx = source.indexOf("this.processFrame(landmarks");
+    assert.ok(detectIdx >= 0 && drawIdx > detectIdx);
+    assert.ok(processIdx > drawIdx);
+
+    assert.ok(drawIdx > detectIdx);
+    assert.ok(processIdx > drawIdx);
+    assert.equal(source.includes("scaleX(-1)"), false);
+    assert.match(readFileSync(MIRROR_MODULE, "utf8"), /drawUpperLimbArmMotionGuidanceOverlay/);
   });
 
   it("does not mirror prescribed side resolution when preview mirror flag is set", () => {
@@ -66,15 +88,28 @@ describe("battery camera preview mirror", () => {
   it("highlights the prescribed BlazePose side indices without swapping for mirror", () => {
     const source = readFileSync(CAMERA_SESSION, "utf8");
     assert.equal(source.includes("motionGuidanceSide"), true);
-    assert.equal(source.includes("1 - "), false);
     assert.equal(BLAZEPOSE_SIDE_INDICES.left.shoulder !== BLAZEPOSE_SIDE_INDICES.right.shoulder, true);
   });
 
-  it("keeps session chrome outside the mirrored canvas draw path", () => {
+  it("keeps arm overlay geometry in raw landmark space (no presentation flip in overlay)", () => {
+    const overlay = readFileSync(OVERLAY, "utf8");
+    assert.equal(overlay.includes("1 - lm.x"), false);
+    assert.equal(overlay.includes("1 - point.x"), false);
+    assert.equal(overlay.includes("scaleX(-1)"), false);
+  });
+
+  it("keeps session chrome and preview container free of CSS mirror transforms", () => {
     const ui = readFileSync(SESSION_UI, "utf8");
     assert.match(ui, /ref=\{canvasRef\}/);
-    assert.equal(ui.includes("BATTERY_MIRRORED_CAMERA_PREVIEW_TRANSFORM"), false);
+    assert.match(ui, /ref=\{videoRef\}/);
     assert.match(ui, /Motion guidance active/);
-    assert.equal(ui.includes("scaleX(-1)"), false);
+
+    const previewBlock = ui.slice(
+      ui.indexOf("aspect-[4/3]"),
+      ui.indexOf("MovementFocusAnatomyCard"),
+    );
+    assert.equal(previewBlock.includes("scaleX(-1)"), false);
+    assert.equal(previewBlock.includes("transform:"), false);
+    assert.equal(previewBlock.includes("BATTERY_MIRRORED"), false);
   });
 });

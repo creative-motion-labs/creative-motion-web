@@ -55,7 +55,7 @@ export const REMOTE_BATTERY_BOOTH_VOICE_CUE_IDS = Object.keys(
 ) as RemoteBatteryBoothVoiceCue[];
 
 /** Bump when regenerating booth MP3s so browsers do not reuse stale cached audio. */
-export const BOOTH_VOICE_ASSET_VERSION = "3";
+export const BOOTH_VOICE_ASSET_VERSION = "6";
 
 const INTERACTIVE_SHOULDER_BOOTH_VOICE_CUE_IDS = Object.keys(
   INTERACTIVE_SHOULDER_BOOTH_VOICE_MANIFEST,

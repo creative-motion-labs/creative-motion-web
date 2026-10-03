@@ -7,9 +7,11 @@ import {
   getBatteryTestOrientation,
   getFaceCameraSetupInstruction,
   getSideRepositionInstruction,
+  getSideViewSetupInstruction,
   isSideViewTestId,
   requiresSideRepositionAfterTestIndex,
 } from "./battery-orientation";
+import { getTestSetupInstruction } from "./battery-patient-copy";
 import {
   beginBatteryCountdown,
   buildRepTestResult,
@@ -124,18 +126,18 @@ describe("battery orientation flow", () => {
     assert.equal(requiresSideRepositionAfterTestIndex(2), false);
   });
 
-  it("uses arm-in-view and side-specific orientation copy", () => {
+  it("uses distinct face-camera and side-view setup copy", () => {
+    const face = getFaceCameraSetupInstruction("right", "en");
+    const side = getSideViewSetupInstruction("right", "en");
+    assert.match(face, /Face the camera/i);
+    assert.match(side, /Turn sideways/i);
+    assert.match(side, /pointed toward the camera/i);
+    assert.notEqual(face, side);
+    assert.equal(getSideRepositionInstruction("right", "en"), side);
     assert.equal(
-      getFaceCameraSetupInstruction("right", "en"),
-      "Place your arm in view of the camera.",
+      getTestSetupInstruction("shoulderAbduction", "right", "en"),
+      face,
     );
-    assert.equal(
-      getSideRepositionInstruction("right", "en"),
-      "Turn sideways so your right side faces the camera.",
-    );
-    assert.equal(
-      getSideRepositionInstruction("left", "ar"),
-      "استدر جانبياً، واجعل جانبك الأيسر باتجاه الكاميرا.",
-    );
+    assert.equal(getTestSetupInstruction("shoulderFlexion", "left", "en"), getSideViewSetupInstruction("left", "en"));
   });
 });

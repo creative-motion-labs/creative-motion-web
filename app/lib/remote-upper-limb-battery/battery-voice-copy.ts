@@ -19,10 +19,29 @@ export function formatBatterySideAdjective(
 }
 
 export function getBatteryArmInViewCopy(lang: BatteryVoiceLang): string {
+  return getBatteryFaceCameraSetupCopy(lang);
+}
+
+/** Front-view setup (shoulder abduction): face the camera with the arm visible. */
+export function getBatteryFaceCameraSetupCopy(lang: BatteryVoiceLang): string {
   if (lang === "ar") {
-    return "ضع ذراعك في مجال رؤية الكاميرا.";
+    return "واجه الكاميرا وضَع ذراعك في مجال الرؤية.";
   }
-  return "Place your arm in view of the camera.";
+  return "Face the camera. Place your arm in view of the camera.";
+}
+
+/** Side-view setup: body orientation and prescribed arm toward the camera. */
+export function getBatterySideViewSetupCopy(
+  side: RemoteUpperLimbBatterySide,
+  lang: BatteryVoiceLang,
+): string {
+  const adj = formatBatterySideAdjective(side, lang);
+  if (lang === "ar") {
+    return side === "right"
+      ? "استدر جانبياً بحيث يكون جانبك الأيمن باتجاه الكاميرا. أبقِ ذراعك اليمنى مرئية ومتجهة نحو الكاميرا."
+      : "استدر جانبياً بحيث يكون جانبك الأيسر باتجاه الكاميرا. أبقِ ذراعك اليسرى مرئية ومتجهة نحو الكاميرا.";
+  }
+  return `Turn sideways so your ${adj} side faces the camera. Keep your ${adj} arm visible and pointed toward the camera.`;
 }
 
 export function getBatteryTrackingLostCopy(lang: BatteryVoiceLang): string {
@@ -65,50 +84,40 @@ export function getBatteryAbductionRaiseCopy(
 }
 
 export function getBatteryFlexionRaiseCopy(
-  side: RemoteUpperLimbBatterySide,
+  _side: RemoteUpperLimbBatterySide,
   lang: BatteryVoiceLang,
 ): string {
-  const adj = formatBatterySideAdjective(side, lang);
   if (lang === "ar") {
-    return `ارفع ذراعك ${adj} ببطء إلى الأمام وإلى الأعلى.`;
+    return "ارفع ذراعك إلى أعلى ما تستطيع.";
   }
-  return `Raise your ${adj} arm slowly forward and upward.`;
+  return "Raise your arm as high as you can.";
 }
 
 export function getBatteryElbowBendCopy(
-  side: RemoteUpperLimbBatterySide,
+  _side: RemoteUpperLimbBatterySide,
   lang: BatteryVoiceLang,
 ): string {
-  const adj = formatBatterySideAdjective(side, lang);
   if (lang === "ar") {
-    return `اثنِ مرفقك ${adj} ببطء مع إبقاء ذراعك العلوي قريبًا من جانبك.`;
+    return "اثنِ مرفقك قدر ما تستطيع.";
   }
-  return `Bend your ${adj} elbow slowly, keeping your upper arm near your side.`;
+  return "Bend your elbow as far as you can.";
 }
 
 export function getBatteryFunctionalReachCopy(
-  side: RemoteUpperLimbBatterySide,
+  _side: RemoteUpperLimbBatterySide,
   lang: BatteryVoiceLang,
 ): string {
-  const adj = formatBatterySideAdjective(side, lang);
   if (lang === "ar") {
-    return `مد ذراعك ${adj} إلى الأمام ببطء قدر ما يريحك، مع إبقاء قدميك ثابتتين.`;
+    return "مدّ ذراعك إلى الأمام نحو الهدف قدر ما تستطيع.";
   }
-  return `Reach your ${adj} arm forward slowly, as far as is comfortable, without stepping.`;
+  return "Reach forward toward the target as far as you can.";
 }
 
 export function getBatterySideRepositionCopy(
   side: RemoteUpperLimbBatterySide,
   lang: BatteryVoiceLang,
 ): string {
-  if (lang === "ar") {
-    return side === "right"
-      ? "استدر جانبياً، واجعل جانبك الأيمن باتجاه الكاميرا."
-      : "استدر جانبياً، واجعل جانبك الأيسر باتجاه الكاميرا.";
-  }
-  return side === "right"
-    ? "Turn sideways so your right side faces the camera."
-    : "Turn sideways so your left side faces the camera.";
+  return getBatterySideViewSetupCopy(side, lang);
 }
 
 export function getBatteryTestStartVoiceCopy(
@@ -138,6 +147,13 @@ export function getBatteryDoneCopy(lang: BatteryVoiceLang): string {
 
 export function getBatteryAssessmentCompleteCopy(lang: BatteryVoiceLang): string {
   return lang === "ar" ? "اكتمل التقييم." : "Assessment completed.";
+}
+
+export function getBatteryFinalTestSavingCopy(lang: BatteryVoiceLang): string {
+  if (lang === "ar") {
+    return "اكتمل الاختبار. يرجى الانتظار بينما نحفظ نتائجك.";
+  }
+  return "Test complete. Please wait while we save your results.";
 }
 
 export function getBatteryRepCountCopy(completed: number, lang: BatteryVoiceLang): string | null {

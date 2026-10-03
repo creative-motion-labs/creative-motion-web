@@ -3,6 +3,7 @@ import {
   getBatteryArmInViewCopy,
   getBatteryAssessmentCompleteCopy,
   getBatteryDoneCopy,
+  getBatteryFinalTestSavingCopy,
   getBatteryElbowBendCopy,
   getBatteryFlexionRaiseCopy,
   getBatteryFunctionalReachCopy,
@@ -146,5 +147,13 @@ export const REMOTE_BATTERY_BOOTH_VOICE_MANIFEST = {
   "battery-assessment-complete-ar": entry(
     "battery-assessment-complete-ar.mp3",
     getBatteryAssessmentCompleteCopy("ar"),
+  ),
+  "battery-final-test-saving-en": entry(
+    "battery-final-test-saving-en.mp3",
+    getBatteryFinalTestSavingCopy("en"),
+  ),
+  "battery-final-test-saving-ar": entry(
+    "battery-final-test-saving-ar.mp3",
+    getBatteryFinalTestSavingCopy("ar"),
   ),
 } satisfies Record<string, { file: string; script: string }>;

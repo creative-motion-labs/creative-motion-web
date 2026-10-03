@@ -10,10 +10,13 @@ import {
 import { isRemoteBatteryBoothVoiceCue } from "@/app/lib/booth/booth-voice-manifest";
 import { getPrerecordedVoiceAudioProviderId } from "@/app/lib/booth/booth-voice-provider";
 import { resolveBatteryBoothVoiceCue } from "./battery-booth-voice-map";
+import type { RemoteBatteryBoothVoiceCue } from "@/app/lib/booth/booth-voice-manifest";
 import {
-  getBatteryArmInViewCopy,
+  getBatteryFaceCameraSetupCopy,
+  getBatterySideViewSetupCopy,
   getBatteryAssessmentCompleteCopy,
   getBatteryDoneCopy,
+  getBatteryFinalTestSavingCopy,
   getBatteryMovementSmoothCopy,
   getBatteryRepCountCopy,
   getBatteryRestBeforeNextCopy,
@@ -55,10 +58,12 @@ export function resolveBatterySpeechText(
     case "get-ready":
       return "";
     case "face-camera-setup":
-      return getBatteryArmInViewCopy(lang);
+      return getBatteryFaceCameraSetupCopy(lang);
     case "reposition-side":
     case "functional-side-setup":
       return getBatterySideRepositionCopy(side, lang);
+    case "side-view-setup":
+      return getBatterySideViewSetupCopy(side, lang);
     case "tracking-lost":
       return getBatteryTrackingLostCopy(lang);
     case "movement-smooth-comfort":
@@ -87,7 +92,7 @@ export function resolveBatterySpeechText(
     case "functional-arm-height":
     case "functional-feet-still":
     case "test-completed":
-      return "";
+      return getBatteryFinalTestSavingCopy(lang);
     case "functional-done":
       return getBatteryDoneCopy(lang);
     case "rep-one":
@@ -104,8 +109,16 @@ export function resolveBatterySpeechText(
 export function resolveBatteryRepCountSpeechCue(
   completed: number,
   requiredReps: number,
+  testId?: RemoteUpperLimbBatteryTestId,
 ): BatterySpeechCue | null {
   if (completed < 1 || completed > requiredReps) return null;
+  if (
+    testId === "functionalReach" &&
+    completed === requiredReps &&
+    requiredReps >= 3
+  ) {
+    return "test-completed";
+  }
   if (requiredReps === 1) return "functional-done";
   if (completed === 1) return "rep-one";
   if (completed === 2) return "rep-two";
@@ -126,6 +139,29 @@ export function resolveBatteryTestStartSpeechCue(
     case "functionalReach":
       return "functional-reach";
   }
+}
+
+export function isBatteryTestStartMovementSpeechCue(cue: BatterySpeechCue): boolean {
+  switch (cue) {
+    case "abduction-raise":
+    case "flexion-raise":
+    case "elbow-bend":
+    case "functional-reach":
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function resolveBatteryTestStartBoothVoiceCue(
+  testId: RemoteUpperLimbBatteryTestId,
+  side: RemoteUpperLimbBatterySide,
+  lang: BatteryVoiceLang = batteryVoiceLang,
+): RemoteBatteryBoothVoiceCue | null {
+  const speechCue = resolveBatteryTestStartSpeechCue(testId);
+  const boothCue = resolveBatteryBoothVoiceCue(speechCue, side, lang);
+  if (!boothCue || !isRemoteBatteryBoothVoiceCue(boothCue)) return null;
+  return boothCue;
 }
 
 export function resolveBatteryMovementSpeechCue(_input: {
@@ -151,18 +187,30 @@ export function speakBatteryCue(
   cue: BatterySpeechCue,
   side: RemoteUpperLimbBatterySide,
   scope = "global",
-  options?: { allowRepeat?: boolean; muted?: boolean },
-): void {
+  options?: {
+    allowRepeat?: boolean;
+    muted?: boolean;
+    skipCooldown?: boolean;
+    nowMs?: number;
+  },
+): boolean {
   const boothCue = resolveBatteryBoothVoiceCue(cue, side, batteryVoiceLang);
-  if (!boothCue || !isRemoteBatteryBoothVoiceCue(boothCue)) return;
+  if (!boothCue || !isRemoteBatteryBoothVoiceCue(boothCue)) return false;
 
   const boothScope = `remote-upper-limb-battery:${scope}:${side}`;
   const isTrackingLost = cue === "tracking-lost";
+  const bypassCooldown =
+    options?.skipCooldown ??
+    (isTrackingLost ||
+      cue === "side-view-setup" ||
+      cue === "test-completed" ||
+      isBatteryTestStartMovementSpeechCue(cue));
 
-  speakBoothVoiceCue(boothCue, boothScope, {
+  return speakBoothVoiceCue(boothCue, boothScope, {
+    nowMs: options?.nowMs,
     muted: options?.muted,
     allowRepeatKey: options?.allowRepeat ?? isTrackingLost,
-    skipCooldown: isTrackingLost,
+    skipCooldown: bypassCooldown,
   });
 }
 

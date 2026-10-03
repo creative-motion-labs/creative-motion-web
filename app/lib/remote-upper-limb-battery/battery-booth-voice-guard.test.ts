@@ -29,6 +29,7 @@ const ALL_BATTERY_SPEECH_CUES: BatterySpeechCue[] = [
   "get-ready",
   "face-camera-setup",
   "reposition-side",
+  "side-view-setup",
   "tracking-lost",
   "movement-smooth-comfort",
   "rest-before-next",
@@ -67,11 +68,12 @@ const SESSION_SPOKEN_BATTERY_CUES: BatterySpeechCue[] = [
   "flexion-raise",
   "elbow-bend",
   "functional-reach",
-  "movement-smooth-comfort",
+  "side-view-setup",
   "tracking-lost",
   "rep-one",
   "rep-two",
   "rep-three",
+  "test-completed",
   "functional-done",
   "assessment-completed",
 ];
@@ -102,6 +104,17 @@ describe("battery booth voice guard", () => {
       assert.ok(file.startsWith("battery-"), file);
       assert.equal(LEGACY_IS_FILES.has(file), false);
     }
+  });
+
+  it("maps final functional reach saving cue to dedicated battery MP3s", () => {
+    assert.equal(
+      resolveBatteryBoothVoiceCue("test-completed", "right", "en"),
+      "battery-final-test-saving-en",
+    );
+    assert.equal(
+      resolveBatteryBoothVoiceCue("test-completed", "left", "ar"),
+      "battery-final-test-saving-ar",
+    );
   });
 
   it("maps countdown cues to battery rep MP3s in English and Arabic", () => {
@@ -139,7 +152,6 @@ describe("battery booth voice guard", () => {
       "functional-return",
       "functional-arm-height",
       "functional-feet-still",
-      "test-completed",
     ];
     for (const cue of silent) {
       assert.equal(resolveBatteryBoothVoiceCue(cue, "right", "en"), null, cue);

@@ -9,10 +9,17 @@ import { getMovementInstruction, getTrackingLostStatus } from "./battery-patient
 import {
   getBatteryAbductionRaiseCopy,
   getBatteryArmInViewCopy,
+  getBatteryElbowBendCopy,
+  getBatteryFlexionRaiseCopy,
+  getBatteryFunctionalReachCopy,
   getBatteryTrackingLostCopy,
   LEGACY_BATTERY_TRACKING_LOST_PHRASE,
 } from "./battery-voice-copy";
-import { resolveBatterySpeechText, setBatterySpeechLang } from "./battery-speech";
+import {
+  resolveBatterySpeechText,
+  resolveBatteryTestStartSpeechCue,
+  setBatterySpeechLang,
+} from "./battery-speech";
 
 describe("remote upper-limb battery voice copy", () => {
   it("uses prescribed-side wording for abduction raise", () => {
@@ -33,14 +40,11 @@ describe("remote upper-limb battery voice copy", () => {
     assert.equal(line.includes("clearly see your left arm"), false);
   });
 
-  it("maps face-camera setup to arm-in-view guidance", () => {
-    assert.equal(
-      getBatteryArmInViewCopy("en"),
-      "Place your arm in view of the camera.",
-    );
+  it("maps face-camera setup to face-the-camera guidance", () => {
+    assert.match(getBatteryArmInViewCopy("en"), /Face the camera/i);
     assert.equal(
       resolveBatterySpeechText("face-camera-setup", "right", "en"),
-      "Place your arm in view of the camera.",
+      getBatteryArmInViewCopy("en"),
     );
   });
 
@@ -62,6 +66,27 @@ describe("remote upper-limb battery voice copy", () => {
     setBatterySpeechLang("ar");
     assert.match(resolveBatterySpeechText("abduction-raise", "left", "ar"), /اليسرى/);
     setBatterySpeechLang("en");
+  });
+
+  it("uses exercise-specific movement copy for tests 2–4", () => {
+    assert.equal(
+      getBatteryFlexionRaiseCopy("right", "en"),
+      "Raise your arm as high as you can.",
+    );
+    assert.equal(
+      getBatteryElbowBendCopy("left", "en"),
+      "Bend your elbow as far as you can.",
+    );
+    assert.equal(
+      getBatteryFunctionalReachCopy("right", "en"),
+      "Reach forward toward the target as far as you can.",
+    );
+    for (const testId of ["shoulderFlexion", "elbowFlexion", "functionalReach"] as const) {
+      assert.equal(
+        getMovementInstruction(testId, "right", "en"),
+        resolveBatterySpeechText(resolveBatteryTestStartSpeechCue(testId), "right", "en"),
+      );
+    }
   });
 
   it("keeps on-screen movement instructions aligned with voice copy per prescribed side", () => {
