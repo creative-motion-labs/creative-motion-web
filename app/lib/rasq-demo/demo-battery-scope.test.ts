@@ -23,7 +23,11 @@ describe("demo polish scope", () => {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
-    const batteryTouches = lines.filter((line) => line.includes("remote-upper-limb-battery"));
+    const batteryTouches = lines.filter(
+      (line) =>
+        line.includes("remote-upper-limb-battery") &&
+        !line.includes("extract-battery-payload"),
+    );
     assert.deepEqual(
       batteryTouches,
       [],

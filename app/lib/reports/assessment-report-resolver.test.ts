@@ -82,8 +82,8 @@ describe("resolveAssessmentReportFromDetail — remote upper-limb battery", () =
     );
 
     assert.equal(resolved.kind, "upper_limb_motor_screen");
-    assert.ok(resolved.battery);
-    assert.equal(resolved.battery.testedSide, "right");
+    assert.ok(resolved.remoteUpperLimbBattery);
+    assert.equal(resolved.remoteUpperLimbBattery.testedSide, "right");
     assert.equal(resolved.loadError, "");
     assert.equal(resolved.draft, null);
   });

@@ -1617,34 +1617,6 @@ export function AssessmentReportClient() {
     );
   }
 
-  if (reportKind === "upper_limb_motor_screen" && batteryPayload) {
-    const backHref = patientId ? `/clinician/patients/${patientId}` : "/clinician/patients";
-    return (
-      <main className="assessment-report-root print-report min-h-screen bg-[#0B1220] text-white">
-        <header className="screen-only sticky top-0 z-30 border-b border-[#1E2D42] bg-[#0B1220]">
-          <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-6 py-3">
-            <Link
-              href={backHref}
-              className="rounded-[6px] border border-[#1E2D42] bg-[#0F1825] px-3 py-2 text-xs font-semibold text-white"
-            >
-              ← Patient
-            </Link>
-          </div>
-        </header>
-        <ReportScreenHeader
-          patientName={patient?.full_name ?? "Patient"}
-          displayDate={reportDate}
-          assessmentTypeLabel="Upper-Limb Motor Screen"
-          sourceLabel="Camera-assisted observation"
-        />
-        <div className="print-report-body mx-auto max-w-4xl px-6 py-8 space-y-6">
-          <RemoteUpperLimbBatteryResultsBlock battery={batteryPayload} />
-          <ClinicalDisclaimerBlock />
-        </div>
-      </main>
-    );
-  }
-
   if (reportKind === "structured" && structuredData) {
     return (
       <main className="assessment-report-root print-report min-h-screen bg-[#0B1220] text-white">
