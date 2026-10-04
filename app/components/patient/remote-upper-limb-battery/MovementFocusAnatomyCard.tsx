@@ -2,6 +2,10 @@ import type { RemoteUpperLimbBatteryTestId } from "@/app/lib/remote-upper-limb-b
 
 export const MOVEMENT_FOCUS_ANATOMY_SRC = "/images/rasq/upper-limb-muscle-focus.png";
 
+/** Ensures workspace-aligned illustration slot keeps non-zero height (440×520 asset). */
+export const MOVEMENT_FOCUS_WORKSPACE_ILLUSTRATION_MIN_CLASS =
+  "min-h-[200px] sm:min-h-[240px]";
+
 const MOVEMENT_FOCUS_ANATOMY_ALT =
   "Upper-body muscle illustration highlighting the assessed shoulder and arm";
 
@@ -67,14 +71,31 @@ function AnatomyIllustration({
 }) {
   const mirrorForLeftSide = prescribedSide === "left";
 
+  if (workspaceAligned && !compact) {
+    return (
+      <div
+        className={`relative w-full flex-1 ${MOVEMENT_FOCUS_WORKSPACE_ILLUSTRATION_MIN_CLASS}`}
+        data-testid="movement-focus-workspace-illustration"
+      >
+        <img
+          src={MOVEMENT_FOCUS_ANATOMY_SRC}
+          alt={MOVEMENT_FOCUS_ANATOMY_ALT}
+          width={440}
+          height={520}
+          decoding="async"
+          className="absolute inset-0 h-full w-full object-contain object-center"
+          style={mirrorForLeftSide ? { transform: "scaleX(-1)" } : undefined}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className={
         compact
           ? "flex h-[min(42vw,200px)] min-h-[140px] w-full items-center justify-center sm:h-[min(36vw,220px)]"
-          : workspaceAligned
-            ? "flex min-h-0 w-full flex-1 items-center justify-center"
-            : "flex min-h-[200px] w-full flex-1 items-center justify-center sm:min-h-[240px] lg:min-h-[280px]"
+          : "flex min-h-[200px] w-full flex-1 items-center justify-center sm:min-h-[240px] lg:min-h-[280px]"
       }
     >
       <img
@@ -123,7 +144,13 @@ export function MovementFocusAnatomyCard({
       <p className="mt-2 text-sm font-semibold text-white/85">{copy.title}</p>
       <p className="mt-1 text-[11px] leading-relaxed text-white/45">{copy.caption}</p>
 
-      <div className="mt-2 flex min-h-0 flex-1 justify-center overflow-hidden">
+      <div
+        className={
+          workspaceAligned
+            ? "mt-2 flex min-h-0 flex-1 flex-col overflow-hidden"
+            : "mt-2 flex min-h-0 flex-1 justify-center overflow-hidden"
+        }
+      >
         <AnatomyIllustration
           prescribedSide={prescribedSide}
           workspaceAligned={workspaceAligned}

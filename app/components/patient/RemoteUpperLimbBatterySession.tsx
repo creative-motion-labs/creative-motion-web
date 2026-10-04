@@ -733,7 +733,7 @@ export function RemoteUpperLimbBatterySession({
               ) : null}
             </div>
           </div>
-          <div className="flex min-h-0 w-full flex-col">
+          <div className="flex h-full min-h-0 w-full flex-col">
             <MovementFocusAnatomyCard
               activeTestId={assessmentStarted ? activeTestId : null}
               prescribedSide={resolvedPrescribedSide}
