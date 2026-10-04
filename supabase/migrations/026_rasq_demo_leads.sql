@@ -1,5 +1,6 @@
 -- RASQ public /demo optional leads — separate from clinical tables.
 -- Writes via POST /api/public/rasq-demo/leads (service_role only).
+-- Renumbered from duplicate local 024; remote 024 is upper_limb_motor_screen_assignment_idempotency.
 
 create table if not exists public.rasq_demo_leads (
   id                      uuid        primary key default gen_random_uuid(),

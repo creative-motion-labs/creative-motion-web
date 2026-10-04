@@ -175,7 +175,7 @@ export function validateRasqDemoLeadShareFormFields(input: {
 
 export function mapRasqDemoLeadPersistenceError(message: string): string {
   if (/rasq_demo_leads|relation .* does not exist|schema cache/i.test(message)) {
-    return "Lead storage is not ready. Apply Supabase migration 024 (rasq_demo_leads) to your project.";
+    return "Lead storage is not ready. Apply Supabase migration 026 (rasq_demo_leads) to your project.";
   }
   return message;
 }

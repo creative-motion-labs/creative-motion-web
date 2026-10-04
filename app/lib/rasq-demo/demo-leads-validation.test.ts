@@ -75,7 +75,7 @@ describe("validateRasqDemoLeadBody", () => {
     const mapped = mapRasqDemoLeadPersistenceError(
       'relation "public.rasq_demo_leads" does not exist',
     );
-    assert.match(mapped, /migration 024/i);
+    assert.match(mapped, /migration 026/i);
   });
 
   it("accepts explicit skip submitIntent without requiring contact", () => {
