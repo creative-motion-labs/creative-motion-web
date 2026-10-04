@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   RASQ_DEMO_NO_RAW_VIDEO_NOTICE,
   RASQ_DEMO_EXPERIENCE_HEADING,
@@ -20,6 +21,13 @@ import {
   resetRasqDemoSessionCompletionVoice,
 } from "@/app/lib/rasq-demo/demo-completion-voice";
 import { stopRasqDemoVoicePlayback } from "@/app/lib/rasq-demo/demo-voice-audio";
+import {
+  createRasqDemoAttemptId,
+  getOrCreateRasqDemoVisitorSessionId,
+  isRasqDemoAnalyticsTestModeFromSearch,
+  trackRasqDemoAnalyticsEvent,
+} from "@/app/lib/rasq-demo/demo-analytics-client";
+import type { RasqDemoAnalyticsCameraPath } from "@/app/lib/rasq-demo/demo-analytics-types";
 import { RasqDemoOptionalLeadForm } from "./RasqDemoOptionalLeadForm";
 import { RasqDemoOrchestratorSession } from "./RasqDemoOrchestratorSession";
 import { RasqDemoPnfD1GuideVisual } from "./RasqDemoPnfD1GuideVisual";
@@ -29,18 +37,26 @@ import { RasqDemoMovementAnalysisSummaryPanel } from "./RasqDemoMovementAnalysis
 
 type RasqDemoPhase = "welcome" | "active" | "summary";
 
-function createDemoSessionId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `demo-${Date.now()}`;
-}
-
 export function RasqDemoExperience() {
+  const searchParams = useSearchParams();
+  const internalTest = isRasqDemoAnalyticsTestModeFromSearch(searchParams.toString());
+
   const [phase, setPhase] = useState<RasqDemoPhase>("welcome");
-  const [demoSessionId, setDemoSessionId] = useState(() => createDemoSessionId());
+  const [visitorSessionId] = useState(() =>
+    getOrCreateRasqDemoVisitorSessionId({ internalTest }),
+  );
+  const [demoSessionId, setDemoSessionId] = useState(() =>
+    createRasqDemoAttemptId({ internalTest }),
+  );
   const [movementSummary, setMovementSummary] = useState<RasqDemoMovementAnalysisSummary | null>(null);
   const welcomeCuePlayedRef = useRef(false);
+  const demoSessionIdRef = useRef(demoSessionId);
+  const cameraPathRef = useRef<RasqDemoAnalyticsCameraPath | null>(null);
+  const completionTrackedRef = useRef(false);
+
+  useEffect(() => {
+    demoSessionIdRef.current = demoSessionId;
+  }, [demoSessionId]);
 
   useEffect(() => {
     registerRasqDemoVoiceControlsNotifier(notifyRasqDemoVoiceControlsChanged);
@@ -51,11 +67,34 @@ export function RasqDemoExperience() {
   }, []);
 
   useEffect(() => {
+    trackRasqDemoAnalyticsEvent({
+      visitorSessionId,
+      attemptId: visitorSessionId,
+      eventType: "demo_visit",
+      isInternalTest: internalTest,
+    });
+  }, [visitorSessionId, internalTest]);
+
+  useEffect(() => {
     if (phase !== "welcome") return;
     if (welcomeCuePlayedRef.current) return;
     welcomeCuePlayedRef.current = true;
     playRasqDemoGuidanceCue("welcome");
   }, [phase]);
+
+  const handleCameraPathSelected = useCallback(
+    (path: RasqDemoAnalyticsCameraPath) => {
+      cameraPathRef.current = path;
+      trackRasqDemoAnalyticsEvent({
+        visitorSessionId,
+        attemptId: demoSessionIdRef.current,
+        eventType: "demo_started",
+        cameraPath: path,
+        isInternalTest: internalTest,
+      });
+    },
+    [visitorSessionId, internalTest],
+  );
 
   const handleStart = useCallback(() => {
     unlockRasqDemoAudioFromUserGesture();
@@ -63,16 +102,38 @@ export function RasqDemoExperience() {
     resetRasqDemoSessionCompletionVoice();
     resetRasqDemoPnfEndpointPlayedRepetitions();
     resetRasqDemoPnfRepetitionTickPlayed();
-    setDemoSessionId(createDemoSessionId());
+    const nextAttemptId = createRasqDemoAttemptId({ internalTest });
+    demoSessionIdRef.current = nextAttemptId;
+    cameraPathRef.current = null;
+    completionTrackedRef.current = false;
+    setDemoSessionId(nextAttemptId);
     setMovementSummary(null);
     setPhase("active");
-  }, []);
+  }, [internalTest]);
 
-  const handleSessionComplete = useCallback((summary: RasqDemoMovementAnalysisSummary) => {
-    playRasqDemoSessionCompletionVoice();
-    setMovementSummary(summary);
-    setPhase("summary");
-  }, []);
+  const handleSessionComplete = useCallback(
+    (summary: RasqDemoMovementAnalysisSummary) => {
+      playRasqDemoSessionCompletionVoice();
+      setMovementSummary(summary);
+      setPhase("summary");
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (phase !== "summary") return;
+    if (completionTrackedRef.current) return;
+    const cameraPath = cameraPathRef.current;
+    if (!cameraPath) return;
+    completionTrackedRef.current = true;
+    trackRasqDemoAnalyticsEvent({
+      visitorSessionId,
+      attemptId: demoSessionIdRef.current,
+      eventType: "demo_completed",
+      cameraPath,
+      isInternalTest: internalTest,
+    });
+  }, [phase, visitorSessionId, internalTest]);
 
   const summary = useMemo(() => movementSummary, [movementSummary]);
 
@@ -118,7 +179,10 @@ export function RasqDemoExperience() {
 
       {phase === "active" ? (
         <section aria-label="Live demonstration session">
-          <RasqDemoOrchestratorSession onSessionComplete={handleSessionComplete} />
+          <RasqDemoOrchestratorSession
+            onSessionComplete={handleSessionComplete}
+            onCameraPathSelected={handleCameraPathSelected}
+          />
         </section>
       ) : null}
 
@@ -128,6 +192,8 @@ export function RasqDemoExperience() {
 
           <RasqDemoOptionalLeadForm
             demoSessionId={demoSessionId}
+            visitorSessionId={visitorSessionId}
+            internalTest={internalTest}
             movementSummary={summary}
             onSubmitted={() => {
               /* optional — user may skip */

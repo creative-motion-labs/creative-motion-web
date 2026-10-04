@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { RASQ_DEMO_MOVEMENT_DISCLAIMER } from "./demo-copy";
+import { isRasqDemoInternalTestSessionId } from "./demo-analytics-types";
 import type { RasqDemoLeadSubmitIntent } from "./demo-leads-validation";
 import { isValidRasqDemoLeadEmail } from "./demo-leads-validation";
 
@@ -135,6 +136,10 @@ export async function sendRasqDemoConfirmationEmail(input: {
 export function shouldSendRasqDemoConfirmationEmail(input: {
   submitIntent: RasqDemoLeadSubmitIntent;
   email: string | null;
+  demoSessionId?: string | null;
 }): boolean {
+  if (input.demoSessionId && isRasqDemoInternalTestSessionId(input.demoSessionId)) {
+    return false;
+  }
   return input.submitIntent === "share" && isValidRasqDemoLeadEmail(input.email);
 }

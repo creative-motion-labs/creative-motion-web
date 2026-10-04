@@ -112,6 +112,7 @@ export async function processRasqDemoLeadSubmit(input: {
     shouldSendRasqDemoConfirmationEmail({
       submitIntent: input.submitIntent,
       email: record.email,
+      demoSessionId: record.demoSessionId,
     })
   ) {
     confirmationEmail = await trySendConfirmationEmail(admin, record);

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { RasqDemoExperience } from "@/app/components/rasq-demo/RasqDemoExperience";
 import { RASQ_DEMO_MOVEMENT_DISCLAIMER, RASQ_DEMO_PAGE_TITLE } from "@/app/lib/rasq-demo/demo-copy";
 
@@ -10,7 +11,9 @@ export const metadata: Metadata = {
 export default function RasqDemoPage() {
   return (
     <main className="min-h-screen bg-[#F1F5F9]">
-      <RasqDemoExperience />
+      <Suspense fallback={null}>
+        <RasqDemoExperience />
+      </Suspense>
     </main>
   );
 }

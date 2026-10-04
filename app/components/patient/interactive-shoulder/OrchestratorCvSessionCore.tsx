@@ -249,6 +249,7 @@ export function OrchestratorCvSessionCore({
   publicDemoMovementTargetPacing,
   onDemoTargetPopAudioUnlock,
   publicDemoConsent,
+  onPublicDemoCameraPathSelected,
 }: OrchestratorCvSessionCoreProps) {
   const renderSeqRef = useRef(0);
   renderSeqRef.current += 1;
@@ -1120,12 +1121,14 @@ export function OrchestratorCvSessionCore({
     writePatientCvCameraConsentToSession(createPatientCvCameraConsentRecord());
     setConsentAccepted(true);
     onDemoTargetPopAudioUnlock?.();
+    onPublicDemoCameraPathSelected?.("camera");
   };
 
   const handleSkipCameraClick = () => {
     if (publicDemoConsent) {
       skipCameraWithoutConsentRef.current = true;
       setConsentAccepted(true);
+      onPublicDemoCameraPathSelected?.("no_camera");
       return;
     }
     onSkipped?.();

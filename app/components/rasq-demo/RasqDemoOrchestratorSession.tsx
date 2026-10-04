@@ -90,9 +90,13 @@ const RASQ_DEMO_PUBLIC_CONSENT = {
 
 export type RasqDemoOrchestratorSessionProps = {
   onSessionComplete: (summary: RasqDemoMovementAnalysisSummary) => void;
+  onCameraPathSelected?: (path: "camera" | "no_camera") => void;
 };
 
-export function RasqDemoOrchestratorSession({ onSessionComplete }: RasqDemoOrchestratorSessionProps) {
+export function RasqDemoOrchestratorSession({
+  onSessionComplete,
+  onCameraPathSelected,
+}: RasqDemoOrchestratorSessionProps) {
   const prefersReducedMotion = usePrefersReducedMotion();
   const [activeGuideBlockId, setActiveGuideBlockId] = useState<string | null>(null);
   const [reachPerformance, setReachPerformance] = useState<DemoReachTargetPerformanceSnapshot>(
@@ -366,6 +370,7 @@ export function RasqDemoOrchestratorSession({ onSessionComplete }: RasqDemoOrche
         onPatternReachConfirmed={handlePatternReachConfirmed}
         onDemoTargetPopAudioUnlock={unlockRasqDemoAudioFromUserGesture}
         publicDemoConsent={RASQ_DEMO_PUBLIC_CONSENT}
+        onPublicDemoCameraPathSelected={onCameraPathSelected}
         onPoseDetectorSnapshot={handlePoseDetectorSnapshot}
         onSessionComplete={handleSessionComplete}
       />

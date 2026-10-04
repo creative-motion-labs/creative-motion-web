@@ -117,8 +117,17 @@ export function validateRasqDemoLeadBody(body: unknown): RasqDemoLeadValidationR
     submitIntent = body.submitIntent;
   }
 
+  const hasEmailOrPhone = Boolean(email || phone);
   const hasContactOrConsent =
-    Boolean(name || email || phone || mainGoal || consentRasqUpdates || consentPilotStudy);
+    hasEmailOrPhone ||
+    Boolean(name || mainGoal || consentRasqUpdates || consentPilotStudy);
+
+  if (submitIntent === "share" && !hasEmailOrPhone) {
+    return {
+      ok: false,
+      error: "A valid email or phone number is required to share contact details.",
+    };
+  }
 
   return {
     ok: true,
@@ -157,17 +166,12 @@ export function validateRasqDemoLeadShareFormFields(input: {
     return { ok: false, error: "Please enter a valid email address." };
   }
 
-  const hasContactOrConsent = Boolean(
-    input.name.trim() ||
-      emailTrim ||
-      input.phone.trim() ||
-      input.mainGoal ||
-      input.consentRasqUpdates ||
-      input.consentPilotStudy,
-  );
-
-  if (!hasContactOrConsent) {
-    return { ok: false, error: "Add at least one detail to share, or choose Skip." };
+  const phoneTrim = input.phone.trim();
+  if (!emailTrim && !phoneTrim) {
+    return {
+      ok: false,
+      error: "Please enter a valid email or phone number so we can reach you.",
+    };
   }
 
   return { ok: true };
