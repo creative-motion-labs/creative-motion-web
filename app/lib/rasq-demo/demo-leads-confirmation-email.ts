@@ -5,7 +5,7 @@ import { isValidRasqDemoLeadEmail } from "./demo-leads-validation";
 
 export const RASQ_DEMO_CONFIRMATION_EMAIL_SUBJECT = "We received your RASQ demo interest";
 
-export const RASQ_DEMO_CONFIRMATION_FROM = "RASQ Team <hello@rasqhealth.com>";
+export const RASQ_DEMO_CONFIRMATION_FROM = "RASQ Team <aisha@rasqhealth.com>";
 export const RASQ_DEMO_CONFIRMATION_REPLY_TO = "aisha@rasqhealth.com";
 
 const BRAND_TEAL = "#1D9E75";
@@ -63,10 +63,14 @@ export function buildRasqDemoConfirmationEmailHtml(recipientName: string | null)
               <p style="margin:0 0 20px;font-size:13px;line-height:1.6;color:${BRAND_MUTED};padding:12px 14px;background:#FFFBEB;border-radius:8px;border:1px solid #FDE68A;">
                 ${disclaimer}
               </p>
-              <p style="margin:0;font-size:14px;line-height:1.6;color:#334155;">
+              <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#334155;">
                 <strong>Creative Motion Lab</strong><br />
-                RASQ · <a href="mailto:hello@rasqhealth.com" style="color:${BRAND_TEAL};">hello@rasqhealth.com</a><br />
+                RASQ · <a href="mailto:aisha@rasqhealth.com" style="color:${BRAND_TEAL};">aisha@rasqhealth.com</a><br />
                 <a href="https://rasqhealth.com" style="color:${BRAND_TEAL};">rasqhealth.com</a>
+              </p>
+              <p style="margin:0;font-size:14px;line-height:1.6;color:#334155;">
+                For any questions about RASQ or potential pilot opportunities, please contact us at
+                <a href="mailto:aisha@rasqhealth.com" style="color:${BRAND_TEAL};">aisha@rasqhealth.com</a>.
               </p>
             </td>
           </tr>

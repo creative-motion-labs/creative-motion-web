@@ -264,11 +264,14 @@ describe("RASQ demo lead capture and confirmation email", () => {
     assert.match(html, /not a marketing subscription/i);
     assert.match(html, /Interactive Movement Demo/i);
     assert.match(html, /not a medical diagnosis/i);
+    assert.match(html, /potential pilot opportunities/i);
+    assert.match(html, /mailto:aisha@rasqhealth\.com/);
+    assert.doesNotMatch(html, /hello@rasqhealth\.com/);
   });
 
   it("uses branded RASQ confirmation email headers", () => {
     assert.equal(RASQ_DEMO_CONFIRMATION_EMAIL_SUBJECT, "We received your RASQ demo interest");
-    assert.equal(RASQ_DEMO_CONFIRMATION_FROM, "RASQ Team <hello@rasqhealth.com>");
+    assert.equal(RASQ_DEMO_CONFIRMATION_FROM, "RASQ Team <aisha@rasqhealth.com>");
     assert.equal(RASQ_DEMO_CONFIRMATION_REPLY_TO, "aisha@rasqhealth.com");
   });
 });
