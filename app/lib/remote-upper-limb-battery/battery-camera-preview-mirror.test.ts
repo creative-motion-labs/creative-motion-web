@@ -104,12 +104,14 @@ describe("battery camera preview mirror", () => {
     assert.match(ui, /ref=\{videoRef\}/);
     assert.match(ui, /Motion guidance active/);
 
-    const previewBlock = ui.slice(
-      ui.indexOf("aspect-[4/3]"),
-      ui.indexOf("MovementFocusAnatomyCard"),
-    );
+    const previewStart = ui.indexOf("aspect-video");
+    const previewEnd = ui.indexOf("<MovementFocusAnatomyCard", previewStart);
+    assert.ok(previewStart >= 0 && previewEnd > previewStart);
+    const previewBlock = ui.slice(previewStart, previewEnd);
     assert.equal(previewBlock.includes("scaleX(-1)"), false);
     assert.equal(previewBlock.includes("transform:"), false);
     assert.equal(previewBlock.includes("BATTERY_MIRRORED"), false);
+    assert.match(previewBlock, /object-contain/);
+    assert.match(ui, /lg:items-start/);
   });
 });

@@ -657,19 +657,27 @@ export function RemoteUpperLimbBatterySession({
         </div>
       ) : null}
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-stretch">
-        <div className="overflow-hidden rounded-[10px] border border-[#1E2D42] bg-black">
-          <div className="relative mx-auto aspect-[4/3] w-full max-w-xl bg-black">
+      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start">
+        <div className="w-full self-start overflow-hidden rounded-[10px] border border-[#1E2D42] bg-[#0F1825] lg:max-w-none">
+          <div className="relative aspect-video w-full max-w-xl bg-[#0B1220] lg:max-w-none">
+            {!previewActive ? (
+              <div
+                className="absolute inset-0 flex items-center justify-center px-4 text-center text-xs text-white/35"
+                aria-hidden
+              >
+                Camera preview will appear here after you start the camera.
+              </div>
+            ) : null}
             <video
               ref={videoRef}
               playsInline
               muted
-              className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-0"
+              className="pointer-events-none absolute inset-0 h-full w-full object-contain object-center opacity-0"
               aria-hidden
             />
             <canvas
               ref={canvasRef}
-              className="absolute inset-0 h-full w-full object-cover"
+              className="absolute inset-0 h-full w-full object-contain object-center"
             />
             {previewActive &&
             assessmentStarted &&
@@ -683,10 +691,12 @@ export function RemoteUpperLimbBatterySession({
             ) : null}
           </div>
         </div>
-        <MovementFocusAnatomyCard
-          activeTestId={assessmentStarted ? activeTestId : null}
-          prescribedSide={resolvedPrescribedSide}
-        />
+        <div className="min-h-0 w-full self-start lg:w-[260px]">
+          <MovementFocusAnatomyCard
+            activeTestId={assessmentStarted ? activeTestId : null}
+            prescribedSide={resolvedPrescribedSide}
+          />
+        </div>
       </div>
 
       {cameraError ? (
