@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { RasqDemoPlatformEntryCta } from "@/app/components/rasq-demo/RasqDemoPlatformEntryCta";
 import { TrustFooter } from "../components/trust/TrustFooter";
 import { loginClinician } from "../lib/api";
 import { ensureProviderProfile } from "../lib/auth/ensure-provider-client";
@@ -255,6 +256,8 @@ function LoginForm() {
             )}
           </div>
         </div>
+
+        <RasqDemoPlatformEntryCta variant="login" />
 
         <p className="mt-4 text-center text-xs text-white/15">
           RASQ by Creative Motion Lab · Secure · Built for clinical workflows

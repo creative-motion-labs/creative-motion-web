@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { RasqDemoPlatformEntryCta } from "@/app/components/rasq-demo/RasqDemoPlatformEntryCta";
 
 function useReveal(threshold = 0.15) {
   const ref = useRef<HTMLElement>(null);
@@ -158,14 +159,28 @@ function Navbar() {
               {label}
             </a>
           ))}
+          <Link
+            href="/demo"
+            className="rounded-[var(--rasq-r-btn)] px-3.5 py-2 text-sm text-white/50 transition-colors hover:text-white"
+          >
+            Demo
+          </Link>
         </nav>
 
-        <Link
-          href="/login"
-          className="rounded-[var(--rasq-r-btn)] border border-[var(--rasq-border)] px-4 py-2 text-sm font-medium text-white transition hover:border-[var(--rasq-teal)]/35"
-        >
-          Sign in
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/demo"
+            className="rounded-[var(--rasq-r-btn)] px-3 py-2 text-sm font-medium text-white/55 transition hover:text-white md:hidden"
+          >
+            Demo
+          </Link>
+          <Link
+            href="/login"
+            className="rounded-[var(--rasq-r-btn)] border border-[var(--rasq-border)] px-4 py-2 text-sm font-medium text-white transition hover:border-[var(--rasq-teal)]/35"
+          >
+            Sign in
+          </Link>
+        </div>
       </div>
     </header>
   );
@@ -485,9 +500,13 @@ function HeroSection() {
               </a>
             </div>
 
+            <div className="rasq-stagger-item mt-6 w-full max-w-lg" style={{ animationDelay: "220ms" }}>
+              <RasqDemoPlatformEntryCta variant="hero" />
+            </div>
+
             <div
               className="rasq-stagger-item mt-10 grid grid-cols-1 divide-y divide-[var(--rasq-border)] rounded-[10px] border border-[var(--rasq-border)] sm:grid-cols-3 sm:divide-x sm:divide-y-0"
-              style={{ animationDelay: "240ms" }}
+              style={{ animationDelay: "280ms" }}
             >
               {HERO_VALUES.map(({ label, desc }) => (
                 <div key={label} className="flex flex-col gap-1.5 bg-[var(--rasq-base)] px-5 py-4">
@@ -1063,6 +1082,7 @@ function Footer() {
             </p>
             <ul className="mt-3 space-y-2.5">
               {[
+                ["Try interactive demo", "/demo"],
                 ["Clinician sign in", "/login?role=clinician"],
                 ["Patient assessment link", "/assessment-access"],
                 ["Admin sign in", "/login?role=admin"],

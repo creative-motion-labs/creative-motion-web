@@ -10,6 +10,13 @@ export const RASQ_DEMO_EXPERIENCE_HEADING = "Interactive movement demonstration"
 
 export const RASQ_DEMO_PAGE_TITLE = "RASQ Interactive Movement Demo | Creative Motion";
 
+export const RASQ_DEMO_PLATFORM_ENTRY_HREF = "/demo";
+
+export const RASQ_DEMO_PLATFORM_ENTRY_CTA_LABEL = "Try Interactive Demo";
+
+export const RASQ_DEMO_PLATFORM_ENTRY_SUPPORT_COPY =
+  "Experience a short guided movement demonstration. For demonstration purposes only — not a medical diagnosis.";
+
 export const RASQ_DEMO_NO_RAW_VIDEO_NOTICE =
   "Camera processing runs in your browser. RASQ does not store raw video from this demo by default.";
 
