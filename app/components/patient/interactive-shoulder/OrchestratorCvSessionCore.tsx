@@ -40,6 +40,11 @@ import {
   resolveInteractiveShoulderRuntimeFaultMessage,
   resolveInteractiveShoulderStartError,
 } from "@/app/lib/interactive-shoulder/interactive-shoulder-ui";
+import {
+  isDemoCameraPermissionDeniedError,
+  queryDemoCameraPermissionState,
+  type DemoCameraPermissionState,
+} from "@/app/lib/rasq-demo/demo-camera-permission";
 import { resolveHitExitTransitionMs } from "@/app/lib/interactive-shoulder/reach-the-light-motion";
 import {
   MIRRORED_PREVIEW_TRANSFORM,
@@ -243,6 +248,7 @@ export function OrchestratorCvSessionCore({
   onPatternReachConfirmed,
   publicDemoMovementTargetPacing,
   onDemoTargetPopAudioUnlock,
+  publicDemoConsent,
 }: OrchestratorCvSessionCoreProps) {
   const renderSeqRef = useRef(0);
   renderSeqRef.current += 1;
@@ -384,9 +390,15 @@ export function OrchestratorCvSessionCore({
   const clearHitFeedbackRef = useRef<() => void>(() => {});
   const playOrchestratorUiSoundRef = useRef<(cue: InteractiveShoulderSoundCue) => void>(() => {});
   const startSessionRef = useRef<() => Promise<void>>(async () => {});
+  const startSessionWithoutCameraRef = useRef<() => Promise<void>>(async () => {});
   const resolvedTherapeuticSideRef = useRef(resolvedTherapeuticSide);
   const rafLoopMountCountRef = useRef(0);
   const consentAcceptedForCameraRef = useRef(false);
+  const skipCameraWithoutConsentRef = useRef(false);
+  const lastCameraStartErrorRef = useRef<unknown>(null);
+  const [demoCameraPermission, setDemoCameraPermission] = useState<DemoCameraPermissionState | null>(
+    null,
+  );
   const startSessionGenerationRef = useRef(0);
   const countdownActiveRef = useRef(false);
   const movementBlockActivatedRef = useRef<string | null>(null);
@@ -408,6 +420,11 @@ export function OrchestratorCvSessionCore({
   useEffect(() => {
     soundPlayerRef.current = createInteractiveShoulderSoundPlayer(prefersReducedMotion);
   }, [prefersReducedMotion]);
+
+  useEffect(() => {
+    if (!publicDemoConsent) return;
+    void queryDemoCameraPermissionState().then(setDemoCameraPermission);
+  }, [publicDemoConsent]);
 
   const handleSoundToggle = useCallback(() => {
     const muted = soundPlayerRef.current.toggleMuted();
@@ -496,7 +513,9 @@ export function OrchestratorCvSessionCore({
       /* Shoulder interactive slice — metrics persistence deferred; flush is a no-op. */
     });
     onRegisterCaptureConsent?.(() =>
-      consentAccepted ? createPatientCvCameraConsentRecord() : null,
+      consentAccepted && !skipCameraWithoutConsentRef.current
+        ? createPatientCvCameraConsentRecord()
+        : null,
     );
   }, [consentAccepted, onRegisterCaptureConsent, onRegisterMetricsFlush]);
 
@@ -570,86 +589,99 @@ export function OrchestratorCvSessionCore({
     onPoseDetectorSnapshotRef.current?.(live);
   };
 
+  const runSessionBootstrap = useCallback(
+    async (withCamera: boolean) => {
+      if (sessionStartedRef.current) return;
+      const detector = detectorRef.current;
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (!profile || !video || !canvas || !detector) return;
+      const generation = startSessionGenerationRef.current;
+      const invokeCount = bumpOrchestratorCvInitCounter("startSessionCalls");
+      traceOrchestratorCvInit("startSession-invoke", { invokeCount, generation, withCamera });
+      setStarting(true);
+      setStartError(null);
+      lastCameraStartErrorRef.current = null;
+      try {
+        if (withCamera) {
+          await detector.start(video, canvas);
+          if (generation !== startSessionGenerationRef.current) {
+            traceOrchestratorCvInit("startSession-stale-after-detector-start", { generation });
+            return;
+          }
+        }
+        if (!orchestratorRef.current) {
+          orchestratorRef.current = new SessionOrchestrator(sessionDefinition);
+        }
+        const now = performance.now();
+        const orchestrator = orchestratorRef.current;
+        orchestrator.start(now);
+        orchestrator.beginCalibration(now);
+        orchestrator.completeCalibration(now);
+        orchestrator.pause(now);
+        if (generation !== startSessionGenerationRef.current) {
+          traceOrchestratorCvInit("startSession-stale-after-orchestrator-pause", { generation });
+          return;
+        }
+        setCountdownActive(true);
+        onReadyCountdownStartedRef.current?.();
+        previousBlockIdForSoundRef.current = null;
+        movementBlockActivatedRef.current = null;
+        sessionStartedRef.current = true;
+        sessionCompleteFiredRef.current = false;
+        const difficultyConfig = resolveDifficultyConfigForSessionFromEnv(sessionDefinition);
+        adaptiveStateRef.current = difficultyConfig
+          ? createAdaptiveDifficultyState(difficultyConfig)
+          : null;
+        runnerStatesRef.current = {
+          instructional: createInitialInstructionalLifecycle(),
+          target: createInitialTargetLifecycle(),
+          pattern: null,
+        };
+        resetTargetContactConsumptionState(targetContactConsumptionRef.current);
+        targetStateRef.current = createInitialTargetLifecycle();
+        setTargetState(targetStateRef.current);
+        patternStateRef.current = null;
+        setPatternState(null);
+        setActiveMotionPattern(null);
+        setPresentationProgress(null);
+        runtimeFaultRef.current = null;
+        faultPauseAppliedRef.current = false;
+        setRuntimeFault(null);
+        activeBlockIdRef.current = null;
+        showBlockSummaryRef.current = false;
+        setShowBlockSummary(false);
+        const initialSnap = orchestrator.getSnapshot(now);
+        orchestratorHudSnapshotRef.current = initialSnap;
+        setOrchestratorSnapshot(initialSnap);
+        traceOrchestratorCvInit("startSession-complete", { generation });
+      } catch (error) {
+        lastCameraStartErrorRef.current = error;
+        if (generation === startSessionGenerationRef.current) {
+          setStartError(resolveInteractiveShoulderStartError(languageRef.current, error));
+        }
+      } finally {
+        if (generation === startSessionGenerationRef.current) {
+          setStarting(false);
+        }
+      }
+    },
+    [profile, sessionDefinition],
+  );
+
   const startSession = useCallback(async () => {
-    if (sessionStartedRef.current) return;
-    const detector = detectorRef.current;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!profile || !video || !canvas || !detector) return;
-    const generation = startSessionGenerationRef.current;
-    const invokeCount = bumpOrchestratorCvInitCounter("startSessionCalls");
-    traceOrchestratorCvInit("startSession-invoke", { invokeCount, generation });
-    setStarting(true);
-    setStartError(null);
-    try {
-      await detector.start(video, canvas);
-      if (generation !== startSessionGenerationRef.current) {
-        traceOrchestratorCvInit("startSession-stale-after-detector-start", { generation });
-        return;
-      }
-      if (!orchestratorRef.current) {
-        orchestratorRef.current = new SessionOrchestrator(sessionDefinition);
-      }
-      const now = performance.now();
-      const orchestrator = orchestratorRef.current;
-      orchestrator.start(now);
-      orchestrator.beginCalibration(now);
-      orchestrator.completeCalibration(now);
-      orchestrator.pause(now);
-      if (generation !== startSessionGenerationRef.current) {
-        traceOrchestratorCvInit("startSession-stale-after-orchestrator-pause", { generation });
-        return;
-      }
-      setCountdownActive(true);
-      onReadyCountdownStartedRef.current?.();
-      previousBlockIdForSoundRef.current = null;
-      movementBlockActivatedRef.current = null;
-      sessionStartedRef.current = true;
-      sessionCompleteFiredRef.current = false;
-      // SESSION BOUNDARY for adaptation. `startSession` is the only place a session
-      // begins or begins again, so it is the only place adaptive state is built. A null
-      // config — the production default — leaves adaptive behaviour off entirely.
-      const difficultyConfig = resolveDifficultyConfigForSessionFromEnv(sessionDefinition);
-      adaptiveStateRef.current = difficultyConfig
-        ? createAdaptiveDifficultyState(difficultyConfig)
-        : null;
-      runnerStatesRef.current = {
-        instructional: createInitialInstructionalLifecycle(),
-        target: createInitialTargetLifecycle(),
-        pattern: null,
-      };
-      resetTargetContactConsumptionState(targetContactConsumptionRef.current);
-      targetStateRef.current = createInitialTargetLifecycle();
-      setTargetState(targetStateRef.current);
-      patternStateRef.current = null;
-      setPatternState(null);
-      setActiveMotionPattern(null);
-      setPresentationProgress(null);
-      runtimeFaultRef.current = null;
-      faultPauseAppliedRef.current = false;
-      setRuntimeFault(null);
-      activeBlockIdRef.current = null;
-      showBlockSummaryRef.current = false;
-      setShowBlockSummary(false);
-      const initialSnap = orchestrator.getSnapshot(now);
-      orchestratorHudSnapshotRef.current = initialSnap;
-      setOrchestratorSnapshot(initialSnap);
-      traceOrchestratorCvInit("startSession-complete", { generation });
-    } catch (error) {
-      if (generation === startSessionGenerationRef.current) {
-        setStartError(resolveInteractiveShoulderStartError(languageRef.current, error));
-      }
-    } finally {
-      if (generation === startSessionGenerationRef.current) {
-        setStarting(false);
-      }
-    }
-  }, [profile, sessionDefinition]);
+    await runSessionBootstrap(true);
+  }, [runSessionBootstrap]);
+
+  const startSessionWithoutCamera = useCallback(async () => {
+    await runSessionBootstrap(false);
+  }, [runSessionBootstrap]);
 
   applyRuntimeFaultRef.current = applyRuntimeFault;
   clearHitFeedbackRef.current = clearHitFeedback;
   playOrchestratorUiSoundRef.current = playOrchestratorUiSound;
   startSessionRef.current = startSession;
+  startSessionWithoutCameraRef.current = startSessionWithoutCamera;
 
   const therapeuticSideKey = resolvedTherapeuticSide?.side ?? null;
   const profileRef = useRef(profile);
@@ -704,7 +736,11 @@ export function OrchestratorCvSessionCore({
     }
     if (consentAcceptedForCameraRef.current) return;
     consentAcceptedForCameraRef.current = true;
-    void startSessionRef.current();
+    if (skipCameraWithoutConsentRef.current) {
+      void startSessionWithoutCameraRef.current();
+    } else {
+      void startSessionRef.current();
+    }
     return () => {
       consentAcceptedForCameraRef.current = false;
       traceOrchestratorCvInit("camera-start-effect-cleanup");
@@ -1080,10 +1116,51 @@ export function OrchestratorCvSessionCore({
 
   const acceptConsent = () => {
     if (!consentChecked) return;
+    skipCameraWithoutConsentRef.current = false;
     writePatientCvCameraConsentToSession(createPatientCvCameraConsentRecord());
     setConsentAccepted(true);
     onDemoTargetPopAudioUnlock?.();
   };
+
+  const handleSkipCameraClick = () => {
+    if (publicDemoConsent) {
+      skipCameraWithoutConsentRef.current = true;
+      setConsentAccepted(true);
+      return;
+    }
+    onSkipped?.();
+  };
+
+  const handleDemoRetryCamera = () => {
+    setStartError(null);
+    lastCameraStartErrorRef.current = null;
+    consentAcceptedForCameraRef.current = false;
+    skipCameraWithoutConsentRef.current = false;
+    void queryDemoCameraPermissionState().then(setDemoCameraPermission);
+    void startSessionRef.current();
+  };
+
+  const consentCopy = publicDemoConsent ?? {
+    consentTitle: ui.consentTitle,
+    consentDescription: ui.consentDescription,
+    consentCheckbox: ui.consentCheckbox,
+    continueCamera: ui.continueCamera,
+    skipCamera: ui.skipCamera,
+    browserNote: "",
+    alreadyGrantedNote: "",
+    deniedRecovery: ui.cameraAccessDenied,
+    retryCamera: ui.continueCamera,
+  };
+
+  const showDemoPermissionDenied =
+    Boolean(publicDemoConsent) &&
+    (demoCameraPermission === "denied" ||
+      isDemoCameraPermissionDeniedError(lastCameraStartErrorRef.current));
+
+  const resolvedStartError =
+    publicDemoConsent && startError && showDemoPermissionDenied
+      ? publicDemoConsent.deniedRecovery
+      : startError;
 
   const handleDevMouseMove = (event: React.MouseEvent) => {
     if (!isDevMouseSimulationEnabled() || snapshot?.primaryWristNormalized) return;
@@ -1143,11 +1220,23 @@ export function OrchestratorCvSessionCore({
     <div className="px-4 pb-4 pt-3" dir={textDir} lang={language}>
       {!consentAccepted ? (
         <div className={`rounded-[10px] border border-[#E2E8E5] bg-white p-4 ${arClass}`}>
-          <p className="text-sm font-semibold text-[#0A0F1A]">{ui.consentTitle}</p>
-          <p className="mt-2 text-[12px] leading-relaxed text-[#6B7280]">{ui.consentDescription}</p>
+          <p className="text-sm font-semibold text-[#0A0F1A]">{consentCopy.consentTitle}</p>
+          <p className="mt-2 text-[12px] leading-relaxed text-[#6B7280]">{consentCopy.consentDescription}</p>
+          {publicDemoConsent ? (
+            <p className="mt-3 text-[12px] leading-relaxed text-[#64748B]">
+              {demoCameraPermission === "granted"
+                ? publicDemoConsent.alreadyGrantedNote
+                : publicDemoConsent.browserNote}
+            </p>
+          ) : null}
+          {showDemoPermissionDenied && !consentAccepted ? (
+            <p className="mt-3 rounded-[8px] border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] leading-relaxed text-rose-800" role="alert">
+              {publicDemoConsent!.deniedRecovery}
+            </p>
+          ) : null}
           <label className={`mt-3 flex min-h-[48px] items-start gap-2 text-[12px] text-[#374151]`}>
             <input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} className="mt-1" />
-            <span>{ui.consentCheckbox}</span>
+            <span>{consentCopy.consentCheckbox}</span>
           </label>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
@@ -1156,15 +1245,24 @@ export function OrchestratorCvSessionCore({
               disabled={!consentChecked}
               onClick={acceptConsent}
             >
-              {ui.continueCamera}
+              {consentCopy.continueCamera}
             </button>
             <button
               type="button"
               className={`rounded-[8px] border border-[#CBD5E1] bg-white px-4 text-sm font-medium text-[#374151] shadow-sm transition hover:border-[#94A3B8] hover:bg-[#F8FAFC] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1D9E75] ${PATIENT_PRIMARY_TOUCH_MIN_CLASS}`}
-              onClick={onSkipped}
+              onClick={handleSkipCameraClick}
             >
-              {ui.skipCamera}
+              {consentCopy.skipCamera}
             </button>
+            {publicDemoConsent && showDemoPermissionDenied ? (
+              <button
+                type="button"
+                className={`rounded-[8px] border border-[#CBD5E1] bg-white px-4 text-sm font-medium text-[#374151] ${PATIENT_PRIMARY_TOUCH_MIN_CLASS}`}
+                onClick={() => void queryDemoCameraPermissionState().then(setDemoCameraPermission)}
+              >
+                {publicDemoConsent.retryCamera}
+              </button>
+            ) : null}
           </div>
         </div>
       ) : (
@@ -1361,14 +1459,23 @@ export function OrchestratorCvSessionCore({
           {starting ? (
             <p className={`mt-2 text-center text-[12px] text-[#6B7280] ${arClass}`}>{ui.startingCamera}</p>
           ) : null}
-          {startError ? (
-            <p
+          {resolvedStartError ? (
+            <div
               className={`mt-2 rounded-[8px] border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700 ${arClass}`}
               role="status"
               aria-live="polite"
             >
-              {startError}
-            </p>
+              <p>{resolvedStartError}</p>
+              {publicDemoConsent && showDemoPermissionDenied ? (
+                <button
+                  type="button"
+                  className="mt-2 rounded-[6px] bg-[#1D9E75] px-3 py-1.5 text-[12px] font-semibold text-white"
+                  onClick={handleDemoRetryCamera}
+                >
+                  {publicDemoConsent.retryCamera}
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </>
       )}

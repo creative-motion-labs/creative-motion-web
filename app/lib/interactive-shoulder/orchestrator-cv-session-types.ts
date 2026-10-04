@@ -84,6 +84,18 @@ export type InteractiveShoulderSessionProps = {
   };
   /** Public `/demo` only: user-gesture hook to unlock target-pop HTMLAudio after camera consent. */
   onDemoTargetPopAudioUnlock?: () => void;
+  /** Public `/demo` only: replaces Interactive Shoulder consent copy and skip-camera behavior. */
+  publicDemoConsent?: {
+    consentTitle: string;
+    consentDescription: string;
+    consentCheckbox: string;
+    continueCamera: string;
+    skipCamera: string;
+    browserNote: string;
+    alreadyGrantedNote: string;
+    deniedRecovery: string;
+    retryCamera: string;
+  };
 };
 
 export type OrchestratorCvSessionCoreProps = InteractiveShoulderSessionProps & {

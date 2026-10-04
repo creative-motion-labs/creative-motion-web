@@ -1,5 +1,7 @@
 "use client";
 
+import { RASQ_DEMO_PNF_WELCOME_ANNOTATION } from "@/app/lib/rasq-demo/demo-consent-copy";
+
 type RasqDemoPnfD1GuideVisualProps = {
   reducedMotion?: boolean;
 };
@@ -46,8 +48,15 @@ export function RasqDemoPnfD1GuideVisual({ reducedMotion = false }: RasqDemoPnfD
         <circle cx="82" cy="78" r="5" fill="#64748B" fillOpacity="0.5" />
         <circle cx="156" cy="28" r="10" fill="#1D9E75" fillOpacity="0.2" stroke="#1D9E75" strokeWidth="2" />
         <circle cx="156" cy="28" r="4" fill="#1D9E75" />
-        <text x="88" y="124" fill="#64748B" fontSize="11" fontFamily="system-ui, sans-serif">
-          five smooth repetitions along the path
+        <text
+          x="120"
+          y="124"
+          fill="#64748B"
+          fontSize="11"
+          fontFamily="system-ui, sans-serif"
+          textAnchor="middle"
+        >
+          {RASQ_DEMO_PNF_WELCOME_ANNOTATION}
         </text>
       </svg>
       <p className="mt-2 text-sm text-[#475569]">

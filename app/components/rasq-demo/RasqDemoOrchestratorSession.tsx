@@ -64,6 +64,29 @@ import { RasqDemoVoiceControls, notifyRasqDemoVoiceControlsChanged } from "./Ras
 import { registerRasqDemoVoiceControlsNotifier } from "@/app/lib/rasq-demo/demo-voice-play";
 import { traceDemoReachTargetHit } from "@/app/lib/rasq-demo/demo-reach-target-hit-trace";
 import { isRasqDemoSpeechGuidanceEnabled } from "@/app/lib/rasq-demo/demo-page-settings";
+import {
+  RASQ_DEMO_CONSENT_ALREADY_GRANTED_NOTE,
+  RASQ_DEMO_CONSENT_BROWSER_NOTE,
+  RASQ_DEMO_CONSENT_CHECKBOX,
+  RASQ_DEMO_CONSENT_CONTINUE_BUTTON,
+  RASQ_DEMO_CONSENT_DENIED_RECOVERY,
+  RASQ_DEMO_CONSENT_DESCRIPTION,
+  RASQ_DEMO_CONSENT_RETRY_BUTTON,
+  RASQ_DEMO_CONSENT_SKIP_BUTTON,
+  RASQ_DEMO_CONSENT_TITLE,
+} from "@/app/lib/rasq-demo/demo-consent-copy";
+
+const RASQ_DEMO_PUBLIC_CONSENT = {
+  consentTitle: RASQ_DEMO_CONSENT_TITLE,
+  consentDescription: RASQ_DEMO_CONSENT_DESCRIPTION,
+  consentCheckbox: RASQ_DEMO_CONSENT_CHECKBOX,
+  continueCamera: RASQ_DEMO_CONSENT_CONTINUE_BUTTON,
+  skipCamera: RASQ_DEMO_CONSENT_SKIP_BUTTON,
+  browserNote: RASQ_DEMO_CONSENT_BROWSER_NOTE,
+  alreadyGrantedNote: RASQ_DEMO_CONSENT_ALREADY_GRANTED_NOTE,
+  deniedRecovery: RASQ_DEMO_CONSENT_DENIED_RECOVERY,
+  retryCamera: RASQ_DEMO_CONSENT_RETRY_BUTTON,
+} as const;
 
 export type RasqDemoOrchestratorSessionProps = {
   onSessionComplete: (summary: RasqDemoMovementAnalysisSummary) => void;
@@ -342,6 +365,7 @@ export function RasqDemoOrchestratorSession({ onSessionComplete }: RasqDemoOrche
         onTargetReachConfirmed={handleTargetReachConfirmed}
         onPatternReachConfirmed={handlePatternReachConfirmed}
         onDemoTargetPopAudioUnlock={unlockRasqDemoAudioFromUserGesture}
+        publicDemoConsent={RASQ_DEMO_PUBLIC_CONSENT}
         onPoseDetectorSnapshot={handlePoseDetectorSnapshot}
         onSessionComplete={handleSessionComplete}
       />
