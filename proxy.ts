@@ -35,6 +35,10 @@ const PUBLIC_PREFIXES = [
   "/images",
   // Remote Upper-Limb Battery + booth prerecorded clips (public/); token patients have no session.
   "/audio/booth/",
+  // Public RASQ interactive movement demo voice/SFX (public/); no login required.
+  "/audio/demo/",
+  // Optional lead capture after the public demo — rate-limited API; no Supabase session.
+  "/api/public/",
 ];
 
 const PUBLIC_PATHS = new Set([
@@ -51,6 +55,8 @@ const PUBLIC_PATHS = new Set([
   "/api/research/volunteer/repetitions",
   // Ops readiness — env booleans + pilot table reachability only (no secrets).
   "/api/health/supabase",
+  // Public RASQ interactive movement demo (computer vision + optional lead form).
+  "/demo",
 ]);
 
 function isPublic(pathname: string): boolean {
