@@ -1,0 +1,29 @@
+-- ============================================================
+-- PROPOSAL ONLY — do not apply until reviewed (RASQ public demo leads)
+--
+-- Separate from patients, assessments, plans, and volunteer research tables.
+-- Browser clients write via POST /api/public/rasq-demo/leads (service_role).
+-- Until approved, production/staging use dev-data/rasq-demo/demo-leads.jsonl locally.
+-- ============================================================
+
+-- create table if not exists public.rasq_demo_leads (
+--   id                      uuid        primary key default gen_random_uuid(),
+--   demo_session_id         text        not null,
+--   name                    text        null,
+--   email                   text        null,
+--   phone                   text        null,
+--   main_goal               text        null,
+--   consent_rasq_updates    boolean     not null default false,
+--   consent_pilot_study     boolean     not null default false,
+--   movement_summary        jsonb       null,
+--   created_at              timestamptz not null default now(),
+--
+--   constraint rasq_demo_leads_main_goal_chk
+--     check (main_goal is null or main_goal in ('sports', 'mobility', 'rehabilitation'))
+-- );
+--
+-- create index if not exists rasq_demo_leads_demo_session_id_idx
+--   on public.rasq_demo_leads (demo_session_id);
+--
+-- alter table public.rasq_demo_leads enable row level security;
+-- revoke all on public.rasq_demo_leads from anon, authenticated;

@@ -1,4 +1,8 @@
+import type { ShoulderAbductionReachPoseDetectorSnapshot } from "@/app/lib/cv/shoulder-abduction-reach-pose-detector";
 import type { CaptureSetupGuidance } from "@/app/lib/cv/patient-cv-capture-readiness";
+import type { PatternCompletionEvent } from "@/app/lib/interactive-shoulder/motion-patterns/pattern-lifecycle";
+import type { TargetAttemptStartEvent, TargetHitEvent } from "@/app/lib/interactive-shoulder/types";
+import type { ReactNode } from "react";
 import { createPatientCvCameraConsentRecord } from "@/app/lib/cv/patient-cv-consent";
 import type { PatientExerciseLanguage } from "@/app/lib/exercise-resolve";
 import type { SessionDefinition, SessionOrchestratorSnapshot } from "@/app/lib/session-orchestrator/types";
@@ -49,6 +53,37 @@ export type InteractiveShoulderSessionProps = {
    * backward-compatible widening, not a breaking change.
    */
   onSessionComplete?: (snapshot: InteractiveShoulderSessionCompletionSnapshot) => void;
+  /**
+   * When false, suppresses built-in Interactive Shoulder UI sounds (countdown, block complete, etc.).
+   * Public `/demo` sets this so prerecorded demo voice cues stay isolated from booth/battery audio.
+   */
+  orchestratorUiSoundEffectsEnabled?: boolean;
+  /** Demo-only: fires once when the ready countdown overlay begins. */
+  onReadyCountdownStarted?: () => void;
+  /** Demo-only: fires when a movement block becomes active (after transitions). */
+  onMovementBlockActivated?: (blockId: string) => void;
+  /** Demo-only: throttled pose snapshots for tracking guidance (not persisted). */
+  onPoseDetectorSnapshot?: (snapshot: ShoulderAbductionReachPoseDetectorSnapshot) => void;
+  /** Optional panel rendered beside the live preview on large screens (public demo anatomy guide). */
+  leadingPreviewCompanion?: ReactNode;
+  /** Optional overlay on the camera preview (public demo reach timing HUD). */
+  previewMeasurementOverlay?: ReactNode;
+  /** Fires when a therapeutic target attempt begins (pose-driven target lifecycle). */
+  onTargetAttemptStarted?: (event: TargetAttemptStartEvent) => void;
+  /** Fires once when pose tracking confirms a target reach (same path as orchestrator targetContact). */
+  onTargetReachConfirmed?: (event: TargetHitEvent) => void;
+  /** Fires once when the wrist completes a motion-pattern pass (same path as patternCompleted dispatch). */
+  onPatternReachConfirmed?: (event: PatternCompletionEvent) => void;
+  /**
+   * Public `/demo` only: fixed attempt timeout and presentation cap for Reach pacing.
+   * When set, supplies the target attempt seam without enabling adaptive difficulty.
+   */
+  publicDemoMovementTargetPacing?: {
+    attemptTimeoutMs: number;
+    maxTargetPresentations: number;
+  };
+  /** Public `/demo` only: user-gesture hook to unlock target-pop HTMLAudio after camera consent. */
+  onDemoTargetPopAudioUnlock?: () => void;
 };
 
 export type OrchestratorCvSessionCoreProps = InteractiveShoulderSessionProps & {

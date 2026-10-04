@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   generateRemoteUlmsToken,
   hashRemoteUlmsToken,
+  normalizeRemoteUlmsAssessmentToken,
   remoteUlmsPatientAssessmentPath,
 } from "./remote-assessment-token";
 
@@ -19,5 +20,12 @@ describe("remote-assessment-token", () => {
   it("generates uuid tokens", () => {
     const token = generateRemoteUlmsToken();
     assert.match(token, /^[0-9a-f-]{36}$/i);
+  });
+
+  it("normalizes assessment URL tokens", () => {
+    const token = generateRemoteUlmsToken();
+    assert.equal(normalizeRemoteUlmsAssessmentToken(` ${token} `), token);
+    assert.equal(normalizeRemoteUlmsAssessmentToken(""), null);
+    assert.equal(normalizeRemoteUlmsAssessmentToken("not-a-uuid"), null);
   });
 });

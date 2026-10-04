@@ -90,6 +90,33 @@ import {
 import type { ShoulderAbductionReachSide } from "@/app/lib/shoulder-rehabilitation";
 import type { OrchestratorCvSessionCoreProps } from "@/app/lib/interactive-shoulder/orchestrator-cv-session-types";
 import {
+  bumpOrchestratorCvInitCounter,
+  traceOrchestratorCvInit,
+} from "@/app/lib/interactive-shoulder/orchestrator-cv-init-dev-trace";
+import {
+  shouldAdvanceOrchestratorCvOrchestratorTick,
+  shouldRunOrchestratorCvRafOrchestration,
+} from "@/app/lib/interactive-shoulder/orchestrator-cv-raf-frame-policy";
+import {
+  logOrchestratorCvRafLoopDev,
+  orchestratorHudSummaryMetricsEqual,
+  patternLifecycleHudEquals,
+  shouldCommitOrchestratorHudSnapshot,
+  targetLifecycleHudEquals,
+  type OrchestratorHudSummaryMetrics,
+} from "@/app/lib/interactive-shoulder/orchestrator-cv-raf-loop-guards";
+import {
+  createTargetContactConsumptionState,
+  resetTargetContactConsumptionState,
+  resolveTargetContactForTick,
+} from "@/app/lib/interactive-shoulder/orchestrator-cv-target-contact-handling";
+import {
+  evaluatePoseDetectorUiCommit,
+  poseDetectorReactSnapshotUnchanged,
+  type NormalizedPoseDetectorUiCommit,
+} from "@/app/lib/interactive-shoulder/orchestrator-cv-pose-detector-ui-commit";
+import { logOrchestratorCvPoseSnapshotCommitDev } from "@/app/lib/interactive-shoulder/orchestrator-cv-pose-detector-snapshot-guards";
+import {
   mapPatternCompletionToSessionInput,
   mapShoulderMeasuredEventToSessionInput,
   mapTargetHitToSessionInput,
@@ -205,8 +232,22 @@ export function OrchestratorCvSessionCore({
   onRegisterCaptureConsent,
   onCaptureReadinessChange,
   onSessionComplete,
+  orchestratorUiSoundEffectsEnabled = true,
+  onReadyCountdownStarted,
+  onMovementBlockActivated,
+  onPoseDetectorSnapshot,
+  leadingPreviewCompanion,
+  previewMeasurementOverlay,
+  onTargetAttemptStarted,
+  onTargetReachConfirmed,
+  onPatternReachConfirmed,
+  publicDemoMovementTargetPacing,
+  onDemoTargetPopAudioUnlock,
 }: OrchestratorCvSessionCoreProps) {
-  const ui = interactiveShoulderUi(language);
+  const renderSeqRef = useRef(0);
+  renderSeqRef.current += 1;
+
+  const ui = useMemo(() => interactiveShoulderUi(language), [language]);
   const prefersReducedMotion = usePrefersReducedMotion();
   const hitExitTransitionMs = resolveHitExitTransitionMs(prefersReducedMotion);
   const entry = getExerciseCvRegistryEntry(INTERACTIVE_SHOULDER_CV_EXERCISE_ID);
@@ -254,15 +295,16 @@ export function OrchestratorCvSessionCore({
   const runtimeFaultRef = useRef<OrchestratorCvRuntimeFault | null>(null);
   const faultPauseAppliedRef = useRef(false);
   const devMouseRef = useRef<{ x: number; y: number } | null>(null);
+  /** Latest pose sample from the detector — updated every frame, never passed to setState directly. */
   const snapshotRef = useRef<ShoulderAbductionReachPoseDetectorSnapshot | null>(null);
+  const committedPoseDetectorUiRef = useRef<NormalizedPoseDetectorUiCommit | null>(null);
+  const lastPoseDetectorUiCommitAtMsRef = useRef(0);
   /**
    * The last capture-readiness payload actually handed to the ancestor, and the
    * `performance.now()` at which it was handed over. Issue #276.
    *
-   * `reportReadiness` runs once per published snapshot, and #276 raised that from one
-   * publication per 15 camera frames to one per frame — so this seam, the only
-   * per-snapshot callback that escapes this component, had its fan-out rate multiplied
-   * by fifteen as a side effect. Together these two refs are the delivery record that
+   * Delivered from the RAF sampler when a visible pose snapshot commit occurs — not
+   * from the detector callback. Together these two refs are the delivery record that
    * `shouldDeliverCaptureReadiness` reads to suppress unchanged payloads and to hold
    * the ancestor's re-render rate at the interval it had before #276. The decision
    * itself lives in orchestrator-cv-capture-readiness.ts, under test.
@@ -295,7 +337,12 @@ export function OrchestratorCvSessionCore({
   const [presentationProgress, setPresentationProgress] = useState<number | null>(null);
   const [runtimeFault, setRuntimeFault] = useState<OrchestratorCvRuntimeFault | null>(null);
   const [showBlockSummary, setShowBlockSummary] = useState(false);
-  const [summaryMetrics, setSummaryMetrics] = useState({ targets: 0, patterns: 0, reps: 0, durationSeconds: 0 });
+  const [summaryMetrics, setSummaryMetrics] = useState<OrchestratorHudSummaryMetrics>({
+    targets: 0,
+    patterns: 0,
+    reps: 0,
+    durationSeconds: 0,
+  });
   const [targetHitAnnouncement, setTargetHitAnnouncement] = useState<string | null>(null);
   const [hitBurstTarget, setHitBurstTarget] = useState<TherapeuticTarget | null>(null);
   const [hitBurstProgress, setHitBurstProgress] = useState<number | null>(null);
@@ -306,6 +353,58 @@ export function OrchestratorCvSessionCore({
   const [countdownActive, setCountdownActive] = useState(false);
   const [soundMuted, setSoundMuted] = useState(() => soundPlayerRef.current.isMuted());
 
+  const orchestratorHudSnapshotRef = useRef<SessionOrchestratorSnapshot | null>(null);
+  const summaryMetricsRef = useRef(summaryMetrics);
+  const showBlockSummaryRef = useRef(false);
+  const presentationProgressRef = useRef<number | null>(null);
+  const onSessionCompleteRef = useRef(onSessionComplete);
+  const onMovementBlockActivatedRef = useRef(onMovementBlockActivated);
+  const onTargetAttemptStartedRef = useRef(onTargetAttemptStarted);
+  const onTargetReachConfirmedRef = useRef(onTargetReachConfirmed);
+  const onPatternReachConfirmedRef = useRef(onPatternReachConfirmed);
+  const onPoseDetectorSnapshotRef = useRef(onPoseDetectorSnapshot);
+  const onCaptureReadinessChangeRef = useRef(onCaptureReadinessChange);
+  const uiRef = useRef(ui);
+  onSessionCompleteRef.current = onSessionComplete;
+  onMovementBlockActivatedRef.current = onMovementBlockActivated;
+  onTargetAttemptStartedRef.current = onTargetAttemptStarted;
+  onTargetReachConfirmedRef.current = onTargetReachConfirmed;
+  onPatternReachConfirmedRef.current = onPatternReachConfirmed;
+  onPoseDetectorSnapshotRef.current = onPoseDetectorSnapshot;
+  onCaptureReadinessChangeRef.current = onCaptureReadinessChange;
+  uiRef.current = ui;
+  showBlockSummaryRef.current = showBlockSummary;
+  summaryMetricsRef.current = summaryMetrics;
+  presentationProgressRef.current = presentationProgress;
+  const hitExitTransitionMsRef = useRef(hitExitTransitionMs);
+  const publicDemoMovementTargetPacingRef = useRef(publicDemoMovementTargetPacing);
+  const applyRuntimeFaultRef = useRef<
+    (fault: OrchestratorCvRuntimeFault, orchestrator: SessionOrchestrator, now: number) => void
+  >(() => {});
+  const clearHitFeedbackRef = useRef<() => void>(() => {});
+  const playOrchestratorUiSoundRef = useRef<(cue: InteractiveShoulderSoundCue) => void>(() => {});
+  const startSessionRef = useRef<() => Promise<void>>(async () => {});
+  const resolvedTherapeuticSideRef = useRef(resolvedTherapeuticSide);
+  const rafLoopMountCountRef = useRef(0);
+  const consentAcceptedForCameraRef = useRef(false);
+  const startSessionGenerationRef = useRef(0);
+  const countdownActiveRef = useRef(false);
+  const movementBlockActivatedRef = useRef<string | null>(null);
+  const targetContactConsumptionRef = useRef(createTargetContactConsumptionState());
+  const onReadyCountdownStartedRef = useRef(onReadyCountdownStarted);
+  onReadyCountdownStartedRef.current = onReadyCountdownStarted;
+  countdownActiveRef.current = countdownActive;
+  hitExitTransitionMsRef.current = hitExitTransitionMs;
+  publicDemoMovementTargetPacingRef.current = publicDemoMovementTargetPacing;
+  resolvedTherapeuticSideRef.current = resolvedTherapeuticSide;
+
+  useEffect(() => {
+    const renderCount = bumpOrchestratorCvInitCounter("renders");
+    if (renderCount <= 40) {
+      traceOrchestratorCvInit("render", { renderCount, renderSeq: renderSeqRef.current });
+    }
+  });
+
   useEffect(() => {
     soundPlayerRef.current = createInteractiveShoulderSoundPlayer(prefersReducedMotion);
   }, [prefersReducedMotion]);
@@ -315,31 +414,42 @@ export function OrchestratorCvSessionCore({
     setSoundMuted(muted);
   }, []);
 
-  const handlePlaySound = useCallback((cue: InteractiveShoulderSoundCue) => {
-    soundPlayerRef.current.play(cue);
-  }, []);
+  const playOrchestratorUiSound = useCallback(
+    (cue: InteractiveShoulderSoundCue) => {
+      if (!orchestratorUiSoundEffectsEnabled) return;
+      soundPlayerRef.current.play(cue);
+    },
+    [orchestratorUiSoundEffectsEnabled],
+  );
+
+  const handlePlaySound = useCallback(
+    (cue: InteractiveShoulderSoundCue) => {
+      playOrchestratorUiSound(cue);
+    },
+    [playOrchestratorUiSound],
+  );
 
   const handleCountdownComplete = useCallback(() => {
     const orchestrator = orchestratorRef.current;
     if (orchestrator) {
       orchestrator.resume(performance.now());
     }
-    soundPlayerRef.current.play("sessionStart");
-    setCountdownActive(false);
+    playOrchestratorUiSoundRef.current("sessionStart");
+    setCountdownActive((active) => (active ? false : active));
   }, []);
 
   const handleCountdownTick = useCallback(() => {
-    soundPlayerRef.current.play("countdown");
-  }, []);
+    playOrchestratorUiSound("countdown");
+  }, [playOrchestratorUiSound]);
 
   const clearHitFeedback = useCallback(() => {
     if (hitFeedbackTimeoutRef.current !== null) {
       window.clearTimeout(hitFeedbackTimeoutRef.current);
       hitFeedbackTimeoutRef.current = null;
     }
-    setHitBurstTarget(null);
-    setHitBurstProgress(null);
-    setTargetHitAnnouncement(null);
+    setHitBurstTarget((current) => (current === null ? current : null));
+    setHitBurstProgress((current) => (current === null ? current : null));
+    setTargetHitAnnouncement((current) => (current === null ? current : null));
   }, []);
 
   const applyRuntimeFault = useCallback(
@@ -367,10 +477,6 @@ export function OrchestratorCvSessionCore({
   }, []);
 
   useEffect(() => {
-    snapshotRef.current = snapshot;
-  }, [snapshot]);
-
-  useEffect(() => {
     return () => {
       if (hitFeedbackTimeoutRef.current !== null) {
         window.clearTimeout(hitFeedbackTimeoutRef.current);
@@ -394,36 +500,75 @@ export function OrchestratorCvSessionCore({
     );
   }, [consentAccepted, onRegisterCaptureConsent, onRegisterMetricsFlush]);
 
-  const reportReadiness = useCallback(
-    (snap: ShoulderAbductionReachPoseDetectorSnapshot | null) => {
-      if (!onCaptureReadinessChange) return;
-      const payload = resolveCaptureReadinessPayload(snap);
-      const now = performance.now();
-      if (
-        !shouldDeliverCaptureReadiness({
-          previous: lastReadinessPayloadRef.current,
-          next: payload,
-          nowMs: now,
-          lastDeliveredAtMs: lastReadinessDeliveredAtRef.current,
-        })
-      ) {
-        // Deliberately records nothing on a skip. Leaving the last DELIVERED payload in
-        // place is what makes the next publication re-offer the current state instead of
-        // treating this skipped one as already sent — a skip delays, never drops.
-        return;
-      }
-      lastReadinessPayloadRef.current = payload;
-      lastReadinessDeliveredAtRef.current = now;
-      onCaptureReadinessChange(payload);
-    },
-    [onCaptureReadinessChange],
-  );
+  const reportReadiness = useCallback((snap: ShoulderAbductionReachPoseDetectorSnapshot | null) => {
+    const onCaptureReadinessChange = onCaptureReadinessChangeRef.current;
+    if (!onCaptureReadinessChange) return;
+    const payload = resolveCaptureReadinessPayload(snap);
+    const now = performance.now();
+    if (
+      !shouldDeliverCaptureReadiness({
+        previous: lastReadinessPayloadRef.current,
+        next: payload,
+        nowMs: now,
+        lastDeliveredAtMs: lastReadinessDeliveredAtRef.current,
+      })
+    ) {
+      return;
+    }
+    lastReadinessPayloadRef.current = payload;
+    lastReadinessDeliveredAtRef.current = now;
+    onCaptureReadinessChange(payload);
+  }, []);
 
   const handleOrchestratorEvent = useCallback((event: ShoulderAbductionReachMeasuredEvent) => {
     const orchestrator = orchestratorRef.current;
     if (!orchestrator) return;
     orchestrator.reportInputEvent(mapShoulderMeasuredEventToSessionInput(event), event.capturedAtMs);
   }, []);
+  const handleOrchestratorEventRef = useRef(handleOrchestratorEvent);
+  handleOrchestratorEventRef.current = handleOrchestratorEvent;
+
+  const ingestLiveDetectorSnapshotRef = useRef(
+    (snap: ShoulderAbductionReachPoseDetectorSnapshot) => {
+      bumpOrchestratorCvInitCounter("poseSnapshotLiveFrames");
+      snapshotRef.current = snap;
+    },
+  );
+
+  const commitPoseDetectorUiIfChangedRef = useRef((_nowMs: number) => {});
+  commitPoseDetectorUiIfChangedRef.current = (nowMs: number) => {
+    const evaluation = evaluatePoseDetectorUiCommit({
+      live: snapshotRef.current,
+      committedNormalized: committedPoseDetectorUiRef.current,
+      lastCommitAtMs: lastPoseDetectorUiCommitAtMsRef.current,
+      nowMs,
+    });
+    if (evaluation.kind === "skip") {
+      if (evaluation.reason !== "no-live" && process.env.NODE_ENV !== "production") {
+        logOrchestratorCvPoseSnapshotCommitDev("skip", {
+          reason: evaluation.reason,
+          renderSeq: renderSeqRef.current,
+        });
+      }
+      return;
+    }
+
+    const { normalized, live } = evaluation;
+    committedPoseDetectorUiRef.current = normalized;
+    lastPoseDetectorUiCommitAtMsRef.current = nowMs;
+
+    bumpOrchestratorCvInitCounter("poseSnapshotCommits");
+    logOrchestratorCvPoseSnapshotCommitDev("commit", {
+      renderSeq: renderSeqRef.current,
+      trackingStatus: normalized.trackingStatus,
+    });
+
+    setSnapshot((current) =>
+      poseDetectorReactSnapshotUnchanged(current, normalized) ? current : live,
+    );
+    reportReadiness(live);
+    onPoseDetectorSnapshotRef.current?.(live);
+  };
 
   const startSession = useCallback(async () => {
     if (sessionStartedRef.current) return;
@@ -431,10 +576,17 @@ export function OrchestratorCvSessionCore({
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!profile || !video || !canvas || !detector) return;
+    const generation = startSessionGenerationRef.current;
+    const invokeCount = bumpOrchestratorCvInitCounter("startSessionCalls");
+    traceOrchestratorCvInit("startSession-invoke", { invokeCount, generation });
     setStarting(true);
     setStartError(null);
     try {
       await detector.start(video, canvas);
+      if (generation !== startSessionGenerationRef.current) {
+        traceOrchestratorCvInit("startSession-stale-after-detector-start", { generation });
+        return;
+      }
       if (!orchestratorRef.current) {
         orchestratorRef.current = new SessionOrchestrator(sessionDefinition);
       }
@@ -444,8 +596,14 @@ export function OrchestratorCvSessionCore({
       orchestrator.beginCalibration(now);
       orchestrator.completeCalibration(now);
       orchestrator.pause(now);
+      if (generation !== startSessionGenerationRef.current) {
+        traceOrchestratorCvInit("startSession-stale-after-orchestrator-pause", { generation });
+        return;
+      }
       setCountdownActive(true);
+      onReadyCountdownStartedRef.current?.();
       previousBlockIdForSoundRef.current = null;
+      movementBlockActivatedRef.current = null;
       sessionStartedRef.current = true;
       sessionCompleteFiredRef.current = false;
       // SESSION BOUNDARY for adaptation. `startSession` is the only place a session
@@ -460,6 +618,7 @@ export function OrchestratorCvSessionCore({
         target: createInitialTargetLifecycle(),
         pattern: null,
       };
+      resetTargetContactConsumptionState(targetContactConsumptionRef.current);
       targetStateRef.current = createInitialTargetLifecycle();
       setTargetState(targetStateRef.current);
       patternStateRef.current = null;
@@ -470,69 +629,136 @@ export function OrchestratorCvSessionCore({
       faultPauseAppliedRef.current = false;
       setRuntimeFault(null);
       activeBlockIdRef.current = null;
-      setOrchestratorSnapshot(orchestrator.getSnapshot(now));
+      showBlockSummaryRef.current = false;
+      setShowBlockSummary(false);
+      const initialSnap = orchestrator.getSnapshot(now);
+      orchestratorHudSnapshotRef.current = initialSnap;
+      setOrchestratorSnapshot(initialSnap);
+      traceOrchestratorCvInit("startSession-complete", { generation });
     } catch (error) {
-      setStartError(resolveInteractiveShoulderStartError(languageRef.current, error));
+      if (generation === startSessionGenerationRef.current) {
+        setStartError(resolveInteractiveShoulderStartError(languageRef.current, error));
+      }
     } finally {
-      setStarting(false);
+      if (generation === startSessionGenerationRef.current) {
+        setStarting(false);
+      }
     }
   }, [profile, sessionDefinition]);
 
+  applyRuntimeFaultRef.current = applyRuntimeFault;
+  clearHitFeedbackRef.current = clearHitFeedback;
+  playOrchestratorUiSoundRef.current = playOrchestratorUiSound;
+  startSessionRef.current = startSession;
+
   const therapeuticSideKey = resolvedTherapeuticSide?.side ?? null;
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
 
   useLayoutEffect(() => {
-    if (!profile) return;
+    if (!profileRef.current) return;
+    const layoutMount = bumpOrchestratorCvInitCounter("detectorLayoutMounts");
+    traceOrchestratorCvInit("detector-layout-mount", { layoutMount, therapeuticSideKey });
+    const sideForDetector = resolvedTherapeuticSideRef.current;
     const DetectorClass = entry!.detectorResolver();
     const detector = mountOrchestratorCvDetector<
       OrchestratorCvActiveDetectorHandle,
       ShoulderAbductionReachPoseDetectorSnapshot,
       ShoulderAbductionReachMeasuredEvent
     >(
-      resolvedTherapeuticSide,
+      sideForDetector,
       (callbacks, side) => new DetectorClass(callbacks, side),
       {
-        onSnapshot: (snap) => {
-          setSnapshot(snap);
-          reportReadiness(snap);
-        },
-        onMeasuredEvent: handleOrchestratorEvent,
+        onSnapshot: (snap) => ingestLiveDetectorSnapshotRef.current(snap),
+        onMeasuredEvent: (event) => handleOrchestratorEventRef.current(event),
       },
     );
     detectorRef.current = detector;
     return () => {
+      const layoutCleanup = bumpOrchestratorCvInitCounter("detectorLayoutCleanups");
+      traceOrchestratorCvInit("detector-layout-cleanup", { layoutCleanup });
+      startSessionGenerationRef.current += 1;
       sessionStartedRef.current = false;
+      snapshotRef.current = null;
+      committedPoseDetectorUiRef.current = null;
+      lastPoseDetectorUiCommitAtMsRef.current = 0;
       disposeOrchestratorCvDetector(detector);
       detectorRef.current = null;
       cancelAnimationFrame(rafRef.current);
     };
-  }, [entry, handleOrchestratorEvent, profile, reportReadiness, resolvedTherapeuticSide, therapeuticSideKey]);
+  }, [therapeuticSideKey]);
 
   useEffect(() => {
-    if (
-      !shouldStartOrchestratorCvCamera({
-        consentAccepted,
-        profileAvailable: Boolean(profile),
-        resolvedTherapeuticSide,
-      })
-    ) {
+    const cameraEffectRun = bumpOrchestratorCvInitCounter("cameraStartEffectRuns");
+    traceOrchestratorCvInit("camera-start-effect", { cameraEffectRun, consentAccepted });
+    const shouldStart = shouldStartOrchestratorCvCamera({
+      consentAccepted,
+      profileAvailable: Boolean(profile),
+      resolvedTherapeuticSide: resolvedTherapeuticSideRef.current,
+    });
+    if (!shouldStart) {
+      if (!consentAccepted) {
+        consentAcceptedForCameraRef.current = false;
+      }
       return;
     }
-    void startSession();
-  }, [consentAccepted, profile, resolvedTherapeuticSide, startSession]);
+    if (consentAcceptedForCameraRef.current) return;
+    consentAcceptedForCameraRef.current = true;
+    void startSessionRef.current();
+    return () => {
+      consentAcceptedForCameraRef.current = false;
+      traceOrchestratorCvInit("camera-start-effect-cleanup");
+    };
+  }, [consentAccepted, profile, therapeuticSideKey]);
 
   useEffect(() => {
+    rafLoopMountCountRef.current += 1;
+    logOrchestratorCvRafLoopDev("effect-mount", {
+      mountCount: rafLoopMountCountRef.current,
+    });
+    if (rafLoopMountCountRef.current > 1 && process.env.NODE_ENV !== "production") {
+      console.warn(
+        "[orchestrator-cv-raf] RAF loop effect remounted — check unstable layout/camera deps",
+        { mountCount: rafLoopMountCountRef.current },
+      );
+    }
     const loop = () => {
-      const orchestrator = orchestratorRef.current;
       const now = performance.now();
+      commitPoseDetectorUiIfChangedRef.current(now);
+
+      const orchestrator = orchestratorRef.current;
       if (orchestrator && sessionStartedRef.current) {
+        const previewSnap = orchestrator.getSnapshot(now);
+        const countdownActiveNow = countdownActiveRef.current;
+        if (
+          !shouldRunOrchestratorCvRafOrchestration({
+            countdownActive: countdownActiveNow,
+            snap: previewSnap,
+          })
+        ) {
+          bumpOrchestratorCvInitCounter("rafFramesSkippedForPause");
+          rafRef.current = requestAnimationFrame(loop);
+          return;
+        }
+
         const hasRuntimeFault = !shouldAdvanceOrchestratorTick(runtimeFaultRef.current);
 
-        if (!hasRuntimeFault) {
+        if (
+          shouldAdvanceOrchestratorCvOrchestratorTick({
+            runtimeFaultActive: hasRuntimeFault,
+            countdownActive: countdownActiveNow,
+            snap: previewSnap,
+          })
+        ) {
           orchestrator.tick(now);
         }
         const snap = orchestrator.getSnapshot(now);
-        setOrchestratorSnapshot(snap);
-        if (!hasRuntimeFault && snap.sessionState === "completed" && !showBlockSummary) {
+        if (shouldCommitOrchestratorHudSnapshot(orchestratorHudSnapshotRef.current, snap)) {
+          orchestratorHudSnapshotRef.current = snap;
+          bumpOrchestratorCvInitCounter("rafHudCommits");
+          setOrchestratorSnapshot(snap);
+        }
+        if (!hasRuntimeFault && snap.sessionState === "completed" && !showBlockSummaryRef.current) {
           const totalTargets = snap.accumulatedBlockResults.reduce(
             (sum, result) => sum + result.interaction.targetsContacted,
             0,
@@ -545,25 +771,27 @@ export function OrchestratorCvSessionCore({
             (sum, result) => sum + result.measured.validRepetitions,
             0,
           );
-          setSummaryMetrics({
+          const nextSummary: OrchestratorHudSummaryMetrics = {
             targets: totalTargets || targetStateRef.current.interaction.targetsReached,
             patterns:
               totalPatterns || patternStateRef.current?.interaction.patternsCompleted || 0,
             reps: totalReps || snapshotRef.current?.primaryRepCount || 0,
             durationSeconds: Math.max(0, Math.round(snap.blockElapsedSeconds)),
-          });
+          };
+          if (!orchestratorHudSummaryMetricsEqual(summaryMetricsRef.current, nextSummary)) {
+            summaryMetricsRef.current = nextSummary;
+            setSummaryMetrics(nextSummary);
+          }
           if (shouldFireSessionCompleteCallback(snap.sessionState, sessionCompleteFiredRef.current)) {
             sessionCompleteFiredRef.current = true;
-            soundPlayerRef.current.play("sessionComplete");
-            // Forwards the same local `snap` this tick already computed — no
-            // new state, no new effect dependency, no change to camera-start
-            // or detector mount/dispose lifecycle. See orchestrator-cv-session-types.ts.
-            onSessionComplete?.({
+            playOrchestratorUiSoundRef.current("sessionComplete");
+            onSessionCompleteRef.current?.({
               sessionState: snap.sessionState,
               sessionElapsedSeconds: snap.sessionElapsedSeconds,
               accumulatedBlockResults: snap.accumulatedBlockResults,
             });
           }
+          showBlockSummaryRef.current = true;
           setShowBlockSummary(true);
         }
 
@@ -579,29 +807,56 @@ export function OrchestratorCvSessionCore({
           currentBlock
         ) {
           if (activeBlockIdRef.current !== null) {
-            soundPlayerRef.current.play("blockComplete");
+            playOrchestratorUiSoundRef.current("blockComplete");
           }
           previousBlockIdForSoundRef.current = activeBlockIdRef.current;
           activeBlockIdRef.current = currentBlockId;
-          clearHitFeedback();
-          setPresentationProgress(null);
+          if (
+            (currentBlock.blockType === "movement-target" ||
+              currentBlock.blockType === "movement-pattern") &&
+            movementBlockActivatedRef.current !== currentBlockId
+          ) {
+            movementBlockActivatedRef.current = currentBlockId;
+            onMovementBlockActivatedRef.current?.(currentBlockId);
+          }
+          clearHitFeedbackRef.current();
+          if (presentationProgressRef.current !== null) {
+            presentationProgressRef.current = null;
+            setPresentationProgress(null);
+          }
           const transition = resetRunnerStatesForBlockTransition({
             block: currentBlock,
             side: activeTherapeuticSide,
           });
+          resetTargetContactConsumptionState(targetContactConsumptionRef.current);
           runnerStatesRef.current = transition.states;
-          targetStateRef.current = transition.states.target;
-          setTargetState(transition.states.target);
-          patternStateRef.current = transition.states.pattern;
-          setPatternState(transition.states.pattern);
-          setActiveMotionPattern(transition.activeMotionPattern);
-          activeMotionPatternRef.current = transition.activeMotionPattern;
+          const nextTargetState = transition.states.target;
+          if (!targetLifecycleHudEquals(targetStateRef.current, nextTargetState)) {
+            setTargetState(nextTargetState);
+          }
+          targetStateRef.current = nextTargetState;
+          const nextPatternState = transition.states.pattern;
+          if (nextPatternState) {
+            if (
+              !patternStateRef.current ||
+              !patternLifecycleHudEquals(patternStateRef.current, nextPatternState)
+            ) {
+              setPatternState(nextPatternState);
+            }
+          } else if (patternStateRef.current !== null) {
+            setPatternState(null);
+          }
+          patternStateRef.current = nextPatternState;
+          if (activeMotionPatternRef.current !== transition.activeMotionPattern) {
+            activeMotionPatternRef.current = transition.activeMotionPattern;
+            setActiveMotionPattern(transition.activeMotionPattern);
+          }
           // adaptiveStateRef is intentionally NOT reset here. Adaptation is session-scoped:
           // a patient who has adapted through one block keeps that adaptation in the next.
           // Resetting it alongside the block-scoped runner states would silently discard
           // the session's adaptation at every block boundary.
           if (transition.fault) {
-            applyRuntimeFault(transition.fault, orchestrator, now);
+            applyRuntimeFaultRef.current(transition.fault, orchestrator, now);
           }
         }
 
@@ -665,43 +920,88 @@ export function OrchestratorCvSessionCore({
                     }
                   : {}),
               }
-            : undefined;
+            : publicDemoMovementTargetPacingRef.current
+              ? {
+                  attemptTimeoutMs: publicDemoMovementTargetPacingRef.current.attemptTimeoutMs,
+                }
+              : undefined;
 
           const dispatch = dispatchOrchestratorCvBlock({
             snap,
             nowMs: now,
             wrist: wrist ?? null,
             side: activeTherapeuticSide,
-            hitExitTransitionMs,
+            hitExitTransitionMs: hitExitTransitionMsRef.current,
             states: runnerStatesRef.current,
             activeMotionPattern: activeMotionPatternRef.current,
             ...(targetAttempt ? { targetAttempt } : {}),
           });
 
           if (dispatch.status === "fault") {
-            applyRuntimeFault(dispatch.fault, orchestrator, now);
+            applyRuntimeFaultRef.current(dispatch.fault, orchestrator, now);
           } else if (dispatch.status === "dispatched") {
             runnerStatesRef.current = dispatch.states;
-            targetStateRef.current = dispatch.states.target;
-            setTargetState(dispatch.states.target);
+            const nextTargetState = dispatch.states.target;
+            if (!targetLifecycleHudEquals(targetStateRef.current, nextTargetState)) {
+              setTargetState(nextTargetState);
+            }
+            targetStateRef.current = nextTargetState;
             if (dispatch.states.pattern) {
-              patternStateRef.current = dispatch.states.pattern;
-              setPatternState(dispatch.states.pattern);
+              const nextPatternState = dispatch.states.pattern;
+              if (
+                !patternStateRef.current ||
+                !patternLifecycleHudEquals(patternStateRef.current, nextPatternState)
+              ) {
+                setPatternState(nextPatternState);
+              }
+              patternStateRef.current = nextPatternState;
             }
             if (dispatch.presentationProgress != null) {
-              setPresentationProgress(dispatch.presentationProgress);
+              if (presentationProgressRef.current !== dispatch.presentationProgress) {
+                presentationProgressRef.current = dispatch.presentationProgress;
+                setPresentationProgress(dispatch.presentationProgress);
+              }
             }
-            if (dispatch.targetContact) {
+            for (const attemptStarted of dispatch.targetAttemptStarted) {
+              onTargetAttemptStartedRef.current?.(attemptStarted);
+              if (
+                publicDemoMovementTargetPacingRef.current &&
+                attemptStarted.sequence >
+                  publicDemoMovementTargetPacingRef.current.maxTargetPresentations
+              ) {
+                orchestrator.reportInputEvent({ type: "movementInterrupted", capturedAtMs: now }, now);
+              }
+            }
+            const targetContactOutcome = resolveTargetContactForTick(
+              targetContactConsumptionRef.current,
+              dispatch.targetContact,
+              { renderSeq: renderSeqRef.current },
+            );
+            const processedTargetContact = targetContactOutcome.contactToProcess;
+            if (processedTargetContact) {
+              onTargetReachConfirmedRef.current?.(processedTargetContact);
               orchestrator.reportInputEvent(
-                mapTargetHitToSessionInput(dispatch.targetContact),
+                mapTargetHitToSessionInput(processedTargetContact),
                 now,
               );
+              if (
+                publicDemoMovementTargetPacingRef.current &&
+                (processedTargetContact.sequence ?? 0) >=
+                  publicDemoMovementTargetPacingRef.current.maxTargetPresentations
+              ) {
+                orchestrator.reportInputEvent({ type: "movementInterrupted", capturedAtMs: now }, now);
+              }
               const burstTarget = dispatch.states.target.exitingTarget;
               if (burstTarget) {
-                setHitBurstTarget(burstTarget);
+                setHitBurstTarget((current) =>
+                  current?.id === burstTarget.id ? current : burstTarget,
+                );
               }
-              soundPlayerRef.current.play("targetHit");
-              setTargetHitAnnouncement(ui.goodReachFeedback);
+              playOrchestratorUiSoundRef.current("targetHit");
+              const reachAnnouncement = uiRef.current.goodReachFeedback;
+              setTargetHitAnnouncement((current) =>
+                current === reachAnnouncement ? current : reachAnnouncement,
+              );
               if (hitFeedbackTimeoutRef.current !== null) {
                 window.clearTimeout(hitFeedbackTimeoutRef.current);
               }
@@ -709,16 +1009,23 @@ export function OrchestratorCvSessionCore({
                 setHitBurstTarget(null);
                 setTargetHitAnnouncement(null);
                 hitFeedbackTimeoutRef.current = null;
-              }, Math.max(hitExitTransitionMs, 480));
+              }, Math.max(hitExitTransitionMsRef.current, 480));
             }
             if (dispatch.patternCompleted) {
+              onPatternReachConfirmedRef.current?.(dispatch.patternCompleted);
               orchestrator.reportInputEvent(
                 mapPatternCompletionToSessionInput(dispatch.patternCompleted),
                 now,
               );
-              setHitBurstProgress(dispatch.states.pattern?.exitingProgress ?? null);
-              soundPlayerRef.current.play("repetition");
-              setTargetHitAnnouncement(ui.patternPathComplete);
+              const nextBurstProgress = dispatch.states.pattern?.exitingProgress ?? null;
+              setHitBurstProgress((current) =>
+                current === nextBurstProgress ? current : nextBurstProgress,
+              );
+              playOrchestratorUiSoundRef.current("repetition");
+              const patternAnnouncement = uiRef.current.patternPathComplete;
+              setTargetHitAnnouncement((current) =>
+                current === patternAnnouncement ? current : patternAnnouncement,
+              );
               if (hitFeedbackTimeoutRef.current !== null) {
                 window.clearTimeout(hitFeedbackTimeoutRef.current);
               }
@@ -726,7 +1033,7 @@ export function OrchestratorCvSessionCore({
                 setHitBurstProgress(null);
                 setTargetHitAnnouncement(null);
                 hitFeedbackTimeoutRef.current = null;
-              }, Math.max(hitExitTransitionMs, 480));
+              }, Math.max(hitExitTransitionMsRef.current, 480));
             }
             // ADDITIVE adaptive consumption. Deliberately placed after every existing
             // handler above: the session-input path, the HUD and the burst feedback all
@@ -736,7 +1043,7 @@ export function OrchestratorCvSessionCore({
             // invent one. Runs only while adaptive difficulty is enabled.
             if (adaptiveState) {
               adaptiveStateRef.current = applyDispatchOutcomesToAdaptiveState(adaptiveState, {
-                targetContact: dispatch.targetContact,
+                targetContact: processedTargetContact,
                 targetAttemptTimeout: dispatch.targetAttemptTimeout,
               }).state;
             }
@@ -747,15 +1054,7 @@ export function OrchestratorCvSessionCore({
     };
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [
-    applyRuntimeFault,
-    clearHitFeedback,
-    hitExitTransitionMs,
-    showBlockSummary,
-    onSessionComplete,
-    ui.patternPathComplete,
-    ui.targetReached,
-  ]);
+  }, []);
 
   /**
    * The hand marker's position in mirrored preview space (#277).
@@ -783,6 +1082,7 @@ export function OrchestratorCvSessionCore({
     if (!consentChecked) return;
     writePatientCvCameraConsentToSession(createPatientCvCameraConsentRecord());
     setConsentAccepted(true);
+    onDemoTargetPopAudioUnlock?.();
   };
 
   const handleDevMouseMove = (event: React.MouseEvent) => {
@@ -880,7 +1180,14 @@ export function OrchestratorCvSessionCore({
             </p>
           )}
           <div className="mt-3 flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-6">
-            <div className="w-full min-w-0 lg:w-[78%] lg:flex-none">
+            {leadingPreviewCompanion ? (
+              <div className="w-full min-w-0 lg:w-[18%] lg:flex-none">
+                {leadingPreviewCompanion}
+              </div>
+            ) : null}
+            <div
+              className={`w-full min-w-0 lg:flex-none ${leadingPreviewCompanion ? "lg:w-[60%]" : "lg:w-[78%]"}`}
+            >
               <PreviewStack
                 videoRef={videoRef}
                 canvasRef={canvasRef}
@@ -892,6 +1199,9 @@ export function OrchestratorCvSessionCore({
                 overlay={
                   <>
                     <ReachTheLightEnvironment reducedMotion={prefersReducedMotion} />
+                    {!countdownActive && !showBlockSummary && isMovementTargetBlock
+                      ? previewMeasurementOverlay
+                      : null}
                     {!countdownActive && !showBlockSummary ? (
                       <PatientCameraTrackingIndicator
                         language={language}

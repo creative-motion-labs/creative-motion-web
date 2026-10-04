@@ -707,14 +707,20 @@ describe("#273 — shipped component applies the memoisation", () => {
     assert.match(source, /^\s*useMemo,$/m);
   });
 
-  it("the detector and camera-start effects still depend on the resolved side", () => {
+  it("keys detector and camera-start effects on therapeuticSideKey with side read from a ref", () => {
     const corePath = join(
       process.cwd(),
       "app/components/patient/interactive-shoulder/OrchestratorCvSessionCore.tsx",
     );
     const source = readFileSync(corePath, "utf8");
 
-    assert.match(source, /resolvedTherapeuticSide,\s*therapeuticSideKey\]/);
-    assert.match(source, /\[consentAccepted,\s*profile,\s*resolvedTherapeuticSide,\s*startSession\]/);
+    assert.match(source, /resolvedTherapeuticSideRef\.current/);
+    assert.match(
+      source,
+      /useLayoutEffect\([\s\S]*ingestLiveDetectorSnapshotRef\.current\(snap\)[\s\S]*?\},\s*\[therapeuticSideKey\]\)/,
+    );
+    assert.match(source, /handleOrchestratorEventRef\.current\(event\)/);
+    assert.match(source, /\[consentAccepted, profile, therapeuticSideKey\]/);
+    assert.match(source, /consentAcceptedForCameraRef/);
   });
 });

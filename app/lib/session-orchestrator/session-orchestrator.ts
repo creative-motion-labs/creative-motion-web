@@ -324,6 +324,14 @@ export class SessionOrchestrator {
       }
       case "patternCompleted":
         this.currentBlockResult.interaction.patternsCompleted += 1;
+        if (
+          block.completionMode === "validRepetitions" &&
+          block.blockType === "movement-pattern" &&
+          block.prescribedRepetitions !== undefined &&
+          this.currentBlockResult.interaction.patternsCompleted >= block.prescribedRepetitions
+        ) {
+          this.completeCurrentBlock(nowMs, "validRepetitions");
+        }
         return;
       case "holdCompleted": {
         this.currentBlockResult.measured.holdDurationSeconds = event.durationSeconds;

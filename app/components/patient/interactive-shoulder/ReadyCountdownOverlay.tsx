@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PatientExerciseLanguage } from "@/app/lib/exercise-resolve";
 import { interactiveShoulderUi } from "@/app/lib/interactive-shoulder/interactive-shoulder-ui";
+import { traceOrchestratorCvInit } from "@/app/lib/interactive-shoulder/orchestrator-cv-init-dev-trace";
 
 type ReadyCountdownOverlayProps = {
   language: PatientExerciseLanguage;
@@ -21,32 +22,45 @@ export function ReadyCountdownOverlay({
   onTick,
   onComplete,
 }: ReadyCountdownOverlayProps) {
-  const ui = interactiveShoulderUi(language);
+  const ui = useMemo(() => interactiveShoulderUi(language), [language]);
   const [stepIndex, setStepIndex] = useState(0);
   const [showBegin, setShowBegin] = useState(false);
+  const onCompleteRef = useRef(onComplete);
+  const onTickRef = useRef(onTick);
+  const reducedMotionCompleteRef = useRef(false);
+  onCompleteRef.current = onComplete;
+  onTickRef.current = onTick;
 
   useEffect(() => {
+    traceOrchestratorCvInit("countdown-effect", { reducedMotion, showBegin, stepIndex });
     if (reducedMotion) {
-      onComplete();
+      if (reducedMotionCompleteRef.current) return;
+      reducedMotionCompleteRef.current = true;
+      traceOrchestratorCvInit("countdown-onComplete-reduced-motion");
+      onCompleteRef.current();
       return;
     }
 
     if (showBegin) {
-      const timer = window.setTimeout(onComplete, 650);
+      const timer = window.setTimeout(() => {
+        traceOrchestratorCvInit("countdown-onComplete-begin");
+        onCompleteRef.current();
+      }, 650);
       return () => window.clearTimeout(timer);
     }
 
-    onTick?.();
+    traceOrchestratorCvInit("countdown-onTick", { stepIndex });
+    onTickRef.current?.();
     const timer = window.setTimeout(() => {
       if (stepIndex >= COUNTDOWN_STEPS.length - 1) {
         setShowBegin(true);
-        onTick?.();
+        onTickRef.current?.();
         return;
       }
       setStepIndex((value) => value + 1);
     }, 850);
     return () => window.clearTimeout(timer);
-  }, [onComplete, onTick, reducedMotion, showBegin, stepIndex]);
+  }, [reducedMotion, showBegin, stepIndex]);
 
   if (reducedMotion) return null;
 

@@ -65,6 +65,10 @@ export default function PatientRemoteUlmsAssessmentPage() {
 
   const submitBattery = useCallback(
     async (payload: RemoteUpperLimbBatteryPayload) => {
+      if (!token) {
+        setSubmitError(REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE);
+        return;
+      }
       if (!context) {
         setSubmitError("Assessment context was not ready. Refresh and try again.");
         return;
