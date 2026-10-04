@@ -186,6 +186,11 @@ export function RasqDemoOptionalLeadForm({
         <span>I am interested in hearing about a future RASQ pilot study.</span>
       </label>
 
+      <p className="mt-4 text-sm text-[#64748B]" role="note">
+        If you share your email or phone, the RASQ team may contact you about your demo interest.
+        Product updates and pilot study information are optional.
+      </p>
+
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="submit"
