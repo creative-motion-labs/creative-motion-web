@@ -1,6 +1,9 @@
 import type { RemoteUpperLimbBatteryTestId } from "@/app/lib/remote-upper-limb-battery/types";
 
-const MOVEMENT_FOCUS_ANATOMY_SRC = "/images/booth/upper-limb-movement-focus.png";
+export const MOVEMENT_FOCUS_ANATOMY_SRC = "/images/rasq/upper-limb-muscle-focus.png";
+
+const MOVEMENT_FOCUS_ANATOMY_ALT =
+  "Upper-body muscle illustration highlighting the assessed shoulder and arm";
 
 export type MovementFocusInteractiveEducation =
   | "d1-inspired-diagonal-reach"
@@ -8,7 +11,7 @@ export type MovementFocusInteractiveEducation =
 
 type MovementFocusAnatomyCardProps = {
   activeTestId: RemoteUpperLimbBatteryTestId | null;
-  /** When set, the highlighted arm in the illustration faces the prescribed side (asset default highlights the opposite side). */
+  /** When set, mirror the illustration so the teal highlight matches the prescribed side (asset default = anatomical right). */
   prescribedSide?: "left" | "right" | null;
   /** Interactive Shoulder session only — extended education for specific movement blocks. */
   interactiveEducation?: MovementFocusInteractiveEducation;
@@ -58,22 +61,22 @@ function AnatomyIllustration({
   prescribedSide?: "left" | "right" | null;
   compact?: boolean;
 }) {
-  const flipForPrescribedSide = prescribedSide === "left";
+  const mirrorForLeftSide = prescribedSide === "left";
 
   return (
-    <div className="flex w-full max-w-[220px] justify-center bg-[#0F1825]">
+    <div className="flex w-full max-w-[220px] items-center justify-center bg-transparent">
       <img
         src={MOVEMENT_FOCUS_ANATOMY_SRC}
-        alt=""
+        alt={MOVEMENT_FOCUS_ANATOMY_ALT}
         width={440}
         height={520}
         decoding="async"
         className={
           compact
-            ? "h-28 w-full object-contain object-center sm:h-32"
-            : "h-36 w-full object-contain object-center sm:h-40"
+            ? "h-28 w-full max-w-full object-contain object-center sm:h-32"
+            : "h-36 w-full max-w-full object-contain object-center sm:h-40"
         }
-        style={flipForPrescribedSide ? { transform: "scaleX(-1)" } : undefined}
+        style={mirrorForLeftSide ? { transform: "scaleX(-1)" } : undefined}
       />
     </div>
   );
@@ -95,7 +98,7 @@ export function MovementFocusAnatomyCard({
         <p className="mt-1 text-[13px] font-semibold leading-snug text-white/90">{D1_COPY.title}</p>
         <p className="mt-0.5 text-[11px] leading-snug text-white/50">{D1_COPY.body}</p>
 
-        <div className="my-2 flex justify-center" aria-hidden="true">
+        <div className="my-2 flex justify-center">
           <AnatomyIllustration prescribedSide={prescribedSide} compact />
         </div>
 
@@ -111,7 +114,7 @@ export function MovementFocusAnatomyCard({
       <p className="mt-2 text-sm font-semibold text-white/85">{copy.title}</p>
       <p className="mt-1 text-[11px] leading-relaxed text-white/45">{copy.caption}</p>
 
-      <div className="mt-3 flex justify-center" aria-hidden="true">
+      <div className="mt-3 flex justify-center">
         <AnatomyIllustration prescribedSide={prescribedSide} />
       </div>
     </div>
