@@ -64,18 +64,20 @@ function AnatomyIllustration({
   const mirrorForLeftSide = prescribedSide === "left";
 
   return (
-    <div className="flex w-full max-w-[220px] items-center justify-center bg-transparent">
+    <div
+      className={
+        compact
+          ? "flex h-[min(42vw,200px)] min-h-[140px] w-full items-center justify-center sm:h-[min(36vw,220px)]"
+          : "flex min-h-[200px] w-full flex-1 items-center justify-center sm:min-h-[240px] lg:min-h-[280px]"
+      }
+    >
       <img
         src={MOVEMENT_FOCUS_ANATOMY_SRC}
         alt={MOVEMENT_FOCUS_ANATOMY_ALT}
         width={440}
         height={520}
         decoding="async"
-        className={
-          compact
-            ? "h-28 w-full max-w-full object-contain object-center sm:h-32"
-            : "h-36 w-full max-w-full object-contain object-center sm:h-40"
-        }
+        className="h-full w-full object-contain object-center"
         style={mirrorForLeftSide ? { transform: "scaleX(-1)" } : undefined}
       />
     </div>
@@ -93,12 +95,12 @@ export function MovementFocusAnatomyCard({
 
   if (showD1Education) {
     return (
-      <div className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] px-3 py-2.5">
+      <div className="flex h-full min-h-0 flex-col rounded-[10px] border border-[#1E2D42] bg-[#0F1825] px-3 py-2.5">
         <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#1D9E75]">Movement focus</p>
         <p className="mt-1 text-[13px] font-semibold leading-snug text-white/90">{D1_COPY.title}</p>
         <p className="mt-0.5 text-[11px] leading-snug text-white/50">{D1_COPY.body}</p>
 
-        <div className="my-2 flex justify-center">
+        <div className="my-2 flex min-h-0 flex-1 justify-center">
           <AnatomyIllustration prescribedSide={prescribedSide} compact />
         </div>
 
@@ -109,12 +111,12 @@ export function MovementFocusAnatomyCard({
   }
 
   return (
-    <div className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-4">
+    <div className="flex h-full min-h-0 flex-col rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-4">
       <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#1D9E75]">Movement focus</p>
       <p className="mt-2 text-sm font-semibold text-white/85">{copy.title}</p>
       <p className="mt-1 text-[11px] leading-relaxed text-white/45">{copy.caption}</p>
 
-      <div className="mt-3 flex justify-center">
+      <div className="mt-2 flex min-h-0 flex-1 justify-center overflow-hidden">
         <AnatomyIllustration prescribedSide={prescribedSide} />
       </div>
     </div>

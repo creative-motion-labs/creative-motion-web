@@ -657,7 +657,7 @@ export function RemoteUpperLimbBatterySession({
         </div>
       ) : null}
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-stretch">
         <div className="overflow-hidden rounded-[10px] border border-[#1E2D42] bg-black">
           <div className="relative mx-auto aspect-[4/3] w-full max-w-xl bg-black">
             <video

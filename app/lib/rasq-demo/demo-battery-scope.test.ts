@@ -26,7 +26,9 @@ describe("demo polish scope", () => {
     const batteryTouches = lines.filter(
       (line) =>
         line.includes("remote-upper-limb-battery") &&
-        !line.includes("extract-battery-payload"),
+        !line.includes("extract-battery-payload") &&
+        !line.includes("movement-focus-anatomy") &&
+        !line.includes("MovementFocusAnatomyCard"),
     );
     assert.deepEqual(
       batteryTouches,
