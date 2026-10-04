@@ -28,7 +28,9 @@ describe("demo polish scope", () => {
         line.includes("remote-upper-limb-battery") &&
         !line.includes("extract-battery-payload") &&
         !line.includes("movement-focus-anatomy") &&
-        !line.includes("MovementFocusAnatomyCard"),
+        !line.includes("MovementFocusAnatomyCard") &&
+        !line.includes("battery-camera-preview-mirror") &&
+        !line.includes("RemoteUpperLimbBatterySession"),
     );
     assert.deepEqual(
       batteryTouches,

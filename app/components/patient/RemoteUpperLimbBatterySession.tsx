@@ -75,6 +75,10 @@ import {
   isBatteryProcessorTrackingUsable,
   resolveBatteryTrackingRejection,
 } from "@/app/lib/remote-upper-limb-battery/battery-tracking";
+import {
+  BATTERY_CAMERA_PREVIEW_DEFAULT_ASPECT,
+  resolveBatteryCameraPreviewAspect,
+} from "@/app/lib/remote-upper-limb-battery/battery-camera-preview-mirror";
 
 const POSITION_STABLE_MS = 1000;
 const COUNTDOWN_INTERVAL_MS = 1000;
@@ -111,6 +115,9 @@ export function RemoteUpperLimbBatterySession({
   const [holdStillVisible, setHoldStillVisible] = useState(false);
   const [repositionReady, setRepositionReady] = useState(false);
   const [voiceGuidanceEnabled, setVoiceGuidanceEnabled] = useState(true);
+  const [previewAspectRatio, setPreviewAspectRatio] = useState(
+    BATTERY_CAMERA_PREVIEW_DEFAULT_ASPECT,
+  );
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -150,6 +157,37 @@ export function RemoteUpperLimbBatterySession({
   const activeOrientation = getBatteryTestOrientation(activeTestId);
   const previewActive = cameraSnapshot?.previewActive ?? false;
   const positionReady = previewActive && isTrackingUsable(cameraSnapshot);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!previewActive || !video) {
+      setPreviewAspectRatio(BATTERY_CAMERA_PREVIEW_DEFAULT_ASPECT);
+      return;
+    }
+
+    const syncAspect = () => {
+      setPreviewAspectRatio(
+        resolveBatteryCameraPreviewAspect(video.videoWidth, video.videoHeight),
+      );
+    };
+
+    syncAspect();
+    video.addEventListener("loadedmetadata", syncAspect);
+    video.addEventListener("resize", syncAspect);
+
+    const pollId = window.setInterval(() => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        syncAspect();
+        window.clearInterval(pollId);
+      }
+    }, 200);
+
+    return () => {
+      video.removeEventListener("loadedmetadata", syncAspect);
+      video.removeEventListener("resize", syncAspect);
+      window.clearInterval(pollId);
+    };
+  }, [previewActive, cameraSnapshot?.initPhase]);
   const trackingLost =
     assessmentStarted &&
     orchestrator.phase !== "idle" &&
@@ -657,53 +695,58 @@ export function RemoteUpperLimbBatterySession({
         </div>
       ) : null}
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start">
-        <div className="w-full self-start overflow-hidden rounded-[10px] border border-[#1E2D42] bg-[#0F1825] lg:max-w-none">
-          <div className="relative aspect-video w-full max-w-xl bg-[#0B1220] lg:max-w-none">
-            {!previewActive ? (
-              <div
-                className="absolute inset-0 flex items-center justify-center px-4 text-center text-xs text-white/35"
+      <div className="mx-auto mt-5 w-full max-w-[1240px]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,1fr)] lg:items-stretch">
+          <div className="min-h-0 w-full overflow-hidden rounded-[10px] border border-[#1E2D42] bg-[#0F1825]">
+            <div
+              className="relative w-full bg-[#0B1220]"
+              style={{ aspectRatio: previewAspectRatio }}
+            >
+              {!previewActive ? (
+                <div
+                  className="absolute inset-0 flex items-center justify-center px-4 text-center text-xs text-white/35"
+                  aria-hidden
+                >
+                  Camera preview will appear here after you start the camera.
+                </div>
+              ) : null}
+              <video
+                ref={videoRef}
+                playsInline
+                muted
+                className="pointer-events-none absolute inset-0 h-full w-full object-contain object-center opacity-0"
                 aria-hidden
-              >
-                Camera preview will appear here after you start the camera.
-              </div>
-            ) : null}
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              className="pointer-events-none absolute inset-0 h-full w-full object-contain object-center opacity-0"
-              aria-hidden
+              />
+              <canvas
+                ref={canvasRef}
+                className="absolute inset-0 h-full w-full object-contain object-center"
+              />
+              {previewActive &&
+              assessmentStarted &&
+              !trackingLost &&
+              isTrackingUsable(cameraSnapshot) ? (
+                <span
+                  className="absolute left-3 top-3 rounded-[5px] bg-black/55 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#5DCAA5]"
+                >
+                  Motion guidance active
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex min-h-0 w-full flex-col">
+            <MovementFocusAnatomyCard
+              activeTestId={assessmentStarted ? activeTestId : null}
+              prescribedSide={resolvedPrescribedSide}
+              workspaceAligned
             />
-            <canvas
-              ref={canvasRef}
-              className="absolute inset-0 h-full w-full object-contain object-center"
-            />
-            {previewActive &&
-            assessmentStarted &&
-            !trackingLost &&
-            isTrackingUsable(cameraSnapshot) ? (
-              <span
-                className="absolute left-3 top-3 rounded-[5px] bg-black/55 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#5DCAA5]"
-              >
-                Motion guidance active
-              </span>
-            ) : null}
           </div>
         </div>
-        <div className="min-h-0 w-full self-start lg:w-[260px]">
-          <MovementFocusAnatomyCard
-            activeTestId={assessmentStarted ? activeTestId : null}
-            prescribedSide={resolvedPrescribedSide}
-          />
-        </div>
-      </div>
 
-      {cameraError ? (
-        <p className="mt-3 text-sm text-rose-200">{cameraError}</p>
-      ) : null}
+        {cameraError ? (
+          <p className="mt-3 text-sm text-rose-200">{cameraError}</p>
+        ) : null}
 
-      <div
+        <div
         className={`mt-4 rounded-[10px] border p-4 ${
           finalTestSavingActive
             ? "border-[#1D9E75]/40 bg-[#1D9E75]/10"
@@ -724,9 +767,9 @@ export function RemoteUpperLimbBatterySession({
             Keep your feet still. Stepping is not automatically measured in this release.
           </p>
         ) : null}
-      </div>
+        </div>
 
-      {IS_DEV && assessmentStarted && processorSnapshot ? (
+        {IS_DEV && assessmentStarted && processorSnapshot ? (
         <div className="mt-3 rounded-[7px] border border-dashed border-white/15 bg-black/40 p-3 font-mono text-[10px] leading-relaxed text-white/45">
           <p>dev tracking — not shown to patients in production</p>
           <p>resolvedPrescribedSide: {resolvedPrescribedSide}</p>
@@ -759,9 +802,9 @@ export function RemoteUpperLimbBatterySession({
             </>
           ) : null}
         </div>
-      ) : null}
+        ) : null}
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
         <label className="flex cursor-pointer items-center gap-2 text-sm text-white/70">
           <input
             type="checkbox"
@@ -771,9 +814,9 @@ export function RemoteUpperLimbBatterySession({
           />
           Voice guidance
         </label>
-      </div>
+        </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
         {!previewActive ? (
           <button
             type="button"
@@ -820,6 +863,7 @@ export function RemoteUpperLimbBatterySession({
             </button>
           </>
         ) : null}
+        </div>
       </div>
     </section>
   );

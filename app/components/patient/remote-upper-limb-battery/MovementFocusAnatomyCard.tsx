@@ -15,6 +15,8 @@ type MovementFocusAnatomyCardProps = {
   prescribedSide?: "left" | "right" | null;
   /** Interactive Shoulder session only — extended education for specific movement blocks. */
   interactiveEducation?: MovementFocusInteractiveEducation;
+  /** Remote battery session — fill height aligned with the camera workspace column. */
+  workspaceAligned?: boolean;
 };
 
 type FocusRegion = "shoulder-upper-arm" | "elbow-upper-arm" | "shoulder-upper-trunk";
@@ -57,9 +59,11 @@ const D1_COPY = {
 function AnatomyIllustration({
   prescribedSide,
   compact,
+  workspaceAligned,
 }: {
   prescribedSide?: "left" | "right" | null;
   compact?: boolean;
+  workspaceAligned?: boolean;
 }) {
   const mirrorForLeftSide = prescribedSide === "left";
 
@@ -68,7 +72,9 @@ function AnatomyIllustration({
       className={
         compact
           ? "flex h-[min(42vw,200px)] min-h-[140px] w-full items-center justify-center sm:h-[min(36vw,220px)]"
-          : "flex min-h-[200px] w-full flex-1 items-center justify-center sm:min-h-[240px] lg:min-h-[280px]"
+          : workspaceAligned
+            ? "flex min-h-0 w-full flex-1 items-center justify-center"
+            : "flex min-h-[200px] w-full flex-1 items-center justify-center sm:min-h-[240px] lg:min-h-[280px]"
       }
     >
       <img
@@ -88,6 +94,7 @@ export function MovementFocusAnatomyCard({
   activeTestId,
   prescribedSide = null,
   interactiveEducation = null,
+  workspaceAligned = false,
 }: MovementFocusAnatomyCardProps) {
   const region = resolveFocusRegion(activeTestId);
   const copy = FOCUS_COPY[region];
@@ -117,7 +124,10 @@ export function MovementFocusAnatomyCard({
       <p className="mt-1 text-[11px] leading-relaxed text-white/45">{copy.caption}</p>
 
       <div className="mt-2 flex min-h-0 flex-1 justify-center overflow-hidden">
-        <AnatomyIllustration prescribedSide={prescribedSide} />
+        <AnatomyIllustration
+          prescribedSide={prescribedSide}
+          workspaceAligned={workspaceAligned}
+        />
       </div>
     </div>
   );

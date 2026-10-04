@@ -35,3 +35,16 @@ export function drawBatteryMirroredCameraPreview(
   }
   ctx.restore();
 }
+
+/** Typical webcam default before `videoWidth` / `videoHeight` are available (4:3). */
+export const BATTERY_CAMERA_PREVIEW_DEFAULT_ASPECT = 4 / 3;
+
+export function resolveBatteryCameraPreviewAspect(
+  videoWidth: number,
+  videoHeight: number,
+): number {
+  if (videoWidth > 0 && videoHeight > 0) {
+    return videoWidth / videoHeight;
+  }
+  return BATTERY_CAMERA_PREVIEW_DEFAULT_ASPECT;
+}

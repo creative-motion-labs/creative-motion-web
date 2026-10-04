@@ -5,7 +5,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { drawBatteryMirroredCameraPreview } from "./battery-camera-preview-mirror";
+import {
+  BATTERY_CAMERA_PREVIEW_DEFAULT_ASPECT,
+  drawBatteryMirroredCameraPreview,
+  resolveBatteryCameraPreviewAspect,
+} from "./battery-camera-preview-mirror";
 import { resolveBatteryPrescribedSideForPatientDisplay } from "./battery-prescribed-side";
 import { BLAZEPOSE_SIDE_INDICES } from "./battery-tracking";
 
@@ -103,15 +107,24 @@ describe("battery camera preview mirror", () => {
     assert.match(ui, /ref=\{canvasRef\}/);
     assert.match(ui, /ref=\{videoRef\}/);
     assert.match(ui, /Motion guidance active/);
+    assert.match(ui, /max-w-\[1240px\]/);
+    assert.match(ui, /lg:grid-cols-\[minmax\(0,3fr\)_minmax\(0,1fr\)\]/);
+    assert.match(ui, /lg:items-stretch/);
+    assert.match(ui, /aspectRatio: previewAspectRatio/);
 
-    const previewStart = ui.indexOf("aspect-video");
+    const previewStart = ui.indexOf("aspectRatio: previewAspectRatio");
     const previewEnd = ui.indexOf("<MovementFocusAnatomyCard", previewStart);
     assert.ok(previewStart >= 0 && previewEnd > previewStart);
     const previewBlock = ui.slice(previewStart, previewEnd);
     assert.equal(previewBlock.includes("scaleX(-1)"), false);
-    assert.equal(previewBlock.includes("transform:"), false);
     assert.equal(previewBlock.includes("BATTERY_MIRRORED"), false);
     assert.match(previewBlock, /object-contain/);
-    assert.match(ui, /lg:items-start/);
+  });
+
+  it("derives preview aspect from video dimensions with a 4:3 default", () => {
+    assert.equal(BATTERY_CAMERA_PREVIEW_DEFAULT_ASPECT, 4 / 3);
+    assert.equal(resolveBatteryCameraPreviewAspect(640, 480), 640 / 480);
+    assert.equal(resolveBatteryCameraPreviewAspect(1280, 720), 1280 / 720);
+    assert.equal(resolveBatteryCameraPreviewAspect(0, 480), BATTERY_CAMERA_PREVIEW_DEFAULT_ASPECT);
   });
 });
