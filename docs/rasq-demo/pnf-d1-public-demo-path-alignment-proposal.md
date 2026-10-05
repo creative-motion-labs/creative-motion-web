@@ -81,3 +81,29 @@ Clinical `D1_INSPIRED_DIAGONAL_REACH_PATTERN`, stroke foundation catalog, and ca
 - [x] `npm test`, `npm run build`.
 - [x] Fixture pipeline: raw MediaPipe → detector → `toMirroredPreviewPoint` → demo path (see `demo-pnf-camera-path-pipeline.test.ts`).
 - [ ] Manual: camera-enabled `/demo` PNF — confirm marker, path, and repetition completion on device.
+
+## PR #311 — runtime trace and fix scope (revised)
+
+### Confirmed on `/demo` (fixture trace, not live camera)
+
+| Step | Production caller | Result for public demo |
+|------|-------------------|-------------------------|
+| Therapeutic side | `resolveOrchestratorTherapeuticSide` in `OrchestratorCvSessionCore` | **`right`**, source **`block`** — both demo blocks declare `side: "right"`; no `prescribedSide` |
+| Block transition | `resetRunnerStatesForBlockTransition({ side: activeTherapeuticSide, … })` | Pattern resolved with **`right`** unless public-demo presentation override applies |
+| Per-frame wrist | `toMirroredPreviewPoint(poseSnap?.primaryWristNormalized)` in RAF loop | Same conversion as clinical (#277); no demo-only helper |
+| Detector | `mountOrchestratorCvDetector` with resolved therapeutic side | Tracks **right** primary wrist for demo |
+
+**Unconfirmed:** The earlier claim that `/demo` resolved **`side: "left"`** at runtime was **not reproduced** in this trace. Both blocks are `right`; non-clinical orchestrator resolution does not yield left.
+
+### Reproduced reversal mechanisms (controlled / fixture)
+
+1. **Hypothesis — demo profile resolved with `left`:** Start pose projects near path **end** (reversed progression). Not observed on `/demo` side resolution above; guarded by **`motionPatternPresentationSide: "right"`** when `publicDemoConsent` is set (demo-only seam in `public-demo-pnf-path-resolution.ts`).
+2. **Misconfiguration — clinical `d1-inspired-diagonal-reach` on demo illustration pose:** Start pose sits far along the path vs demo profile (historical pre–#310 behavior).
+
+### Fix scope
+
+- **Do not** override `currentBlock.side` over `activeTherapeuticSide` in `OrchestratorCvSessionCore` (preserves clinical **`prescribedSide`** priority).
+- **Do not** force demo path side globally in `motion-pattern-registry.ts`.
+- **Do** pin public-demo PNF path geometry via optional `motionPatternPresentationSide` on block transition only.
+
+Tests: `demo-pnf-runtime-trace.test.ts`, `demo-pnf-camera-path-pipeline.test.ts`, clinical regression in `resolve-interactive-shoulder-side.test.ts` and `orchestrator-cv-block-dispatch.test.ts`.

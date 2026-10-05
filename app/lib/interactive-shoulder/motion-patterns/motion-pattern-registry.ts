@@ -1,8 +1,5 @@
 import type { ShoulderAbductionReachSide } from "@/app/lib/shoulder-rehabilitation";
-import {
-  RASQ_DEMO_D1_DIAGONAL_REACH_FEEDBACK_PROFILE,
-  RASQ_DEMO_D1_DIAGONAL_REACH_PATTERN,
-} from "@/app/lib/rasq-demo/rasq-demo-d1-diagonal-reach-pattern";
+import { RASQ_DEMO_D1_DIAGONAL_REACH_PATTERN } from "@/app/lib/rasq-demo/rasq-demo-d1-diagonal-reach-pattern";
 import { D1_INSPIRED_DIAGONAL_REACH_PATTERN } from "./d1-inspired-diagonal-reach-pattern";
 import type { MotionPattern, ResolvedMotionPattern } from "./motion-pattern-types";
 import { resolveMotionPatternForSide } from "./motion-pattern-types";
@@ -43,9 +40,7 @@ export function resolveActiveMotionPattern(
 ): ResolvedMotionPattern | null {
   const pattern = feedbackProfileKey ? getRegisteredMotionPattern(feedbackProfileKey) : null;
   if (!pattern) return null;
-  const resolvedSide =
-    feedbackProfileKey === RASQ_DEMO_D1_DIAGONAL_REACH_FEEDBACK_PROFILE ? "right" : side;
-  return resolveMotionPatternForSide(pattern, resolvedSide);
+  return resolveMotionPatternForSide(pattern, side);
 }
 
 export function resolveMotionPatternSequenceForSession(

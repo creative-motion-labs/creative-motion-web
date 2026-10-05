@@ -45,6 +45,7 @@ import {
   queryDemoCameraPermissionState,
   type DemoCameraPermissionState,
 } from "@/app/lib/rasq-demo/demo-camera-permission";
+import { resolvePublicDemoPnfMotionPatternSide } from "@/app/lib/rasq-demo/public-demo-pnf-path-resolution";
 import { resolveHitExitTransitionMs } from "@/app/lib/interactive-shoulder/reach-the-light-motion";
 import {
   MIRRORED_PREVIEW_TRANSFORM,
@@ -861,13 +862,13 @@ export function OrchestratorCvSessionCore({
             presentationProgressRef.current = null;
             setPresentationProgress(null);
           }
-          const blockSide =
-            currentBlock.side === "left" || currentBlock.side === "right"
-              ? currentBlock.side
-              : activeTherapeuticSide;
           const transition = resetRunnerStatesForBlockTransition({
             block: currentBlock,
-            side: blockSide,
+            side: activeTherapeuticSide,
+            motionPatternPresentationSide: resolvePublicDemoPnfMotionPatternSide({
+              publicDemoActive: Boolean(publicDemoConsent),
+              block: currentBlock,
+            }),
           });
           resetTargetContactConsumptionState(targetContactConsumptionRef.current);
           runnerStatesRef.current = transition.states;

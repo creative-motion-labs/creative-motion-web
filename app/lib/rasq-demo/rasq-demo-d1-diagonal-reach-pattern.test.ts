@@ -50,13 +50,13 @@ describe("RASQ demo D1 diagonal reach pattern", () => {
     assert.ok(start.y > end.y, "path travels upward diagonally");
   });
 
-  it("resolves the same path for left side request (right-arm public demo only)", () => {
+  it("x-mirrors demo path when resolved with left side (public demo pins presentation side in orchestrator)", () => {
     const right = resolveActiveMotionPattern(RASQ_DEMO_D1_DIAGONAL_REACH_FEEDBACK_PROFILE, "right")!;
     const left = resolveActiveMotionPattern(RASQ_DEMO_D1_DIAGONAL_REACH_FEEDBACK_PROFILE, "left")!;
-    assert.equal(
-      samplePathAtProgress(right.sampledPath, 0).x,
-      samplePathAtProgress(left.sampledPath, 0).x,
-    );
+    const rightStart = samplePathAtProgress(right.sampledPath, 0);
+    const leftStart = samplePathAtProgress(left.sampledPath, 0);
+    assert.notEqual(rightStart.x, leftStart.x);
+    assert.equal(rightStart.y, leftStart.y);
   });
 
   it("x-reflects clinical waypoints for the public demo illustration alignment", () => {

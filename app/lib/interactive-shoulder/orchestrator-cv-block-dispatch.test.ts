@@ -1230,4 +1230,26 @@ describe("orchestrator cv dispatch — CHANGE-004 real end-to-end attempt path",
     assert.equal(finallyExpired.targetAttemptTimeout?.targetId, attemptTargetId);
     assert.equal(finallyExpired.targetAttemptTimeout?.activeElapsedMs, FIXTURE_TIMEOUT_MS);
   });
+
+  it("resolves clinical D1 pattern from therapeutic side left even when block.side is right", () => {
+    const blocks = toSessionDefinition(STROKE_UPPER_LIMB_RECOVERY_FOUNDATION_SESSION_1).blocks;
+    const patternBlock = blocks.find(
+      (b) =>
+        b.blockType === "movement-pattern" &&
+        b.feedbackProfile === D1_INSPIRED_DIAGONAL_REACH_FEEDBACK_PROFILE,
+    )!;
+    const blockWithConflictingSide = { ...patternBlock, side: "right" as const };
+    const transition = resetRunnerStatesForBlockTransition({
+      block: blockWithConflictingSide,
+      side: "left",
+    });
+    assert.equal(transition.fault, null);
+    assert.ok(transition.activeMotionPattern);
+    assert.equal(transition.activeMotionPattern!.side, "left");
+    const leftDirect = resolveActiveMotionPattern(D1_INSPIRED_DIAGONAL_REACH_FEEDBACK_PROFILE, "left")!;
+    assert.equal(
+      samplePathAtProgress(transition.activeMotionPattern!.sampledPath, 0).x,
+      samplePathAtProgress(leftDirect.sampledPath, 0).x,
+    );
+  });
 });
