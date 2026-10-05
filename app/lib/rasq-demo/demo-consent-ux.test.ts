@@ -62,11 +62,11 @@ describe("public demo consent UX", () => {
 });
 
 describe("PNF welcome diagram annotation", () => {
-  it("keeps the short annotation inside the SVG without the long clipped phrase", () => {
+  it("keeps the short annotation on the welcome card without the long clipped phrase", () => {
     assert.equal(RASQ_DEMO_PNF_WELCOME_ANNOTATION, "5 smooth repetitions");
     const visual = readFileSync(PNF_VISUAL, "utf8");
     assert.match(visual, /RASQ_DEMO_PNF_WELCOME_ANNOTATION/);
-    assert.match(visual, /textAnchor="middle"/);
+    assert.match(visual, /RASQ_DEMO_PNF_D1_ILLUSTRATION/);
     assert.doesNotMatch(visual, /five smooth repetitions along the path/i);
   });
 });
