@@ -1,413 +1,532 @@
-import { describe, it, beforeEach } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
-  assertMutationDestinationAllowed,
-  requireExplicitDestCredentials,
-  STAGING_PROJECT_REF,
-  PRODUCTION_PROJECT_REF,
-  importBundleDurable,
-  rollbackRunVerified,
-  deleteLedgerRowsVerified,
-  compareIntegrity,
-  buildIntegritySnapshot,
-  TABLE_PIPELINE,
+  assertMutationDestinationAllowed, requireExplicitDestCredentials,
+  STAGING_PROJECT_REF, PRODUCTION_PROJECT_REF, importBundleDurable,
+  rollbackRunVerified, compareIntegrity, compareSourceIntegrity,
+  buildIntegritySnapshot, buildImportPlan, readAllRows, TABLE_PIPELINE,
 } from "./judge-demo-transfer-lib.mjs";
+import { writeJsonDurable, acquireRunLock } from "./judge-demo-transfer-files.mjs";
+import { parseArgs, exportBundle, writeManifestAtomic, verifyRun } from "./judge-demo-patient-transfer.mjs";
 
-const SOURCE_PATIENT = "11111111-1111-1111-1111-111111111111";
-const PROVIDER = "22222222-2222-2222-2222-222222222222";
+const SOURCE_PATIENT = "11111111-1111-4111-8111-111111111111";
+const PROVIDER = "22222222-2222-4222-8222-222222222222";
+const RUN_ID = "33333333-3333-4333-8333-333333333333";
+const destination = { url: `https://${STAGING_PROJECT_REF}.supabase.co`, key: "fake-explicit-staging-key" };
+const DATE = "2026-10-02T10:00:00.123400Z";
 
-function makeBundle() {
-  return {
-    runId: "run-test-001",
-    sourcePatientId: SOURCE_PATIENT,
-    tables: {
-      patients: [
-        {
-          id: SOURCE_PATIENT,
-          full_name: "reem mohammed",
-          file_number: "P-0023",
-          phone: "000",
-          status: "new",
-          created_at: "2026-10-02T10:00:00.000Z",
-          updated_at: "2026-10-02T10:00:00.000Z",
-          provider_id: PROVIDER,
-        },
-      ],
-      assessments: [
-        {
-          id: "a0000001-0000-4000-8000-000000000001",
-          patient_id: SOURCE_PATIENT,
-          provider_id: PROVIDER,
-          mode: "in_clinic",
-          selected_tests: [],
-          status: "completed",
-          score: 12.5,
-          metrics: { reps: 3 },
-          created_at: "2026-10-02T11:00:00.000Z",
-          updated_at: "2026-10-02T11:00:00.000Z",
-          completed_at: "2026-10-02T11:05:00.000Z",
-        },
-        {
-          id: "a0000002-0000-4000-8000-000000000002",
-          patient_id: SOURCE_PATIENT,
-          provider_id: PROVIDER,
-          mode: "in_clinic",
-          selected_tests: [],
-          status: "completed",
-          score: 9,
-          metrics: { reps: 2 },
-          created_at: "2026-10-02T12:00:00.000Z",
-          updated_at: "2026-10-02T12:00:00.000Z",
-          completed_at: "2026-10-02T12:05:00.000Z",
-        },
-      ],
-      treatment_plans: [],
-      plan_sessions: [],
-      session_logs: [],
-      interactive_shoulder_movement_outcomes: [],
-      upper_limb_motor_screen_assignments: [],
-      upper_limb_motor_screen_session_results: [],
-      remote_assessment_requests: [],
-      ai_clinician_summaries: [],
+function makeBundle(rich = false) {
+  const tables = Object.fromEntries(TABLE_PIPELINE.map(({ table }) => [table, []]));
+  tables.patients = [{ id: SOURCE_PATIENT, provider_id: PROVIDER, full_name: "test patient",
+    file_number: "TEST-001", phone: "synthetic", created_at: DATE, updated_at: DATE }];
+  tables.assessments = [1, 2].map((i) => ({ id: `assessment-${i}`, patient_id: SOURCE_PATIENT,
+    provider_id: PROVIDER, status: "completed", score: i * 12.5, metrics: { reps: i, reach: 1.75 },
+    structured_data: { observation: { value: 4.5, units: "test" } },
+    created_at: DATE, updated_at: DATE, completed_at: DATE }));
+  if (rich) {
+    tables.treatment_plans = [{ id: "plan-1", patient_id: SOURCE_PATIENT, provider_id: PROVIDER,
+      assessment_id: "assessment-1", catalog_assignment_request_id: "old-request", created_at: DATE }];
+    tables.plan_sessions = [{ id: "session-1", patient_id: SOURCE_PATIENT, provider_id: PROVIDER,
+      plan_id: "plan-1", prescribed_side: "left", scheduled_at: DATE, exercises: [{ duration: 32 }] }];
+    tables.session_logs = [{ id: "log-1", patient_id: SOURCE_PATIENT, provider_id: PROVIDER,
+      plan_id: "plan-1", plan_session_id: "session-1", patient_token: "source-secret",
+      effort_score: 2.75, exercises_completed: 7, completed_at: DATE }];
+    tables.interactive_shoulder_movement_outcomes = [{ id: "outcome-1", patient_id: SOURCE_PATIENT,
+      provider_id: PROVIDER, plan_id: "plan-1", plan_session_id: "session-1", created_at: DATE,
+      outcome_payload: { measured: [12.5, 11.75], completedAt: DATE } }];
+    tables.upper_limb_motor_screen_assignments = [{ id: "assignment-1", patient_id: SOURCE_PATIENT,
+      provider_id: PROVIDER, assignment_request_id: "old-request", token_hash: "source-secret",
+      token_expires_at: DATE, created_at: DATE, updated_at: DATE, assignment_payload: {
+        id: "assignment-1", assignmentRequestId: "old-request", token: "source-secret",
+        repetitions: 5, measuredAt: DATE,
+      } }];
+    tables.upper_limb_motor_screen_session_results = [{ id: "result-1", assignment_id: "assignment-1",
+      patient_id: SOURCE_PATIENT, provider_id: PROVIDER, created_at: DATE, protective_pause_count: 3,
+      result_payload: { id: "result-1", assignmentId: "assignment-1", measurement: { speed: 3.125 } } }];
+    tables.remote_assessment_requests = [{ id: "remote-1", patient_id: SOURCE_PATIENT,
+      provider_id: PROVIDER, assessment_id: "assessment-2", token: "source-secret",
+      created_at: DATE, submitted_at: DATE, expires_at: DATE }];
+  }
+  return { runId: RUN_ID, sourcePatientId: SOURCE_PATIENT, tables };
+}
+
+// Faults occur at the API boundary, including responses lost AFTER a committed write.
+function createMockAdmin(initial = {}, faults = {}) {
+  const store = structuredClone(initial), requests = [];
+  let seq = 0;
+  const admin = { store, requests, supabaseUrl: destination.url, supabaseKey: destination.key,
+    idSeq: () => `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`,
+    from(table) {
+      const state = { table, op: "select", filters: [], single: false, range: null };
+      const api = {
+        select() { return api; }, eq(col, val) { state.filters.push({ col, val }); return api; },
+        in(col, vals) { state.filters.push({ col, vals }); return api; },
+        order() { return api; }, range(start, end) { state.range = [start, end]; return api; },
+        insert(row) { state.op = "insert"; state.payload = structuredClone(row); return api; },
+        delete() { state.op = "delete"; return api; },
+        maybeSingle() { state.single = true; return api; },
+        then(resolve, reject) { return execute().then(resolve, reject); },
+      };
+      async function execute() {
+        requests.push(structuredClone(state));
+        const injected = await faults.before?.(state, admin);
+        if (injected) return injected;
+        store[table] ??= [];
+        const matches = (row) => state.filters.every((f) => f.vals ? f.vals.includes(row[f.col]) : row[f.col] === f.val);
+        let response;
+        if (state.op === "insert") {
+          if (store[table].some((r) => r.id === state.payload.id)) return { data: null, error: { message: "duplicate key" } };
+          store[table].push(structuredClone(state.payload));
+          response = { data: null, error: null };
+        } else if (state.op === "delete") {
+          const deleted = store[table].filter(matches);
+          store[table] = store[table].filter((r) => !matches(r));
+          response = { data: deleted.map((r) => ({ id: r.id })), count: deleted.length, error: null };
+        } else {
+          let rows = store[table].filter(matches).sort((a, b) => a.id.localeCompare(b.id));
+          if (state.range) rows = rows.slice(state.range[0], state.range[1] + 1);
+          response = { data: structuredClone(state.single ? rows[0] ?? null : rows), error: null };
+        }
+        return await faults.after?.(state, admin, response) ?? response;
+      }
+      return api;
     },
   };
+  return admin;
 }
 
-function createMockAdmin(initial = {}) {
-  const store = structuredClone(initial);
-  let seq = 0;
-  const idSeq = () => `0000000${++seq}-0000-4000-8000-000000000099`;
+function setup(rich = false, initial = {}, faults = {}) {
+  const bundle = makeBundle(rich), admin = createMockAdmin(initial, faults);
+  const manifest = { ledgerVersion: 2, runId: RUN_ID, status: "exported", sourcePatientId: SOURCE_PATIENT,
+    sourceProviderId: PROVIDER, idMappings: {}, integritySnapshot: buildIntegritySnapshot(bundle) };
+  let saved;
+  const persistManifest = async (m) => { saved = structuredClone(m); };
+  const options = { destination, persistManifest, idFactory: admin.idSeq };
+  return { bundle, admin, manifest, options, saved: () => saved,
+    run: (m = manifest, extra = {}) => importBundleDurable(admin, bundle, m, PROVIDER, { ...options, ...extra }) };
+}
 
-  function from(table) {
-    const state = {
-      filters: [],
-      op: "select",
-      payload: null,
-      countExact: false,
-    };
-    const api = {
-      select(_cols) {
-        if (state.op === "delete") return exec();
-        return api;
-      },
-      eq(col, val) {
-        state.filters.push({ col, val, op: "eq" });
-        return api;
-      },
-      in(col, vals) {
-        state.filters.push({ col, vals, op: "in" });
-        return api;
-      },
-      insert(row) {
-        state.op = "insert";
-        state.payload = row;
-        return exec();
-      },
-      delete(opts) {
-        state.op = "delete";
-        state.countExact = opts?.count === "exact";
-        return api;
-      },
-      maybeSingle() {
-        return exec();
-      },
-    };
-    api.then = (resolve, reject) => exec().then(resolve, reject);
-    return api;
+function writes(admin, op) { return admin.requests.filter((r) => r.op === op); }
 
-    function match(row) {
-      return state.filters.every((f) => {
-        if (f.op === "eq") return row[f.col] === f.val;
-        if (f.op === "in") return f.vals.includes(row[f.col]);
-        return true;
-      });
-    }
+function secondAssessmentFailure() {
+  let attempts = 0;
+  return { beforeInsert(table) {
+    if (table === "assessments" && ++attempts === 2) throw new Error("injected midway failure");
+  } };
+}
 
-    async function exec() {
-      store[table] = store[table] ?? [];
-      if (state.op === "insert") {
-        const rows = Array.isArray(state.payload) ? state.payload : [state.payload];
-        for (const r of rows) {
-          if (store[table].some((x) => x.id === r.id)) {
-            return { data: null, error: { message: "duplicate key" } };
-          }
-          store[table].push(structuredClone(r));
-        }
-        return { data: rows, error: null };
-      }
-      if (state.op === "delete") {
-        const before = store[table].length;
-        const idFilter = state.filters.find((f) => f.col === "id" && f.op === "eq");
-        const ids = idFilter?.val;
-        store[table] = store[table].filter((r) => r.id !== ids);
-        const removed = before - store[table].length;
-        return {
-          data: removed ? [{ id: ids }] : [],
-          error: null,
-          count: removed,
-        };
-      }
-      const rows = store[table].filter(match);
-      if (state.filters.some((f) => f.op === "eq" && f.col === "id")) {
-        return { data: rows[0] ?? null, error: null };
-      }
-      return { data: rows, error: null };
-    }
+describe("exact destination identity before any mutations", () => {
+  for (const url of [
+    `https://${PRODUCTION_PROJECT_REF}.supabase.co`, "https://unknownref.supabase.co",
+    `http://${STAGING_PROJECT_REF}.supabase.co`, `https://${STAGING_PROJECT_REF}.supabase.co.evil.test`,
+    `https://${STAGING_PROJECT_REF}.supabase.co/?production=false`,
+  ]) {
+    it(`rejects ${url}`, async () => {
+      const f = setup();
+      await assert.rejects(() => f.run(f.manifest, { destination: { ...destination, url } }), /Refusing mutation/);
+      assert.equal(f.admin.requests.length, 0);
+      assert.equal(f.saved(), undefined);
+    });
   }
-
-  return { from, store, idSeq };
-}
-
-function baseManifest(bundle) {
-  return {
-    runId: bundle.runId,
-    status: "exported",
-    sourcePatientId: SOURCE_PATIENT,
-    sourceProviderId: PROVIDER,
-    exportPath: "/tmp/x.json",
-    expectedCounts: { assessments: 2, patients: 1 },
-    integritySnapshot: buildIntegritySnapshot(bundle),
-  };
-}
-
-describe("destination project ref guards", () => {
-  it("rejects Production ref without writes", () => {
-    assert.throws(
-      () =>
-        assertMutationDestinationAllowed(`https://${PRODUCTION_PROJECT_REF}.supabase.co`),
-      /Production/,
-    );
+  it("guards the actual client even if declared credentials say staging", async () => {
+    const f = setup();
+    f.admin.supabaseUrl = `https://${PRODUCTION_PROJECT_REF}.supabase.co`;
+    await assert.rejects(() => f.run(), /Production/);
+    assert.equal(f.admin.requests.length, 0);
   });
-
-  it("rejects unknown ref", () => {
-    assert.throws(
-      () => assertMutationDestinationAllowed("https://unknownref123.supabase.co"),
-      /must be/,
-    );
+  it("guards rollback as well as import", async () => {
+    const f = setup();
+    await f.run();
+    const before = f.admin.requests.length;
+    await assert.rejects(() => rollbackRunVerified(f.admin, f.manifest, {
+      ...f.options, destination: { ...destination, url: "https://unknownref.supabase.co" },
+    }), /must be/);
+    assert.equal(f.admin.requests.length, before);
   });
-
-  it("allows staging ref", () => {
-    assert.equal(
-      assertMutationDestinationAllowed(`https://${STAGING_PROJECT_REF}.supabase.co`),
-      STAGING_PROJECT_REF,
-    );
-  });
-
-  it("requires explicit DEST credentials for mutations", () => {
-    const saved = { ...process.env };
-    delete process.env.DEST_SUPABASE_URL;
-    delete process.env.DEST_SERVICE_ROLE_KEY;
-    process.env.NEXT_PUBLIC_SUPABASE_URL = `https://${STAGING_PROJECT_REF}.supabase.co`;
-    process.env.SUPABASE_SERVICE_ROLE_KEY = "key";
-    assert.throws(() => requireExplicitDestCredentials(), /explicit DEST/);
-    Object.assign(process.env, saved);
+  it("requires explicit destination credentials without public/shared fallbacks", () => {
+    const keys = ["DEST_SUPABASE_URL", "DEST_SERVICE_ROLE_KEY", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
+    const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    try {
+      delete process.env.DEST_SUPABASE_URL; delete process.env.DEST_SERVICE_ROLE_KEY;
+      process.env.NEXT_PUBLIC_SUPABASE_URL = destination.url; process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-key";
+      assert.throws(() => requireExplicitDestCredentials(), /explicit DEST/);
+      assert.equal(assertMutationDestinationAllowed(destination.url), STAGING_PROJECT_REF);
+    } finally {
+      for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : process.env[k] = v;
+    }
   });
 });
 
-describe("durable import + failure injection", () => {
-  /** @type {ReturnType<createMockAdmin>} */
-  let admin;
-  let manifest;
-  let bundle;
-  let persisted;
-
-  beforeEach(() => {
-    admin = createMockAdmin();
-    bundle = makeBundle();
-    persisted = null;
-    manifest = baseManifest(bundle);
+describe("durable plans and recovery", () => {
+  it("persists all planned rows and IDs before the first insert, then flushes every success", async () => {
+    const f = setup(true);
+    const snapshots = [];
+    await f.run(f.manifest, { persistManifest: async (m) => {
+      snapshots.push({ manifest: structuredClone(m), writes: writes(f.admin, "insert").length });
+    }, hooks: { beforeInsert(table, row) {
+      const durable = snapshots.at(-1).manifest;
+      assert.equal(durable.plannedRows.patients.length, 1);
+      assert.equal(durable.plannedRows.assessments.length, 2);
+      assert.equal(durable.plannedRows[table].some((r) => r.id === row.id), true);
+      assert.equal(Object.values(durable.insertedLedger).flat().length, writes(f.admin, "insert").length);
+    } } });
+    assert.equal(snapshots[0].writes, 0);
+    assert.equal(snapshots[0].manifest.status, "importing");
+    assert.equal(f.manifest.importVerification.ok, true);
   });
-
-  async function persist(m) {
-    persisted = structuredClone(m);
-    manifest = m;
-  }
-
-  it("fails midway through a table and compensates ledger rows", async () => {
-    let assessmentInserts = 0;
-    await assert.rejects(
-      () =>
-        importBundleDurable(admin, bundle, manifest, PROVIDER, {
-          persistManifest: persist,
-          idFactory: admin.idSeq,
-          hooks: {
-            beforeInsert(table) {
-              if (table === "assessments") {
-                assessmentInserts += 1;
-                if (assessmentInserts === 2) {
-                  throw new Error("injected assessment failure");
-                }
-              }
-            },
-          },
-        }),
-      /injected assessment failure/,
-    );
-    assert.equal(persisted.status, "importing");
-    assert.equal(persisted.compensation?.ok, true);
-    assert.deepEqual(persisted.insertedLedger.patients ?? [], []);
-    assert.equal(admin.store.patients?.length ?? 0, 0);
-    assert.equal(admin.store.assessments?.length ?? 0, 0);
+  it("fails midway through a table and verifies compensation", async () => {
+    const f = setup();
+    await assert.rejects(() => f.run(f.manifest, { hooks: secondAssessmentFailure() }), /midway failure/);
+    const saved = f.saved();
+    assert.equal(saved.status, "importing");
+    assert.equal(saved.compensation.ok, true);
+    assert.deepEqual(saved.compensation.remaining, {});
+    assert.deepEqual(saved.compensation.unverified, {});
+    assert.equal(f.admin.store.patients.length + f.admin.store.assessments.length, 0);
+    assert.equal(saved.insertedLedger.assessments.length, 1); // Retained history, not blindly skipped.
   });
-
-  it("resumes incomplete run without new dest patient id", async () => {
-    let assessmentAttempt = 0;
-    await importBundleDurable(admin, bundle, manifest, PROVIDER, {
-      persistManifest: persist,
-      idFactory: admin.idSeq,
-      hooks: {
-        beforeInsert(table) {
-          if (table === "assessments") {
-            assessmentAttempt += 1;
-            if (assessmentAttempt === 2) throw new Error("injected interrupt");
-          }
-        },
-      },
-    }).catch(() => {});
-
-    const firstDestPatient = persisted.destPatientId;
-    const firstMappings = structuredClone(persisted.idMappings);
-
-    await importBundleDurable(admin, bundle, persisted, PROVIDER, {
-      persistManifest: persist,
-      idFactory: admin.idSeq,
-    });
-
-    assert.equal(persisted.status, "imported");
-    assert.equal(persisted.destPatientId, firstDestPatient);
-    assert.deepEqual(persisted.idMappings.patients, firstMappings.patients);
-    assert.equal(admin.store.assessments.length, 2);
+  it("restarts after partial compensation and reinserts missing ledgered rows with the same IDs", async () => {
+    const f = setup();
+    await assert.rejects(() => f.run(f.manifest, { hooks: { ...secondAssessmentFailure(),
+      beforeDeleteTable(table) { if (table === "patients") throw new Error("injected parent delete failure"); },
+    } }), /compensation incomplete/);
+    assert.equal(f.admin.store.patients.length, 1);
+    assert.equal(f.admin.store.assessments.length, 0);
+    const saved = f.saved(), ids = structuredClone(saved.idMappings);
+    await f.run(saved, { idFactory: () => { throw new Error("must not allocate IDs on retry"); } });
+    assert.deepEqual(saved.idMappings, ids);
+    assert.equal(f.admin.store.patients.length, 1);
+    assert.equal(f.admin.store.assessments.length, 2);
+    assert.equal(compareIntegrity(null, saved, f.admin.store).length, 0);
   });
-
-  it("reports compensation failure when delete fails", async () => {
-    await importBundleDurable(admin, bundle, manifest, PROVIDER, {
-      persistManifest: persist,
-      idFactory: admin.idSeq,
-      hooks: {
-        beforeInsert(table) {
-          if (table === "assessments") throw new Error("fail early");
-        },
-        beforeDeleteTable(table) {
-          if (table === "patients") throw new Error("injected delete failure");
-        },
-      },
-    }).catch(() => {});
-
-    assert.equal(persisted.compensation?.ok, false);
-    assert.equal(persisted.status, "importing");
-    assert.ok((persisted.insertedLedger.patients ?? []).length > 0);
+  it("recovers an insert whose response was lost after commit", async () => {
+    let lost = false;
+    const f = setup(true, {}, { after(state) {
+      if (state.op === "insert" && state.table === "remote_assessment_requests" && !lost) {
+        lost = true; throw new Error("connection lost after commit");
+      }
+    } });
+    await f.run();
+    assert.equal(f.admin.store.remote_assessment_requests.length, 1);
+    assert.equal(f.manifest.status, "imported");
+    assert.equal(f.manifest.insertedLedger.remote_assessment_requests.length, 1);
   });
-});
-
-describe("rollback safety", () => {
-  it("refuses rollback when unrelated dependent rows exist", async () => {
-    const admin = createMockAdmin();
-    const bundle = makeBundle();
-    const manifest = {
-      ...baseManifest(bundle),
-      status: "imported",
-      destPatientId: "d0000001-0000-4000-8000-000000000001",
-      insertedLedger: {
-        patients: ["d0000001-0000-4000-8000-000000000001"],
-        assessments: ["d0000002-0000-4000-8000-000000000002"],
-      },
-      idMappings: {
-        patients: { [SOURCE_PATIENT]: "d0000001-0000-4000-8000-000000000001" },
-        assessments: {
-          "a0000001-0000-4000-8000-000000000001": "d0000002-0000-4000-8000-000000000002",
-        },
-      },
-    };
-    admin.store.patients = [
-      { id: manifest.destPatientId, patient_id: manifest.destPatientId },
-    ];
-    admin.store.assessments = [
-      {
-        id: "d0000002-0000-4000-8000-000000000002",
-        patient_id: manifest.destPatientId,
-      },
-      {
-        id: "extra-row-not-in-ledger",
-        patient_id: manifest.destPatientId,
-      },
-    ];
-
-    await assert.rejects(
-      () =>
-        rollbackRunVerified(admin, manifest, {
-          persistManifest: async () => {},
-        }),
-      /Rollback refused/,
-    );
+  it("pauses on an ambiguous response plus read failure; restart adopts only the original planned IDs", async () => {
+    let offline = false;
+    const f = setup(true, {}, { after(state) {
+      if (state.op === "insert" && state.table === "remote_assessment_requests") {
+        offline = true; throw new Error("connection lost");
+      }
+    }, before(state) {
+      if (offline && state.op === "select") return { data: null, error: { message: "offline" } };
+    } });
+    await assert.rejects(() => f.run(), /unverified/);
+    assert.equal(writes(f.admin, "delete").length, 0);
+    const saved = f.saved(), originalId = saved.destPatientId;
+    const remotePayload = structuredClone(f.admin.store.remote_assessment_requests[0]);
+    offline = false;
+    await f.run(saved, { idFactory: () => { throw new Error("new clone prohibited"); } });
+    assert.equal(saved.destPatientId, originalId);
+    assert.equal(f.admin.store.patients.length, 1);
+    assert.deepEqual(f.admin.store.remote_assessment_requests, [remotePayload]);
   });
-
-  it("does not mark rolled_back unless verify passes", async () => {
-    const admin = createMockAdmin();
-    const bundle = makeBundle();
-    let saved = null;
-    const manifest = {
-      ...baseManifest(bundle),
-      status: "imported",
-      destPatientId: "d0000001-0000-4000-8000-000000000001",
-      insertedLedger: {
-        patients: ["d0000001-0000-4000-8000-000000000001"],
-        assessments: [],
-      },
-    };
-    admin.store.patients = [{ id: manifest.destPatientId, patient_id: manifest.destPatientId }];
-
-    const result = await rollbackRunVerified(admin, manifest, {
-      persistManifest: async (m) => {
-        saved = m;
-      },
-    });
-    assert.equal(result.status, "rolled_back");
-    assert.equal(saved.rollbackAttempt?.ok, true);
-    assert.equal(admin.store.patients.length, 0);
+  it("restarts from the durable file after interruption between insert commit and ledger flush", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "transfer-restart-")), path = join(dir, "manifest.json");
+    const f = setup(true);
+    let interrupted = false;
+    try {
+      await assert.rejects(() => f.run(f.manifest, { persistManifest: async (m) => {
+        if (f.admin.store.assessments?.length === 1) interrupted = true;
+        if (interrupted) throw new Error("simulated process interruption before flush");
+        writeJsonDurable(path, m);
+      } }), /Manifest flush failed/);
+      const disk = JSON.parse(readFileSync(path, "utf8"));
+      assert.equal(disk.insertedLedger.assessments?.length ?? 0, 0);
+      assert.equal(disk.attemptedLedger.assessments.length, 1);
+      assert.equal(f.admin.store.assessments.length, 1);
+      assert.equal(writes(f.admin, "delete").length, 0);
+      const ids = structuredClone(disk.idMappings), remotePlan = structuredClone(disk.plannedRows.remote_assessment_requests);
+      await f.run(disk, { idFactory: () => { throw new Error("new ID prohibited"); } });
+      assert.deepEqual(disk.idMappings, ids);
+      assert.deepEqual(f.admin.store.remote_assessment_requests, remotePlan);
+      assert.equal(f.admin.store.patients.length, 1);
+      assert.equal(f.admin.store.assessments.length, 2);
+      if (process.platform !== "win32") {
+        assert.equal(statSync(path).mode & 0o777, 0o600);
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it("does not write if the initial plan cannot be persisted", async () => {
+    const f = setup();
+    await assert.rejects(() => f.run(f.manifest, { persistManifest: async () => { throw new Error("disk full"); } }), /flush failed/);
+    assert.equal(f.admin.requests.length, 0);
+  });
+  it("refuses legacy incomplete manifests without creating new IDs", async () => {
+    const f = setup();
+    Object.assign(f.manifest, { status: "importing", destPatientId: "existing-partial-id" });
+    await assert.rejects(() => f.run(f.manifest, { idFactory: () => { throw new Error("new ID allocated"); } }), /legacy manifest/);
+    assert.equal(f.admin.requests.length, 0);
+  });
+  it("refuses a changed provider or bundle on retry", async () => {
+    const f = setup(); buildImportPlan(f.bundle, f.manifest, PROVIDER, f.admin.idSeq);
+    await assert.rejects(() => importBundleDurable(f.admin, f.bundle, f.manifest, "different-provider", f.options), /Cannot change/);
+    f.bundle.tables.assessments[0].structured_data.observation.value = 99;
+    await assert.rejects(() => f.run(), /Cannot change/);
+    assert.equal(f.admin.requests.length, 0);
+  });
+  it("does not adopt a preexisting matching row without a durable insert intent", async () => {
+    const f = setup(); buildImportPlan(f.bundle, f.manifest, PROVIDER, f.admin.idSeq);
+    f.admin.store.patients = structuredClone(f.manifest.plannedRows.patients);
+    await assert.rejects(() => f.run(), /unowned/);
+    assert.equal(writes(f.admin, "insert").length + writes(f.admin, "delete").length, 0);
+  });
+  it("checks patient/provider relationships during ambiguous recovery", async () => {
+    const f = setup(); buildImportPlan(f.bundle, f.manifest, PROVIDER, f.admin.idSeq);
+    const row = structuredClone(f.manifest.plannedRows.assessments[0]); row.patient_id = SOURCE_PATIENT;
+    f.admin.store.assessments = [row]; f.manifest.attemptedLedger.assessments = [row.id];
+    await assert.rejects(() => f.run(), /unowned or changed/);
+    assert.equal(writes(f.admin, "delete").length, 0);
   });
 });
 
-describe("integrity verification", () => {
-  it("detects measured value / date drift", () => {
-    const bundle = makeBundle();
-    const manifest = baseManifest(bundle);
-    manifest.idMappings = {
-      assessments: {
-        "a0000001-0000-4000-8000-000000000001": "dest-a1",
-      },
-    };
-    const destRowsByTable = {
-      assessments: [
-        {
-          id: "dest-a1",
-          created_at: "2026-10-02T11:00:00.000Z",
-          updated_at: "2026-10-02T11:00:00.000Z",
-          completed_at: "2026-10-02T11:05:00.000Z",
-          score: 99,
-          metrics: { reps: 3 },
-        },
-      ],
-    };
-    const mismatches = compareIntegrity(bundle, manifest, destRowsByTable);
-    assert.ok(mismatches.some((m) => m.field === "score"));
+describe("verified cleanup and dependent ownership", () => {
+  it("checks a failed DELETE response, preserves the manifest, and never deletes parents afterward", async () => {
+    const f = setup(false, {}, { before(state) {
+      if (state.op === "delete" && state.table === "assessments") return { data: null, error: { message: "permission denied" } };
+    } });
+    await assert.rejects(() => f.run(f.manifest, { hooks: secondAssessmentFailure() }), /compensation incomplete/);
+    const saved = f.saved();
+    assert.equal(saved.compensation.ok, false);
+    assert.equal(saved.compensation.remaining.assessments.length, 1);
+    assert.equal(saved.compensation.remaining.patients.length, 1);
+    assert.equal(writes(f.admin, "delete").some((r) => r.table === "patients"), false);
+    assert.equal(saved.status, "importing");
   });
-});
-
-describe("deleteLedgerRowsVerified", () => {
-  it("returns remaining ids when delete fails", async () => {
-    const admin = createMockAdmin({
-      patients: [{ id: "p1" }, { id: "p2" }],
-    });
-    const result = await deleteLedgerRowsVerified(admin, {
-      patients: ["p1", "p2"],
-    }, {
-      beforeDeleteTable(table, ids) {
-        if (table === "patients" && ids.includes("p2")) {
-          throw new Error("block p2 delete");
-        }
-      },
-    });
+  it("does not trust a successful-looking delete response when the row remains", async () => {
+    const f = setup(false, {}, { before(state) {
+      if (state.op === "delete") return { data: [{ id: state.filters.find((x) => x.col === "id").val }], count: 1, error: null };
+    } });
+    await assert.rejects(() => f.run(f.manifest, { hooks: secondAssessmentFailure() }), /compensation incomplete/);
+    assert.equal(f.saved().compensation.ok, false);
+    assert.equal(f.saved().compensation.remaining.assessments.length, 1);
+    assert.equal(writes(f.admin, "delete").length, 1);
+  });
+  it("reports verification read failures as unverified rows, not successful cleanup", async () => {
+    let readFailed = false;
+    const f = setup(false, {}, { after(state) { if (state.op === "delete") readFailed = true; },
+      before(state) {
+        if (readFailed && state.op === "select") return { data: null, error: { message: "read timeout" } };
+      } });
+    await assert.rejects(() => f.run(f.manifest, { hooks: secondAssessmentFailure() }), /compensation incomplete/);
+    const result = f.saved().compensation;
     assert.equal(result.ok, false);
-    assert.ok(result.remaining.patients.includes("p2"));
+    assert.equal(result.unverified.patients.length, 1);
+    assert.equal(result.unverified.assessments.length, 1);
+    assert.equal(writes(f.admin, "delete").length, 1);
+  });
+  for (const table of ["assessments", "patient_access_tokens", "session_motion_summaries"]) {
+    it(`refuses rollback with an unrelated row in ${table}`, async () => {
+      const f = setup(); await f.run();
+      (f.admin.store[table] ??= []).push({ id: "unrelated", patient_id: f.manifest.destPatientId });
+      await assert.rejects(() => rollbackRunVerified(f.admin, f.manifest, f.options), /Rollback incomplete/);
+      assert.equal(writes(f.admin, "delete").length, 0);
+      assert.equal(f.saved().rollbackAttempt.ok, false);
+      assert.equal(f.saved().status, "rolling_back");
+      assert.equal(f.admin.store.patients.length, 1);
+    });
+  }
+  it("finds an unrelated child via assignment_id even with a different patient_id", async () => {
+    const f = setup(true); await f.run();
+    f.admin.store.upper_limb_motor_screen_session_results.push({ id: "unrelated", patient_id: SOURCE_PATIENT,
+      assignment_id: f.manifest.plannedRows.upper_limb_motor_screen_assignments[0].id });
+    await assert.rejects(() => rollbackRunVerified(f.admin, f.manifest, f.options), /unrelated/);
+    assert.equal(writes(f.admin, "delete").length, 0);
+  });
+  it("blocks SET NULL effects on unrelated rows linked only by plan_id", async () => {
+    const f = setup(true); await f.run();
+    f.admin.store.cv_session_metrics = [{ id: "external", patient_id: SOURCE_PATIENT,
+      plan_id: f.manifest.plannedRows.treatment_plans[0].id }];
+    await assert.rejects(() => rollbackRunVerified(f.admin, f.manifest, f.options), /unrelated/);
+    assert.equal(writes(f.admin, "delete").length, 0);
+  });
+  it("refuses rollback if a ledgered row was changed by someone else", async () => {
+    const f = setup(); await f.run(); f.admin.store.assessments[0].score = 100;
+    await assert.rejects(() => rollbackRunVerified(f.admin, f.manifest, f.options), /unowned or changed/);
+    assert.equal(writes(f.admin, "delete").length, 0);
+  });
+  it("resumes a failed rollback and reports success only after all owned IDs are absent", async () => {
+    let fail = true;
+    const f = setup(false, {}, { before(state) {
+      if (fail && state.op === "delete" && state.table === "patients") return { data: null, error: { message: "delete failure" } };
+    } });
+    await f.run();
+    await assert.rejects(() => rollbackRunVerified(f.admin, f.manifest, f.options), /Rollback incomplete/);
+    assert.equal(f.saved().status, "rolling_back"); assert.equal(f.admin.store.assessments.length, 0);
+    fail = false;
+    await rollbackRunVerified(f.admin, f.manifest, f.options);
+    assert.equal(f.saved().status, "rolled_back"); assert.equal(f.saved().rollbackAttempt.ok, true);
+    assert.equal(f.admin.store.patients.length, 0);
+    await assert.rejects(() => f.run(), /Cannot import/);
+  });
+});
+
+describe("measured values, dates, source, and local durability", () => {
+  it("preserves every measurement/date and verifies remapped JSON IDs with reordered JSONB keys", async () => {
+    const initial = makeBundle(true).tables, f = setup(true, initial);
+    const sourceBefore = structuredClone(initial);
+    await f.run();
+    assert.equal(compareIntegrity(null, f.manifest, f.admin.store).length, 0);
+    const assignment = f.admin.store.upper_limb_motor_screen_assignments.find((r) => r.patient_id === f.manifest.destPatientId);
+    assert.equal(assignment.assignment_payload.id, assignment.id);
+    assert.equal(assignment.assignment_payload.repetitions, 5);
+    assert.equal(assignment.assignment_payload.token, undefined);
+    const assessment = f.admin.store.assessments.find((r) => r.patient_id === f.manifest.destPatientId);
+    assessment.metrics = { reach: 1.75, reps: 1 };
+    assessment.completed_at = "2026-10-02T10:00:00.123400+00:00";
+    assert.equal(compareIntegrity(null, f.manifest, f.admin.store).length, 0);
+    assessment.structured_data.observation.value = 999;
+    assert.ok(compareIntegrity(null, f.manifest, f.admin.store).some((m) => m.field === "structured_data"));
+    assessment.structured_data.observation.value = 4.5;
+    assessment.completed_at = "2026-10-02T10:00:00.123401Z";
+    assert.ok(compareIntegrity(null, f.manifest, f.admin.store).some((m) => m.field === "completed_at"));
+    assessment.completed_at = DATE;
+    await rollbackRunVerified(f.admin, f.manifest, f.options);
+    for (const { table } of TABLE_PIPELINE) assert.deepEqual(f.admin.store[table], sourceBefore[table]);
+  });
+  it("source verification detects measured/date changes even when counts and name are unchanged", () => {
+    const bundle = makeBundle(true), rows = structuredClone(bundle.tables);
+    assert.deepEqual(compareSourceIntegrity(bundle, rows), []);
+    rows.assessments[0].structured_data.observation.value = 77;
+    assert.ok(compareSourceIntegrity(bundle, rows).length > 0);
+    rows.assessments[0] = structuredClone(bundle.tables.assessments[0]);
+    rows.patients[0].created_at = "2026-10-03T10:00:00.123400Z";
+    assert.ok(compareSourceIntegrity(bundle, rows).length > 0);
+  });
+  it("paginates beyond the default PostgREST row limit", async () => {
+    const admin = createMockAdmin({ assessments: Array.from({ length: 1101 }, (_, i) => ({ id: String(i).padStart(5, "0") })) });
+    const rows = await readAllRows(() => admin.from("assessments").select("*"));
+    assert.equal(rows.length, 1101);
+    assert.equal(admin.requests.length, 3);
+  });
+  it("exclusively locks a run and keeps complete private JSON after replacement", () => {
+    const dir = mkdtempSync(join(tmpdir(), "transfer-ledger-")), lock = join(dir, "run.lock"), path = join(dir, "manifest.json");
+    try {
+      const release = acquireRunLock(lock);
+      assert.throws(() => acquireRunLock(lock), /locked/);
+      writeJsonDurable(path, { status: "importing", plannedIds: ["id-1"] });
+      writeJsonDurable(path, { status: "imported", plannedIds: ["id-1"] });
+      assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { status: "imported", plannedIds: ["id-1"] });
+      release();
+      acquireRunLock(lock)();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe("CLI guards and real export/verification wiring", () => {
+  it("rejects purge, multiple modes, and invalid run IDs", () => {
+    assert.throws(() => parseArgs(["--purge-demo-clone"]), /exactly one/);
+    assert.throws(() => parseArgs(["--import", "--purge-demo-clone", "--run-id", RUN_ID]), /Unknown/);
+    assert.throws(() => parseArgs(["--export", "--import"]), /exactly one/);
+    assert.throws(() => parseArgs(["--import", "--run-id", "../unsafe"]), /UUID/);
+  });
+  it("rejects Production/unknown refs in the actual CLI before loading any DB client", () => {
+    for (const ref of [PRODUCTION_PROJECT_REF, "unknownref"]) {
+      const result = spawnSync(process.execPath, [fileURLToPath(new URL("./judge-demo-patient-transfer.mjs", import.meta.url)),
+        "--import", "--run-id", RUN_ID], { encoding: "utf8", env: { ...process.env,
+          DEST_SUPABASE_URL: `https://${ref}.supabase.co`, DEST_SERVICE_ROLE_KEY: "synthetic-secret-do-not-print",
+          TRANSFER_CONFIRM_STAGING: "true" } });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /Refusing mutation/);
+      assert.doesNotMatch(result.stderr, /synthetic-secret-do-not-print|ERR_MODULE_NOT_FOUND/);
+    }
+  });
+  it("exports no source tokens and refuses to overwrite an existing run", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "transfer-export-")), bundle = makeBundle(true);
+    try {
+      const source = createMockAdmin(bundle.tables);
+      const { manifest, outPath } = await exportBundle(source, SOURCE_PATIENT, dir, RUN_ID);
+      const text = readFileSync(outPath, "utf8") + readFileSync(join(dir, `manifest-${RUN_ID}.json`), "utf8");
+      assert.doesNotMatch(text, /source-secret/);
+      assert.equal(manifest.ledgerVersion, 2);
+      await assert.rejects(() => exportBundle(source, SOURCE_PATIENT, dir, RUN_ID), /Run already exists/);
+      assert.equal(text, readFileSync(outPath, "utf8") + readFileSync(join(dir, `manifest-${RUN_ID}.json`), "utf8"));
+      assert.equal(writes(source, "insert").length + writes(source, "delete").length, 0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it("verifyRun checks original source measurements and dates, not only counts", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "transfer-verify-")), f = setup(true);
+    try {
+      const source = createMockAdmin(f.bundle.tables);
+      const { manifest } = await exportBundle(source, SOURCE_PATIENT, dir, RUN_ID);
+      await f.run(manifest, { persistManifest: async (m) => writeManifestAtomic(dir, m) });
+      const good = await verifyRun(f.admin, source, dir, RUN_ID);
+      assert.equal(good.ok, true); assert.equal(good.sourceUnchanged, true);
+      source.store.assessments[0].structured_data.observation.value = 71;
+      const bad = await verifyRun(f.admin, source, dir, RUN_ID);
+      assert.equal(bad.ok, false); assert.equal(bad.sourceUnchanged, false);
+      assert.equal(bad.countMismatches.length, 0); assert.equal(bad.integrityMismatches.length, 0);
+      assert.equal(bad.sourceIntegrityMismatches[0].reason, "source_values_or_dates_changed");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it("compensates a real API insert error midway through a table", async () => {
+    let attempts = 0;
+    const f = setup(false, {}, { before(state) {
+      if (state.op === "insert" && state.table === "assessments" && ++attempts === 2) {
+        return { data: null, error: { code: "23514", message: "synthetic insert failure" } };
+      }
+    } });
+    await assert.rejects(() => f.run(), /assessments insert failed.*compensation verified/);
+    assert.equal(f.saved().compensation.ok, true);
+    assert.equal(f.admin.store.patients.length + f.admin.store.assessments.length, 0);
+  });
+});
+
+describe("ambiguous requests and fail-closed dependency reads", () => {
+  it("does not compensate a timed-out insert just because an immediate read sees no row", async () => {
+    let failed = false;
+    const f = setup(false, {}, { before(state) {
+      if (!failed && state.op === "insert" && state.table === "assessments") {
+        failed = true; return { data: null, error: { message: "request timed out", code: "" } };
+      }
+    } });
+    await assert.rejects(() => f.run(), /insert response ambiguous/);
+    const saved = f.saved();
+    assert.equal(saved.attemptedLedger.assessments.length, 1);
+    assert.equal(writes(f.admin, "delete").length, 0);
+    // Simulate the same server request committing after the first absence read.
+    f.admin.store.assessments = [structuredClone(saved.plannedRows.assessments[0])];
+    const originalPatientId = saved.destPatientId;
+    await f.run(saved, { idFactory: () => { throw new Error("must reuse original plan"); } });
+    assert.equal(saved.destPatientId, originalPatientId);
+    assert.equal(f.admin.store.patients.length, 1); assert.equal(f.admin.store.assessments.length, 2);
+  });
+  it("does not clean up when a dependency table cannot be inspected", async () => {
+    let blockRead = false;
+    const f = setup(false, {}, { before(state) {
+      if (blockRead && state.op === "select" && state.table === "patient_access_tokens") {
+        return { data: null, error: { code: "42P01", message: "missing table" } };
+      }
+    } });
+    await f.run(); blockRead = true;
+    await assert.rejects(() => rollbackRunVerified(f.admin, f.manifest, f.options), /Rollback incomplete/);
+    assert.equal(writes(f.admin, "delete").length, 0);
+    assert.equal(f.saved().rollbackAttempt.ok, false);
+  });
+  it("does not mark rollback complete after an ambiguous delete, even if the row is now absent", async () => {
+    let responseLost = false;
+    const f = setup(false, {}, { after(state) {
+      if (state.op === "delete" && !responseLost) { responseLost = true; throw new Error("delete response lost"); }
+    } });
+    await f.run();
+    await assert.rejects(() => rollbackRunVerified(f.admin, f.manifest, f.options), /Rollback incomplete/);
+    assert.equal(f.saved().status, "rolling_back"); assert.equal(f.saved().rollbackAttempt.ok, false);
+    assert.equal(writes(f.admin, "delete").length, 1);
+    await rollbackRunVerified(f.admin, f.manifest, f.options);
+    assert.equal(f.saved().status, "rolled_back"); assert.equal(f.saved().rollbackAttempt.ok, true);
   });
 });

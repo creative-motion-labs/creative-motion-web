@@ -2,30 +2,31 @@
  * Judge demo patient transfer — export, import, verify, rollback (staging rehearsal).
  * No secrets or export bundles in Git. See docs/operations/judge-demo-ream-mohammed-transfer.md
  */
-import { createClient } from "@supabase/supabase-js";
 import {
   mkdirSync,
-  writeFileSync,
   readFileSync,
   existsSync,
-  renameSync,
+  realpathSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, relative, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_SOURCE_PATIENT_ID,
   DEST_DISPLAY_NAME,
   TABLE_PIPELINE,
-  STAGING_PROJECT_REF,
   buildIntegritySnapshot,
+  buildImportPlan,
   compareIntegrity,
+  compareSourceIntegrity,
+  sanitizeExportRow,
+  readAllRows,
   importBundleDurable,
   rollbackRunVerified,
-  deleteLedgerRowsVerified,
   requireExplicitDestCredentials,
   extractSupabaseProjectRef,
 } from "./judge-demo-transfer-lib.mjs";
+import { writeJsonDurable, acquireRunLock } from "./judge-demo-transfer-files.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -48,6 +49,7 @@ function loadEnvLocalMissingOnly() {
     ) {
       val = val.slice(1, -1);
     }
+    if (["DEST_SUPABASE_URL", "DEST_SERVICE_ROLE_KEY", "TRANSFER_CONFIRM_STAGING"].includes(key)) continue;
     if (!(key in process.env)) process.env[key] = val;
   }
 }
@@ -62,7 +64,17 @@ function resolveSourceCredentials() {
 }
 
 function parseArgs(argv) {
+  const modes = ["--dry-run", "--export", "--import", "--verify", "--rollback", "--list-demo-clones"];
+  if (argv.filter((arg) => modes.includes(arg)).length !== 1) throw new Error("Choose exactly one transfer command");
+  for (let i = 0; i < argv.length; i++) {
+    if (modes.includes(argv[i])) continue;
+    if (argv[i] === "--run-id" && argv[i + 1]) { i++; continue; }
+    throw new Error(`Unknown argument: ${argv[i]}`);
+  }
   const runIdIdx = argv.indexOf("--run-id");
+  if (runIdIdx >= 0 && !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(argv[runIdIdx + 1] ?? "")) {
+    throw new Error("--run-id must be a UUID");
+  }
   return {
     dryRun: argv.includes("--dry-run"),
     exportMode: argv.includes("--export"),
@@ -90,9 +102,7 @@ function readManifest(exportDir, runId) {
 
 function writeManifestAtomic(exportDir, manifest) {
   const p = manifestPath(exportDir, manifest.runId);
-  const tmp = `${p}.tmp`;
-  writeFileSync(tmp, JSON.stringify(manifest, null, 2));
-  renameSync(tmp, p);
+  writeJsonDurable(p, manifest);
 }
 
 async function fetchTableRows(admin, spec, patientId, assignmentIds) {
@@ -106,20 +116,9 @@ async function fetchTableRows(admin, spec, patientId, assignmentIds) {
   }
   if (scope === "assignment_ids") {
     if (!assignmentIds.length) return [];
-    const { data, error } = await admin
-      .from(table)
-      .select("*")
-      .in("assignment_id", assignmentIds);
-    if (error) throw new Error(`${table}: ${error.message}`);
-    return data ?? [];
+    return readAllRows(() => admin.from(table).select("*").in("assignment_id", assignmentIds));
   }
-  const { data, error } = await admin.from(table).select("*").eq("patient_id", patientId);
-  if (error) throw new Error(`${table}: ${error.message}`);
-  const rows = data ?? [];
-  if (table === "remote_assessment_requests") {
-    return rows.map(({ token: _token, ...rest }) => rest);
-  }
-  return rows;
+  return readAllRows(() => admin.from(table).select("*").eq("patient_id", patientId));
 }
 
 async function inventory(admin, patientId) {
@@ -198,7 +197,9 @@ async function validateDestinationDeps(admin, bundle, destProviderId) {
 }
 
 async function exportBundle(admin, patientId, exportDir, runId) {
-  mkdirSync(exportDir, { recursive: true });
+  if (existsSync(manifestPath(exportDir, runId)) || existsSync(exportBundlePath(exportDir, runId))) {
+    throw new Error("Run already exists; preserve its export/manifest and use the same run for recovery");
+  }
   const assignmentRows = await fetchTableRows(
     admin,
     { table: "upper_limb_motor_screen_assignments", scope: "patient_id" },
@@ -209,7 +210,8 @@ async function exportBundle(admin, patientId, exportDir, runId) {
 
   const tables = {};
   for (const spec of TABLE_PIPELINE) {
-    tables[spec.table] = await fetchTableRows(admin, spec, patientId, assignmentIds);
+    tables[spec.table] = (await fetchTableRows(admin, spec, patientId, assignmentIds))
+      .map((row) => sanitizeExportRow(spec.table, row));
   }
 
   const bundle = {
@@ -220,10 +222,13 @@ async function exportBundle(admin, patientId, exportDir, runId) {
   };
 
   const outPath = exportBundlePath(exportDir, runId);
-  writeFileSync(outPath, JSON.stringify(bundle, null, 2));
+  writeJsonDurable(outPath, bundle);
 
-  const { patient, counts } = await inventory(admin, patientId);
+  const patient = tables.patients[0];
+  if (!patient) throw new Error(`Patient not found: ${patientId}`);
+  const counts = Object.fromEntries(TABLE_PIPELINE.map(({ table }) => [table, tables[table].length]));
   const manifest = {
+    ledgerVersion: 2,
     runId,
     status: "exported",
     sourcePatientId: patientId,
@@ -241,7 +246,7 @@ async function exportBundle(admin, patientId, exportDir, runId) {
     insertedLedger: {},
     integritySnapshot: buildIntegritySnapshot(bundle),
     dependencyChecks: null,
-    destinationProjectRef: STAGING_PROJECT_REF,
+    destinationProjectRef: null,
   };
   writeManifestAtomic(exportDir, manifest);
   return { outPath, manifest, patient, counts };
@@ -263,9 +268,11 @@ async function verifyRun(destAdmin, sourceAdmin, exportDir, runId) {
   }
 
   const bundle = JSON.parse(readFileSync(manifest.exportPath, "utf8"));
+  buildImportPlan(bundle, manifest, manifest.destProviderId); // Validate the saved plan/export binding.
   const destId = manifest.destPatientId;
   const { patient, counts } = await inventory(destAdmin, destId);
   const sourceInv = await inventory(sourceAdmin, manifest.sourcePatientId);
+  if (manifest.ledgerVersion !== 2 || !manifest.plannedRows) throw new Error("Verify requires a version 2 durable plan");
 
   const countMismatches = [];
   for (const [table, expected] of Object.entries(manifest.expectedCounts ?? {})) {
@@ -291,17 +298,27 @@ async function verifyRun(destAdmin, sourceAdmin, exportDir, runId) {
   }
 
   const integrityMismatches = compareIntegrity(bundle, manifest, destRowsByTable);
+  const sourceRowsByTable = {};
+  const sourceAssignments = await fetchTableRows(sourceAdmin,
+    { table: "upper_limb_motor_screen_assignments", scope: "patient_id" }, manifest.sourcePatientId, []);
+  for (const spec of TABLE_PIPELINE) {
+    sourceRowsByTable[spec.table] = await fetchTableRows(sourceAdmin, spec,
+      manifest.sourcePatientId, sourceAssignments.map((r) => r.id));
+  }
+  const sourceIntegrityMismatches = compareSourceIntegrity(bundle, sourceRowsByTable);
 
   return {
     destPatient: patient,
     destCounts: counts,
-    sourceCountsUnchanged: sourceInv.counts,
-    sourcePatientUnchanged: sourceInv.patient.full_name,
+    sourceCounts: sourceInv.counts,
+    sourceUnchanged: sourceIntegrityMismatches.length === 0,
+    sourceIntegrityMismatches,
     countMismatches,
     integrityMismatches,
     ok:
       countMismatches.length === 0 &&
       integrityMismatches.length === 0 &&
+      sourceIntegrityMismatches.length === 0 &&
       patient.full_name === DEST_DISPLAY_NAME,
   };
 }
@@ -310,111 +327,77 @@ async function main() {
   loadEnvLocalMissingOnly();
   const args = parseArgs(process.argv.slice(2));
   const patientId = process.env.SOURCE_PATIENT_ID?.trim() || DEFAULT_SOURCE_PATIENT_ID;
-  const exportDir = process.env.TRANSFER_EXPORT_DIR?.trim();
-  if (!exportDir && !args.dryRun && !args.listDemoClones) {
-    throw new Error("Set TRANSFER_EXPORT_DIR to a path outside the git repo");
-  }
-
-  const src = resolveSourceCredentials();
-  const sourceAdmin = createClient(src.url, src.key, {
+  const needsDest = args.importMode || args.verify || args.rollback || args.listDemoClones;
+  // Resolve/validate explicit destination BEFORE constructing any mutation client.
+  const dest = needsDest ? requireExplicitDestCredentials() : null;
+  if (args.importMode || args.rollback) assertStagingWriteGate();
+  const { createClient } = await import("@supabase/supabase-js");
+  const destAdmin = dest ? createClient(dest.url, dest.key, {
     auth: { autoRefreshToken: false, persistSession: false },
-  });
-
-  if (args.listDemoClones) {
-    const dest = requireExplicitDestCredentials();
-    const admin = createClient(dest.url, dest.key, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    const { data, error } = await admin
-      .from("patients")
-      .select("id, full_name, file_number, created_at")
-      .eq("full_name", DEST_DISPLAY_NAME);
-    if (error) throw error;
-    console.log(
-      JSON.stringify({ phase: "demo-clones", count: data?.length ?? 0, rows: data }, null, 2),
-    );
-    return;
+  }) : null;
+  function sourceClient() {
+    const src = resolveSourceCredentials();
+    return createClient(src.url, src.key, { auth: { autoRefreshToken: false, persistSession: false } });
   }
-
   if (args.dryRun) {
-    const { patient, counts } = await inventory(sourceAdmin, patientId);
+    const { patient, counts } = await inventory(sourceClient(), patientId);
     console.log(JSON.stringify({ phase: "inventory", patient, counts }, null, 2));
     return;
   }
-
-  if (args.exportMode) {
-    const runId = args.runId || randomUUID();
-    const { outPath, patient, counts } = await exportBundle(sourceAdmin, patientId, exportDir, runId);
-    console.log(JSON.stringify({ phase: "exported", runId, outPath, patient, counts }, null, 2));
+  if (args.listDemoClones) {
+    const rows = await readAllRows(() => destAdmin.from("patients")
+      .select("id, full_name, file_number, created_at").eq("full_name", DEST_DISPLAY_NAME));
+    console.log(JSON.stringify({ phase: "demo-clones", count: rows.length, rows,
+      note: "Read-only listing; names are not deletion ownership evidence" }, null, 2));
     return;
   }
-
-  if (!args.importMode && !args.verify && !args.rollback && !args.listDemoClones) {
-    console.error(
-      "Usage: --dry-run | --export [--run-id UUID] | --import|--verify|--rollback --run-id UUID | --list-demo-clones",
-    );
-    process.exit(1);
+  const exportDir = process.env.TRANSFER_EXPORT_DIR?.trim();
+  if (!exportDir) throw new Error("Set TRANSFER_EXPORT_DIR to a private path outside the git repo");
+  mkdirSync(exportDir, { recursive: true, mode: 0o700 });
+  const relativePath = relative(realpathSync(REPO_ROOT), realpathSync(exportDir));
+  if (!relativePath || (!relativePath.startsWith("..") && !isAbsolute(relativePath))) {
+    throw new Error("TRANSFER_EXPORT_DIR must be outside the git repo (including symlinks)");
   }
-
-  if (!args.runId) throw new Error("--run-id required for --import, --verify, --rollback");
-
-  if (args.importMode) {
-    assertStagingWriteGate();
-    const dest = requireExplicitDestCredentials();
-    const destAdmin = createClient(dest.url, dest.key, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    const manifest = readManifest(exportDir, args.runId);
-    const bundle = JSON.parse(readFileSync(manifest.exportPath, "utf8"));
-    const destProviderId =
-      process.env.DEST_PROVIDER_ID?.trim() || manifest.sourceProviderId;
-    const result = await importBundleDurable(destAdmin, bundle, manifest, destProviderId, {
-      persistManifest: async (m) => writeManifestAtomic(exportDir, m),
-      hooks: {
-        validateDestinationDeps: (admin, b, pid) => validateDestinationDeps(admin, b, pid),
-      },
-    });
-    console.log(
-      JSON.stringify({ phase: "imported", destPatientId: result.destPatientId, status: result.status }, null, 2),
-    );
-    return;
-  }
-
-  if (args.verify) {
-    const dest = requireExplicitDestCredentials();
-    const destAdmin = createClient(dest.url, dest.key, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    const report = await verifyRun(destAdmin, sourceAdmin, exportDir, args.runId);
-    console.log(JSON.stringify({ phase: "verify", ...report }, null, 2));
-    if (!report.ok) process.exit(1);
-    return;
-  }
-
-  if (args.rollback) {
-    assertStagingWriteGate();
-    const dest = requireExplicitDestCredentials();
-    const destAdmin = createClient(dest.url, dest.key, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    const manifest = readManifest(exportDir, args.runId);
-    const result = await rollbackRunVerified(destAdmin, manifest, {
-      persistManifest: async (m) => writeManifestAtomic(exportDir, m),
-    });
-    console.log(JSON.stringify({ phase: "rolled_back", runId: result.runId, verified: true }, null, 2));
-  }
+  const runId = args.runId || (args.exportMode ? randomUUID() : null);
+  if (!runId) throw new Error("--run-id required for --import, --verify, --rollback");
+  const releaseLock = acquireRunLock(join(exportDir, `manifest-${runId}.lock`));
+  try {
+    if (args.exportMode) {
+      const { outPath, counts } = await exportBundle(sourceClient(), patientId, exportDir, runId);
+      console.log(JSON.stringify({ phase: "exported", runId, outPath, counts }, null, 2));
+      return;
+    }
+    if (args.verify) {
+      const report = await verifyRun(destAdmin, sourceClient(), exportDir, runId);
+      console.log(JSON.stringify({ phase: "verify", ...report }, null, 2));
+      if (!report.ok) process.exitCode = 1;
+      return;
+    }
+    const manifest = readManifest(exportDir, runId);
+    if (manifest.runId !== runId) throw new Error("Manifest run ID does not match requested run");
+    const persistManifest = async (m) => writeManifestAtomic(exportDir, m);
+    if (args.importMode) {
+      const bundle = JSON.parse(readFileSync(manifest.exportPath, "utf8"));
+      const destProviderId = process.env.DEST_PROVIDER_ID?.trim() || manifest.sourceProviderId;
+      const result = await importBundleDurable(destAdmin, bundle, manifest, destProviderId, {
+        destination: dest, persistManifest,
+        hooks: { validateDestinationDeps: (admin, b, pid) => validateDestinationDeps(admin, b, pid) },
+      });
+      console.log(JSON.stringify({ phase: "imported", destPatientId: result.destPatientId,
+        status: result.status, resumed: result.resumed, verified: result.importVerification.ok }, null, 2));
+      return;
+    }
+    const result = await rollbackRunVerified(destAdmin, manifest, { destination: dest, persistManifest });
+    console.log(JSON.stringify({ phase: "rolled_back", runId: result.runId, verified: result.rollbackAttempt.ok }, null, 2));
+  } finally { releaseLock(); }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err.message); // Never print credentials, bundles, or raw client errors.
+    process.exitCode = 1;
+  });
+}
 
-export {
-  readManifest,
-  writeManifestAtomic,
-  exportBundle,
-  verifyRun,
-  validateDestinationDeps,
-  extractSupabaseProjectRef,
-};
+export { readManifest, writeManifestAtomic, exportBundle, verifyRun, validateDestinationDeps,
+  extractSupabaseProjectRef, parseArgs };

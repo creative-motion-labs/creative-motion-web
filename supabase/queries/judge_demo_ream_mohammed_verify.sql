@@ -8,7 +8,8 @@ select id, full_name, file_number, provider_id, created_at
 from public.patients
 where id = :'dest_patient_id'::uuid;
 
--- Counts (compare to manifest.expectedCounts for that transfer run)
+-- Counts only. The CLI additionally verifies measured values/dates and source integrity.
+-- Compare to manifest.expectedCounts for that transfer run.
 select 'assessments' as tbl, count(*)::bigint as n
 from public.assessments where patient_id = :'dest_patient_id'::uuid
 union all
@@ -25,7 +26,9 @@ select 'upper_limb_motor_screen_assignments', count(*)
 from public.upper_limb_motor_screen_assignments where patient_id = :'dest_patient_id'::uuid
 union all
 select 'upper_limb_motor_screen_session_results', count(*)
-from public.upper_limb_motor_screen_session_results where patient_id = :'dest_patient_id'::uuid
+from public.upper_limb_motor_screen_session_results r
+join public.upper_limb_motor_screen_assignments a on a.id = r.assignment_id
+where a.patient_id = :'dest_patient_id'::uuid
 union all
 select 'remote_assessment_requests', count(*)
 from public.remote_assessment_requests where patient_id = :'dest_patient_id'::uuid
