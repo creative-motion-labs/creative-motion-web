@@ -137,6 +137,17 @@ test.describe("Patient profile workspace", () => {
     );
   });
 
+  test("movement tab shows populated CV session list", async ({ page }) => {
+    await openProfile(page, "?section=movement");
+    await expectActivePanel(page, "patient-profile-section-movement");
+    await expect(page.getByRole("heading", { name: "Movement tracking sessions" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "View details" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open Outcomes hub →" })).toHaveAttribute(
+      "href",
+      `/clinician/patients/${SYNTHETIC_PATIENT_ID}/outcomes`,
+    );
+  });
+
   test("View details expands clinical and plan content", async ({ page }) => {
     await openProfile(page, "?section=assessments");
 
@@ -150,5 +161,23 @@ test.describe("Patient profile workspace", () => {
     await page.getByRole("tab", { name: "Treatment plan" }).click();
     await page.getByRole("button", { name: "View details" }).first().click();
     await expect(page.getByText("Session schedule")).toBeVisible();
+  });
+});
+
+test.describe("Patient profile movement tracking states", () => {
+  test("empty CV response shows empty state, not error copy", async ({ page, baseURL }) => {
+    await installPatientProfileApiMocks(page, { cvMode: "empty" });
+    await installDevBypassCookie(page, baseURL ?? "http://127.0.0.1:3000");
+    await openProfile(page, "?section=movement");
+    await expect(page.getByText("No saved movement tracking sessions yet.")).toBeVisible();
+    await expect(page.getByText("Could not load movement tracking sessions.")).toHaveCount(0);
+  });
+
+  test("failed CV response shows error state, not empty copy", async ({ page, baseURL }) => {
+    await installPatientProfileApiMocks(page, { cvMode: "error" });
+    await installDevBypassCookie(page, baseURL ?? "http://127.0.0.1:3000");
+    await openProfile(page, "?section=movement");
+    await expect(page.getByText("Could not load movement tracking sessions.")).toBeVisible();
+    await expect(page.getByText("No saved movement tracking sessions yet.")).toHaveCount(0);
   });
 });

@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npx tsx --test app/lib/rasq-demo/*.test.ts app/lib/interactive-shoulder/orchestrator-cv-raf-loop-stable.test.ts app/lib/interactive-shoulder/orchestrator-cv-demo-init-stable.test.ts",
+    "test": "npx tsx --test app/lib/rasq-demo/*.test.ts app/lib/cv/cv-patient-profile-movement-view.test.ts app/lib/interactive-shoulder/orchestrator-cv-raf-loop-stable.test.ts app/lib/interactive-shoulder/orchestrator-cv-demo-init-stable.test.ts",
     "test:e2e-patient-profile": "playwright test e2e/patient-profile-workspace.spec.ts",
     "test:ops-transfer": "node --test scripts/ops/judge-demo-patient-transfer.test.mjs",
     "ops:rehearsal-preflight": "node scripts/ops/judge-demo-patient-transfer.mjs --rehearsal-preflight"
