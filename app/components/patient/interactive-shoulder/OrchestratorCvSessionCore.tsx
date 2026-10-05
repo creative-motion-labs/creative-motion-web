@@ -861,9 +861,13 @@ export function OrchestratorCvSessionCore({
             presentationProgressRef.current = null;
             setPresentationProgress(null);
           }
+          const blockSide =
+            currentBlock.side === "left" || currentBlock.side === "right"
+              ? currentBlock.side
+              : activeTherapeuticSide;
           const transition = resetRunnerStatesForBlockTransition({
             block: currentBlock,
-            side: activeTherapeuticSide,
+            side: blockSide,
           });
           resetTargetContactConsumptionState(targetContactConsumptionRef.current);
           runnerStatesRef.current = transition.states;

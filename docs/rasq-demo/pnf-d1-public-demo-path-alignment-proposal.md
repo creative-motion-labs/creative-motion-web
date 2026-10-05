@@ -1,6 +1,6 @@
 # PNF D1 public demo — illustration vs live path alignment
 
-**Status:** Implemented on PR #310 (`feature/demo-exercise-illustrations`).  
+**Status:** Implemented on PR #310; camera-path fix on `fix/demo-pnf-camera-path-alignment`.  
 **Scope:** `/demo` public session PNF block path + mobile/welcome guide imagery.  
 **Out of scope:** Shared `d1-inspired-diagonal-reach` pattern used by patient/rehab sessions, CV measurement pipeline, approved WebP artwork, camera mirroring, wrist transforms.
 
@@ -79,4 +79,5 @@ Clinical `D1_INSPIRED_DIAGONAL_REACH_PATTERN`, stroke foundation catalog, and ca
 - [x] Path direction regression tests (start/end normalized anchors).
 - [x] Patient stroke foundation / clinical D1 blocks still use `d1-inspired-diagonal-reach`.
 - [x] `npm test`, `npm run build`.
-- [ ] Manual: live overlay vs guide on camera-enabled run (automated QA uses skip-camera flow — see PR notes).
+- [x] Fixture pipeline: raw MediaPipe → detector → `toMirroredPreviewPoint` → demo path (see `demo-pnf-camera-path-pipeline.test.ts`).
+- [ ] Manual: camera-enabled `/demo` PNF — confirm marker, path, and repetition completion on device.
