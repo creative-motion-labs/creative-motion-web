@@ -96,6 +96,8 @@ export type InteractiveShoulderSessionProps = {
     deniedRecovery: string;
     retryCamera: string;
   };
+  /** Public `/demo` only: fires when the visitor chooses camera or continue without camera. */
+  onPublicDemoCameraPathSelected?: (path: "camera" | "no_camera") => void;
 };
 
 export type OrchestratorCvSessionCoreProps = InteractiveShoulderSessionProps & {

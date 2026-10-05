@@ -10,9 +10,10 @@ import {
 } from "./demo-leads-validation";
 
 describe("validateRasqDemoLeadBody", () => {
-  it("accepts empty optional contact and skips persistence flag", () => {
+  it("accepts skip submitIntent without email or phone", () => {
     const result = validateRasqDemoLeadBody({
       demoSessionId: "abc-123",
+      submitIntent: "skip",
     });
     assert.equal(result.ok, true);
     if (result.ok) {
@@ -20,6 +21,15 @@ describe("validateRasqDemoLeadBody", () => {
       assert.equal(result.value.consentRasqUpdates, false);
       assert.equal(result.value.consentPilotStudy, false);
     }
+  });
+
+  it("rejects share submitIntent without email or phone", () => {
+    const result = validateRasqDemoLeadBody({
+      demoSessionId: "abc-123",
+      submitIntent: "share",
+      consentRasqUpdates: true,
+    });
+    assert.equal(result.ok, false);
   });
 
   it("rejects invalid email and unknown fields", () => {
@@ -36,10 +46,12 @@ describe("validateRasqDemoLeadBody", () => {
     assert.equal(extra.ok, false);
   });
 
-  it("marks contact when any optional field is provided", () => {
+  it("accepts share with email and optional main goal", () => {
     const result = validateRasqDemoLeadBody({
       demoSessionId: "abc",
+      email: "user@example.com",
       mainGoal: "mobility",
+      submitIntent: "share",
     });
     assert.equal(result.ok, true);
     if (result.ok) {

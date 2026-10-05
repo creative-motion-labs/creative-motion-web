@@ -156,7 +156,7 @@ describe("RASQ demo lead capture and confirmation email", () => {
     assert.ok(row?.confirmation_email_sent_at);
   });
 
-  it("stores lead without email when share has contact but no email", async () => {
+  it("stores lead with phone only when share has no email", async () => {
     const rows: RowStore = new Map();
     __setRasqDemoResendClientForTests({
       emails: {
@@ -167,7 +167,7 @@ describe("RASQ demo lead capture and confirmation email", () => {
     } as unknown as Resend);
 
     const result = await processRasqDemoLeadSubmit({
-      payload: { ...basePayload, email: null },
+      payload: { ...basePayload, email: null, phone: "+1 555 0100" },
       submitIntent: "share",
       hasContactOrConsent: true,
       adminClient: createMockSupabase(rows),
@@ -267,6 +267,26 @@ describe("RASQ demo lead capture and confirmation email", () => {
     assert.match(html, /potential pilot opportunities/i);
     assert.match(html, /mailto:aisha@rasqhealth\.com/);
     assert.doesNotMatch(html, /hello@rasqhealth\.com/);
+  });
+
+  it("returns not-configured without persisting send-failed when Resend is missing", async () => {
+    const rows: RowStore = new Map();
+    __setRasqDemoResendClientForTests(null);
+
+    const result = await processRasqDemoLeadSubmit({
+      payload: { ...basePayload },
+      submitIntent: "share",
+      hasContactOrConsent: true,
+      adminClient: createMockSupabase(rows),
+    });
+
+    assert.equal(result.ok, true);
+    if (result.ok && result.stored) {
+      assert.equal(result.confirmationEmail.sent, false);
+      assert.equal(result.confirmationEmail.reason, "not-configured");
+    }
+    const row = rows.get("session-abc");
+    assert.equal(row?.confirmation_email_last_error, null);
   });
 
   it("uses branded RASQ confirmation email headers", () => {

@@ -11,6 +11,7 @@ const MIGRATIONS = join(process.cwd(), "supabase/migrations");
 describe("rasq demo leads migration version", () => {
   it("uses 026_rasq_demo_leads.sql and no duplicate 024 demo migration", () => {
     assert.ok(existsSync(join(MIGRATIONS, "026_rasq_demo_leads.sql")));
+    assert.ok(existsSync(join(MIGRATIONS, "027_rasq_demo_analytics_events.sql")));
     assert.equal(existsSync(join(MIGRATIONS, "024_rasq_demo_leads.sql")), false);
     assert.ok(existsSync(join(MIGRATIONS, "024_upper_limb_motor_screen_assignment_idempotency.sql")));
 

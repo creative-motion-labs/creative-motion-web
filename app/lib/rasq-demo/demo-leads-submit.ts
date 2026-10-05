@@ -13,13 +13,14 @@ import {
   type RasqDemoLeadSubmitIntent,
 } from "./demo-leads-validation";
 import {
+  isRasqDemoConfirmationEmailServiceConfigured,
   sendRasqDemoConfirmationEmail,
   shouldSendRasqDemoConfirmationEmail,
 } from "./demo-leads-confirmation-email";
 
 export type RasqDemoLeadConfirmationEmailStatus =
   | { sent: true }
-  | { sent: false; reason: "skipped" | "already-sent" | "no-email" }
+  | { sent: false; reason: "skipped" | "already-sent" | "no-email" | "not-configured" }
   | { sent: false; reason: "send-failed"; retry: true; message: string };
 
 export type ProcessRasqDemoLeadSubmitResult =
@@ -57,6 +58,10 @@ async function trySendConfirmationEmail(
 
   if (record.confirmationEmailSentAt) {
     return { sent: false, reason: "already-sent" };
+  }
+
+  if (!isRasqDemoConfirmationEmailServiceConfigured()) {
+    return { sent: false, reason: "not-configured" };
   }
 
   const sendResult = await sendRasqDemoConfirmationEmail({
@@ -112,6 +117,7 @@ export async function processRasqDemoLeadSubmit(input: {
     shouldSendRasqDemoConfirmationEmail({
       submitIntent: input.submitIntent,
       email: record.email,
+      demoSessionId: record.demoSessionId,
     })
   ) {
     confirmationEmail = await trySendConfirmationEmail(admin, record);
