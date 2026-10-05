@@ -39,6 +39,7 @@ describe("orchestrator cv session core wrapper contract", () => {
     const coreProps: OrchestratorCvSessionCoreProps = {
       language: "ar",
       sessionDefinition: REACH_THE_LIGHT_SESSION,
+      onSkipped: () => {},
     };
     assert.equal(coreProps.sessionDefinition.sessionId, REACH_THE_LIGHT_SESSION.sessionId);
   });
@@ -72,9 +73,11 @@ describe("orchestrator cv session core wrapper contract", () => {
   it("InteractiveShoulderSessionProps accepts optional onSessionComplete without breaking existing call sites", () => {
     const propsWithoutCallback: InteractiveShoulderSessionProps = {
       language: "en",
+      onSkipped: () => {},
     };
     const propsWithCallback: InteractiveShoulderSessionProps = {
       language: "en",
+      onSkipped: () => {},
       onSessionComplete: () => {},
     };
     assert.equal(propsWithoutCallback.language, "en");

@@ -30,7 +30,12 @@ export type ExerciseMediaAreaProps = {
   /** Forces runtime remount when session side identity changes. */
   runtimeInstanceKey?: string;
   onCvMetricsUpdate?: (metrics: PatientCvDerivedMetrics) => void;
-  onCvSkipped?: () => void;
+  /**
+   * Required, not optional: forwarded directly as InteractiveShoulderSession's
+   * required `onSkipped`. See orchestrator-cv-session-types.ts for why that prop
+   * is required — an optional handler here would silently reopen the same gap.
+   */
+  onCvSkipped: () => void;
   onRegisterCvMetricsFlush?: (flush: () => void) => void;
   onRegisterStsPilotBeforeSave?: (beforeSave: () => void) => void;
   onRegisterStsPilotRecordFlush?: (flush: () => CvMotionQualityPayload | null) => void;

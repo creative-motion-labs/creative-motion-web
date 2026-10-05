@@ -34,7 +34,14 @@ export type InteractiveShoulderSessionProps = {
    * before camera start. Volunteer/research and clinician lab flows omit this flag.
    */
   clinicalPrescribedSideRequired?: boolean;
-  onSkipped?: () => void;
+  /**
+   * Required, not optional: the consent screen's Skip button calls this directly
+   * (`onClick={onSkipped}`) with no runtime fallback. An optional handler here is
+   * exactly the shape of bug that made "Skip camera" a silent no-op before a route
+   * supplied one — making it required turns a missing handler into a compile-time
+   * error at every call site instead of a dead button discovered in QA.
+   */
+  onSkipped: () => void;
   onRegisterMetricsFlush?: (flush: () => void) => void;
   onRegisterCaptureConsent?: (
     getter: () => ReturnType<typeof createPatientCvCameraConsentRecord> | null,

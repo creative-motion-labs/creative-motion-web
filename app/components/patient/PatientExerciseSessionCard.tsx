@@ -44,7 +44,8 @@ type PatientExerciseSessionCardProps = {
   onCompleteSet: () => void;
   onCompleteExercise: () => void | Promise<void>;
   onCvMetricsUpdate?: (metrics: PatientCvDerivedMetrics) => void;
-  onCvSkipped?: () => void;
+  /** Required — forwarded to ExerciseMediaArea's required onCvSkipped. */
+  onCvSkipped: () => void;
   onRegisterCvMetricsFlush?: (flush: () => void) => void;
   onRegisterStsPilotBeforeSave?: (beforeSave: () => void) => void;
   onRegisterStsPilotRecordFlush?: (flush: () => CvMotionQualityPayload | null) => void;

@@ -45,6 +45,8 @@ const CORE = "app/components/patient/interactive-shoulder/OrchestratorCvSessionC
 const LEGACY_ROUTE = "app/patient/[token]/session/[sessionId]/page.tsx";
 const CATALOG_ROUTE = "app/components/patient/session/CatalogPatientSessionPlayback.tsx";
 const MEDIA_AREA = "app/components/patient/ExerciseMediaArea.tsx";
+const TYPES = "app/lib/interactive-shoulder/orchestrator-cv-session-types.ts";
+const EXERCISE_CARD = "app/components/patient/PatientExerciseSessionCard.tsx";
 
 /* ── 1. The control itself must be clickable before consent ────────────────── */
 
@@ -77,6 +79,51 @@ describe("camera skip — the control is clickable without accepting consent", (
     // Guards against a fix that makes Skip work by breaking the normal path.
     assert.match(core, /onClick=\{acceptConsent\}/);
     assert.match(core, /disabled=\{!consentChecked\}/);
+  });
+});
+
+/* ── 1b. The handler contract itself must be required, not optional ────────── */
+
+/**
+ * Both real routes were independently verified (2026-08-29 real-browser QA
+ * follow-up) to correctly wire onSkipped/onCvSkipped to a rendered stop state —
+ * this suite's own acceptance-flow tests below pass against the shipped source,
+ * and a live click in an actual browser against both InteractiveShoulderSession
+ * and CatalogSessionPlayer fired the handler every time. No reproducible runtime
+ * bug was found in either route.
+ *
+ * What IS real: `onClick={onSkipped}` in OrchestratorCvSessionCore has no runtime
+ * fallback for a missing handler, and every prop in the chain that feeds it was
+ * declared OPTIONAL (`onSkipped?`, `onCvSkipped?`) until this change. That is
+ * exactly the shape of bug that made Skip a silent no-op before any route wired a
+ * handler at all — undetectable by TypeScript, invisible until a human clicks it
+ * in a browser. Making the whole chain required turns any future gap (a new call
+ * site, a refactor that drops a prop) into a compile error instead of a repeat of
+ * this incident.
+ */
+describe("camera skip — the handler contract is required end to end, not optional", () => {
+  it("OrchestratorCvSessionCoreProps.onSkipped is required", () => {
+    const types = read(TYPES);
+    assert.match(
+      types,
+      /onSkipped:\s*\(\)\s*=>\s*void;/,
+      "onSkipped must be a required property (no `?`) so a missing handler is a compile error",
+    );
+    assert.doesNotMatch(types, /onSkipped\?:/);
+  });
+
+  it("ExerciseMediaArea.onCvSkipped is required and forwarded unchanged", () => {
+    const mediaArea = read(MEDIA_AREA);
+    assert.match(mediaArea, /onCvSkipped:\s*\(\)\s*=>\s*void;/);
+    assert.doesNotMatch(mediaArea, /onCvSkipped\?:/);
+    assert.match(mediaArea, /onSkipped=\{onCvSkipped\}/);
+  });
+
+  it("PatientExerciseSessionCard.onCvSkipped is required and forwarded unchanged", () => {
+    const card = read(EXERCISE_CARD);
+    assert.match(card, /onCvSkipped:\s*\(\)\s*=>\s*void;/);
+    assert.doesNotMatch(card, /onCvSkipped\?:/);
+    assert.match(card, /onCvSkipped=\{onCvSkipped\}/);
   });
 });
 
