@@ -11,7 +11,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npx tsx --test app/lib/rasq-demo/*.test.ts app/lib/interactive-shoulder/orchestrator-cv-raf-loop-stable.test.ts app/lib/interactive-shoulder/orchestrator-cv-demo-init-stable.test.ts"
+    "test": "npx tsx --test app/lib/rasq-demo/*.test.ts app/lib/interactive-shoulder/orchestrator-cv-raf-loop-stable.test.ts app/lib/interactive-shoulder/orchestrator-cv-demo-init-stable.test.ts",
+    "test:ops-transfer": "node --test scripts/ops/judge-demo-patient-transfer.test.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.34",
