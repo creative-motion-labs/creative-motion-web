@@ -7,7 +7,7 @@ export const RASQ_DEMO_REACH_TO_RIGHT_ILLUSTRATION = {
 
 export const RASQ_DEMO_PNF_D1_ILLUSTRATION = {
   src: "/images/rasq-demo/pnf-diagonal-1-demonstration-guide.webp",
-  alt: "Seated person with a glowing diagonal path from the opposite hip to the raised right hand, illustrating PNF D1 flexion; anatomical right on the viewer's left.",
+  alt: "Seated person with a glowing path showing the right hand moving from low on the anatomical right side across the body toward the left shoulder, illustrating PNF D1 flexion.",
   width: 1024,
   height: 768,
 } as const;
