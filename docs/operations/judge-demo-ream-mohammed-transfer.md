@@ -100,6 +100,53 @@ Failure-injection coverage includes midway table failures; interrupted ledger fl
 
 No Next.js application code or database schema changed. An application build is not an ops-transfer validation substitute.
 
+## Judge presentation: report, progress, and outcomes
+
+The transfer now includes `cv_session_metrics`, with patient/provider/plan/session
+foreign keys remapped and every persisted measurement, `recorded_at`, and
+`motion_quality` JSON value preserved. Source queries fail closed if this table
+cannot be read. It is deleted before its parent session/plan/patient during
+manifest-owned rollback, using the existing dependency and durable-ledger guards.
+
+Verified application data paths at the a5d8c36 baseline:
+- Motion Analysis Report: `CvReviewSummary` builds the report from a CV metric and
+  `MotionAnalysisReportPanel` renders it. Data comes from
+  `/api/cv/session-metrics` and `cv_session_metrics`.
+- Progress: patient assessments and CV metrics through
+  `/api/clinician/progress-outcomes`; assessment dates/values remain unchanged.
+- Interactive Shoulder Outcomes: `interactive_shoulder_movement_outcomes`
+  (already in the transfer), with original session dates and outcome payloads.
+
+Export manifests and CLI verification include `reportDataCoverage` (CV rows,
+rows with motion-quality evidence, assessment rows, and outcome rows).
+`browserVerified: false` is deliberate: these counts do not prove a report
+rendered. A zero CV count means no stored CV report evidence was found; do not
+fabricate evidence, re-run measurements, or claim report availability.
+Existing UI eligibility rules may also hide a report for certain exercise/source
+types or insufficient evidence. The legacy `session_motion_summaries` table is
+not used by the traced UI report path; it remains an excluded dependency guard.
+
+Older exports without a CV inventory are refused before allocating IDs/writing.
+Preserve any incomplete run and reconcile it with ops; do not overwrite its
+manifest or create another clone to hide it. Start a fresh export only after
+confirming the earlier run never wrote or was fully rolled back.
+
+Before accepting a staging rehearsal, open the source and cloned patient under
+the appropriate clinician and compare:
+1. Motion Analysis Report for each eligible recorded session: exercise, date,
+   repetitions, duration, quality/evidence, and matching remapped session links.
+2. Progress charts: same dates, values, baseline/latest comparisons, and points.
+3. Outcomes: same recorded sessions, dates, target interactions, response times,
+   effort/pain, and available movement evidence.
+4. Read-only browser checks must not complete new sessions or submit assessments.
+   Keep demonstration-data labeling visible when presenting to judges.
+5. Record actual URLs/screenshots and any missing evidence. Re-run CLI verification,
+   then ledger rollback; verify source unchanged and every clone ID absent.
+
+This report-coverage extension passed 46 local mocked tests. It did not import
+patient data, query a live database, deploy, migrate, merge, or verify a real
+browser report. Windows durability limitations from a5d8c36 remain to be reviewed.
+
 ## Remaining staging/manual checks
 
 Review actual staging schema/trigger parity before a fresh rehearsal, including inbound FKs added outside repository migrations. The dependency list reflects migrations 000–025 plus the legacy motion-summary patient link; it is not a dynamic schema discovery system. Freeze application writes to the rehearsal clone while importing/verifying/rolling back. Supabase REST operations and preflight SELECTs are not one database transaction and do not provide a cross-process database lock.

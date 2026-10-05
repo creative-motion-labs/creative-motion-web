@@ -15,6 +15,7 @@ import {
   DEFAULT_SOURCE_PATIENT_ID,
   DEST_DISPLAY_NAME,
   TABLE_PIPELINE,
+  buildReportDataCoverage,
   buildIntegritySnapshot,
   buildImportPlan,
   compareIntegrity,
@@ -242,6 +243,7 @@ async function exportBundle(admin, patientId, exportDir, runId) {
     rolledBackAt: null,
     exportPath: outPath,
     expectedCounts: counts,
+    reportDataCoverage: buildReportDataCoverage(tables),
     idMappings: {},
     insertedLedger: {},
     integritySnapshot: buildIntegritySnapshot(bundle),
@@ -315,6 +317,7 @@ async function verifyRun(destAdmin, sourceAdmin, exportDir, runId) {
     sourceIntegrityMismatches,
     countMismatches,
     integrityMismatches,
+    reportDataCoverage: buildReportDataCoverage(destRowsByTable),
     ok:
       countMismatches.length === 0 &&
       integrityMismatches.length === 0 &&

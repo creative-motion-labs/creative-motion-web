@@ -19,6 +19,8 @@ select 'plan_sessions', count(*) from public.plan_sessions where patient_id = :'
 union all
 select 'session_logs', count(*) from public.session_logs where patient_id = :'dest_patient_id'::uuid
 union all
+select 'cv_session_metrics', count(*) from public.cv_session_metrics where patient_id = :'dest_patient_id'::uuid
+union all
 select 'interactive_shoulder_movement_outcomes', count(*)
 from public.interactive_shoulder_movement_outcomes where patient_id = :'dest_patient_id'::uuid
 union all

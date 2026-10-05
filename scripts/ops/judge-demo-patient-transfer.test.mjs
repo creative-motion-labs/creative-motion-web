@@ -10,8 +10,66 @@ import {
   STAGING_PROJECT_REF, PRODUCTION_PROJECT_REF, importBundleDurable,
   rollbackRunVerified, compareIntegrity, compareSourceIntegrity,
   buildIntegritySnapshot, buildImportPlan, readAllRows, TABLE_PIPELINE,
+  buildReportDataCoverage,
 } from "./judge-demo-transfer-lib.mjs";
 import { writeJsonDurable, acquireRunLock } from "./judge-demo-transfer-files.mjs";
+
+describe("judge presentation report data", () => {
+  it("preserves CV report evidence and dates, remaps session links, and rolls back only the clone", async () => {
+    const f = setup(true), original = structuredClone(f.bundle);
+    await importBundleDurable(f.admin, f.bundle, f.manifest, PROVIDER, f.options);
+    const cv = f.admin.store.cv_session_metrics[0];
+    assert.equal(cv.patient_id, f.manifest.destPatientId);
+    assert.equal(cv.plan_id, f.manifest.idMappings.treatment_plans["plan-1"]);
+    assert.equal(cv.plan_session_id, f.manifest.idMappings.plan_sessions["session-1"]);
+    assert.deepEqual(cv.motion_quality, original.tables.cv_session_metrics[0].motion_quality);
+    assert.equal(cv.recorded_at, DATE);
+    assert.equal(cv.rep_count, 5);
+    assert.equal(compareIntegrity(f.bundle, f.manifest, f.admin.store).length, 0);
+    assert.deepEqual(f.bundle, original);
+    await rollbackRunVerified(f.admin, f.manifest, f.options);
+    assert.equal(f.admin.store.cv_session_metrics.length, 0);
+    assert.equal(f.admin.store.patients.length, 0);
+    assert.deepEqual(f.bundle, original);
+  });
+  it("detects changed report evidence instead of accepting equal row counts", async () => {
+    const f = setup(true);
+    await importBundleDurable(f.admin, f.bundle, f.manifest, PROVIDER, f.options);
+    f.admin.store.cv_session_metrics[0].motion_quality.smtPilot.measuredAngles[0] = 999;
+    const drift = compareIntegrity(f.bundle, f.manifest, f.admin.store);
+    assert.ok(drift.some((r) => r.table === "cv_session_metrics" && r.field === "motion_quality"));
+  });
+  it("compensates a CV report insert failure with verified cleanup", async () => {
+    const f = setup(true, {}, { before: (state) =>
+      state.table === "cv_session_metrics" && state.op === "insert"
+        ? { data: null, error: { code: "23514", message: "synthetic report failure" } } : null });
+    await assert.rejects(importBundleDurable(f.admin, f.bundle, f.manifest, PROVIDER, f.options));
+    assert.equal(f.manifest.compensation.ok, true);
+    assert.equal(f.admin.store.patients.length, 0);
+    assert.equal((f.admin.store.cv_session_metrics ?? []).length, 0);
+  });
+  it("refuses an older export missing CV inventory before any new IDs or writes", async () => {
+    const f = setup(true);
+    delete f.bundle.tables.cv_session_metrics;
+    let allocations = 0;
+    await assert.rejects(importBundleDurable(f.admin, f.bundle, f.manifest, PROVIDER,
+      { ...f.options, idFactory: () => { allocations++; return f.admin.idSeq(); } }), /predates motion report coverage/);
+    assert.equal(allocations, 0);
+    assert.equal(f.admin.requests.filter((r) => r.op !== "select").length, 0);
+  });
+  it("reports absent source evidence without fabricating a report or browser verification", () => {
+    const empty = buildReportDataCoverage(makeBundle().tables);
+    assert.equal(empty.motionAnalysis.sourceDataPresent, false);
+    assert.equal(empty.motionAnalysis.rows, 0);
+    assert.equal(empty.browserVerified, false);
+    const rich = buildReportDataCoverage(makeBundle(true).tables);
+    assert.equal(rich.motionAnalysis.rows, 1);
+    assert.equal(rich.motionAnalysis.rowsWithMotionQuality, 1);
+    assert.equal(rich.progress.assessmentRows, 2);
+    assert.equal(rich.outcomes.rows, 1);
+    assert.equal(rich.browserVerified, false);
+  });
+});
 import { parseArgs, exportBundle, writeManifestAtomic, verifyRun } from "./judge-demo-patient-transfer.mjs";
 
 const SOURCE_PATIENT = "11111111-1111-4111-8111-111111111111";
@@ -36,6 +94,12 @@ function makeBundle(rich = false) {
     tables.session_logs = [{ id: "log-1", patient_id: SOURCE_PATIENT, provider_id: PROVIDER,
       plan_id: "plan-1", plan_session_id: "session-1", patient_token: "source-secret",
       effort_score: 2.75, exercises_completed: 7, completed_at: DATE }];
+    tables.cv_session_metrics = [{ id: "cv-1", patient_id: SOURCE_PATIENT, provider_id: PROVIDER,
+      plan_id: "plan-1", plan_session_id: "session-1", exercise_id: "sit_to_stand",
+      rep_count: 5, session_duration_s: 44, tracking_quality: "good",
+      movement_detected: true, frames_with_pose: 100, frames_total: 120,
+      source: "patient_session", recorded_at: DATE,
+      motion_quality: { smtPilot: { measuredAngles: [12.5, 24.75], capturedAt: DATE } } }];
     tables.interactive_shoulder_movement_outcomes = [{ id: "outcome-1", patient_id: SOURCE_PATIENT,
       provider_id: PROVIDER, plan_id: "plan-1", plan_session_id: "session-1", created_at: DATE,
       outcome_payload: { measured: [12.5, 11.75], completedAt: DATE } }];

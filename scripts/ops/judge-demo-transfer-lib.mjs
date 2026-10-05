@@ -14,6 +14,7 @@ export const TABLE_PIPELINE = [
   { table: "treatment_plans", scope: "patient_id" },
   { table: "plan_sessions", scope: "patient_id" },
   { table: "session_logs", scope: "patient_id" },
+  { table: "cv_session_metrics", scope: "patient_id" },
   { table: "interactive_shoulder_movement_outcomes", scope: "patient_id" },
   { table: "upper_limb_motor_screen_assignments", scope: "patient_id" },
   {
@@ -27,12 +28,28 @@ export const TABLE_PIPELINE = [
 
 export const ROLLBACK_DELETE_ORDER = [...TABLE_PIPELINE].reverse().map((t) => t.table);
 
+// Inventory evidence, not a claim that reports have rendered in the browser.
+export function buildReportDataCoverage(tables) {
+  const cv = tables.cv_session_metrics ?? [];
+  return {
+    motionAnalysis: {
+      rows: cv.length,
+      rowsWithMotionQuality: cv.filter((r) => r.motion_quality != null).length,
+      sourceDataPresent: cv.length > 0,
+    },
+    progress: { assessmentRows: (tables.assessments ?? []).length },
+    outcomes: { rows: (tables.interactive_shoulder_movement_outcomes ?? []).length },
+    browserVerified: false,
+  };
+}
+
 export const FK_REMAP = {
   patients: ["provider_id"],
   assessments: ["patient_id", "provider_id"],
   treatment_plans: ["patient_id", "provider_id", "assessment_id"],
   plan_sessions: ["plan_id", "patient_id", "provider_id"],
   session_logs: ["plan_id", "plan_session_id", "patient_id", "provider_id"],
+  cv_session_metrics: ["plan_id", "plan_session_id", "patient_id", "provider_id"],
   interactive_shoulder_movement_outcomes: [
     "plan_session_id",
     "plan_id",
@@ -364,6 +381,9 @@ function validateStoredPlan(manifest) {
 }
 
 export function buildImportPlan(bundle, manifest, destProviderId, idFactory = randomUUID) {
+  if (!Array.isArray(bundle.tables?.cv_session_metrics)) {
+    throw new Error("Export predates motion report coverage: preserve this run and reconcile before retry; no writes or new clone IDs");
+  }
   if (manifest.ledgerVersion !== 2) {
     throw new Error("Incomplete legacy manifest: preserve it; reconcile with ops before retry. No new IDs allocated.");
   }
