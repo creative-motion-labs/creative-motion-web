@@ -47,6 +47,12 @@ export function RasqDemoOptionalLeadForm({
 
   function handleSelectYes() {
     setFollowUpChoice("yes");
+    trackRasqDemoAnalyticsEvent({
+      visitorSessionId,
+      attemptId: demoSessionId,
+      eventType: "follow_up_interested",
+      isInternalTest: internalTest,
+    });
     setStage("contact");
     setErrorMessage(null);
   }
@@ -62,13 +68,17 @@ export function RasqDemoOptionalLeadForm({
     showThankYou();
   }
 
-  function handleSkip() {
+  function handleSkipInterestSelection() {
     trackRasqDemoAnalyticsEvent({
       visitorSessionId,
       attemptId: demoSessionId,
       eventType: "follow_up_skipped",
       isInternalTest: internalTest,
     });
+    showThankYou();
+  }
+
+  function handleDismissContactAfterYes() {
     showThankYou();
   }
 
@@ -129,12 +139,6 @@ export function RasqDemoOptionalLeadForm({
         setErrorMessage("Please enter a valid email or phone number.");
         return;
       }
-      trackRasqDemoAnalyticsEvent({
-        visitorSessionId,
-        attemptId: demoSessionId,
-        eventType: "follow_up_interested",
-        isInternalTest: internalTest,
-      });
       if (
         data.confirmationEmail?.sent === false &&
         data.confirmationEmail.reason === "send-failed" &&
@@ -266,7 +270,7 @@ export function RasqDemoOptionalLeadForm({
           <button
             type="button"
             className="rounded-[8px] border border-[#CBD5E1] px-4 py-2 text-sm font-medium text-[#475569]"
-            onClick={handleSkip}
+            onClick={handleDismissContactAfterYes}
           >
             Skip
           </button>
@@ -322,7 +326,7 @@ export function RasqDemoOptionalLeadForm({
         <button
           type="button"
           className="rounded-[8px] border border-[#CBD5E1] px-4 py-2 text-sm font-medium text-[#475569]"
-          onClick={handleSkip}
+          onClick={handleSkipInterestSelection}
         >
           Skip
         </button>

@@ -5,10 +5,17 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  __flushRasqDemoAnalyticsInFlightForTests,
   __resetRasqDemoAnalyticsClientForTests,
+  __setRasqDemoAnalyticsFetchForTests,
+  getOrCreateRasqDemoVisitorSessionId,
   hasRasqDemoAnalyticsEventBeenSent,
   markRasqDemoAnalyticsEventSent,
+  RASQ_DEMO_VISITOR_SESSION_STORAGE_KEY,
+  RASQ_DEMO_VISITOR_SESSION_STORAGE_KEY_TEST,
+  trackRasqDemoAnalyticsEvent,
 } from "./demo-analytics-client";
+import { RASQ_DEMO_INTERNAL_TEST_PREFIX } from "./demo-analytics-types";
 import { buildRasqDemoAnalyticsIdempotencyKey } from "./demo-analytics-types";
 import {
   RASQ_DEMO_ANALYTICS_TABLE,
@@ -58,9 +65,64 @@ describe("RASQ demo analytics", () => {
       attemptId: "a1",
       eventType: "demo_completed",
     });
-    assert.equal(hasRasqDemoAnalyticsEventBeenSent(key), false);
-    markRasqDemoAnalyticsEventSent(key);
-    assert.equal(hasRasqDemoAnalyticsEventBeenSent(key), true);
+    assert.equal(hasRasqDemoAnalyticsEventBeenSent(key, false), false);
+    markRasqDemoAnalyticsEventSent(key, false);
+    assert.equal(hasRasqDemoAnalyticsEventBeenSent(key, false), true);
+  });
+
+  it("marks analytics sent only after a successful API response and retries transient failures once", async () => {
+    const key = buildRasqDemoAnalyticsIdempotencyKey({
+      visitorSessionId: "v-retry",
+      attemptId: "a-retry",
+      eventType: "demo_visit",
+    });
+    let calls = 0;
+    __setRasqDemoAnalyticsFetchForTests(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ error: "busy" }), { status: 503 });
+      }
+      return new Response(JSON.stringify({ ok: true, duplicate: false }), { status: 200 });
+    });
+
+    trackRasqDemoAnalyticsEvent({
+      visitorSessionId: "v-retry",
+      attemptId: "a-retry",
+      eventType: "demo_visit",
+      isInternalTest: false,
+    });
+
+    assert.equal(hasRasqDemoAnalyticsEventBeenSent(key, false), false);
+    await __flushRasqDemoAnalyticsInFlightForTests();
+    assert.equal(calls, 2);
+    assert.equal(hasRasqDemoAnalyticsEventBeenSent(key, false), true);
+  });
+
+  it("keeps separate visitor session storage for test mode and normal mode", () => {
+    const store = new Map<string, string>();
+    const sessionStorageMock = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+    };
+    // @ts-expect-error test shim
+    globalThis.sessionStorage = sessionStorageMock;
+
+    store.set(
+      RASQ_DEMO_VISITOR_SESSION_STORAGE_KEY,
+      `${RASQ_DEMO_INTERNAL_TEST_PREFIX}stale-in-normal-slot`,
+    );
+    store.set(RASQ_DEMO_VISITOR_SESSION_STORAGE_KEY_TEST, `${RASQ_DEMO_INTERNAL_TEST_PREFIX}test-only`);
+
+    const normalId = getOrCreateRasqDemoVisitorSessionId({ internalTest: false });
+    assert.equal(normalId.startsWith(RASQ_DEMO_INTERNAL_TEST_PREFIX), false);
+
+    const testId = getOrCreateRasqDemoVisitorSessionId({ internalTest: true });
+    assert.equal(testId, `${RASQ_DEMO_INTERNAL_TEST_PREFIX}test-only`);
+
+    // @ts-expect-error cleanup
+    delete globalThis.sessionStorage;
   });
 
   it("uses visitor-scoped idempotency for demo_visit", () => {

@@ -7,15 +7,56 @@ import {
 
 export { buildRasqDemoAnalyticsIdempotencyKey } from "./demo-analytics-types";
 
-const VISITOR_SESSION_STORAGE_KEY = "rasq_demo_visitor_session_id";
+export const RASQ_DEMO_VISITOR_SESSION_STORAGE_KEY = "rasq_demo_visitor_session_id";
+export const RASQ_DEMO_VISITOR_SESSION_STORAGE_KEY_TEST = "rasq_demo_visitor_session_id_test";
 const SENT_KEYS_STORAGE_KEY = "rasq_demo_analytics_sent_keys";
+const SENT_KEYS_STORAGE_KEY_TEST = "rasq_demo_analytics_sent_keys_test";
 
-const inMemorySentKeys = new Set<string>();
+const MAX_ANALYTICS_POST_ATTEMPTS = 3;
+const ANALYTICS_RETRY_BASE_MS = 250;
 
-function readSentKeysFromSessionStorage(): Set<string> {
+const inMemorySentKeysNormal = new Set<string>();
+const inMemorySentKeysTest = new Set<string>();
+const inFlightByKey = new Map<string, Promise<void>>();
+
+type AnalyticsFetchFn = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+let fetchOverride: AnalyticsFetchFn | undefined;
+
+/** Test-only — inject fetch for retry / persistence tests. */
+export function __setRasqDemoAnalyticsFetchForTests(fn: AnalyticsFetchFn | undefined): void {
+  fetchOverride = fn;
+}
+
+function resolveFetch(): AnalyticsFetchFn {
+  if (fetchOverride) return fetchOverride;
+  if (typeof fetch !== "undefined") return fetch;
+  return async () => {
+    throw new Error("fetch is not available");
+  };
+}
+
+function sentKeysStore(internalTest: boolean): Set<string> {
+  return internalTest ? inMemorySentKeysTest : inMemorySentKeysNormal;
+}
+
+function sentKeysStorageKey(internalTest: boolean): string {
+  return internalTest ? SENT_KEYS_STORAGE_KEY_TEST : SENT_KEYS_STORAGE_KEY;
+}
+
+function visitorStorageKey(internalTest: boolean): string {
+  return internalTest
+    ? RASQ_DEMO_VISITOR_SESSION_STORAGE_KEY_TEST
+    : RASQ_DEMO_VISITOR_SESSION_STORAGE_KEY;
+}
+
+function readSentKeysFromSessionStorage(internalTest: boolean): Set<string> {
   if (typeof sessionStorage === "undefined") return new Set();
   try {
-    const raw = sessionStorage.getItem(SENT_KEYS_STORAGE_KEY);
+    const raw = sessionStorage.getItem(sentKeysStorageKey(internalTest));
     if (!raw) return new Set();
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return new Set();
@@ -25,25 +66,31 @@ function readSentKeysFromSessionStorage(): Set<string> {
   }
 }
 
-function persistSentKey(key: string): void {
-  inMemorySentKeys.add(key);
+function persistSentKey(idempotencyKey: string, internalTest: boolean): void {
+  sentKeysStore(internalTest).add(idempotencyKey);
   if (typeof sessionStorage === "undefined") return;
   try {
-    const merged = readSentKeysFromSessionStorage();
-    merged.add(key);
-    sessionStorage.setItem(SENT_KEYS_STORAGE_KEY, JSON.stringify([...merged]));
+    const merged = readSentKeysFromSessionStorage(internalTest);
+    merged.add(idempotencyKey);
+    sessionStorage.setItem(sentKeysStorageKey(internalTest), JSON.stringify([...merged]));
   } catch {
     /* ignore quota / privacy mode */
   }
 }
 
-export function hasRasqDemoAnalyticsEventBeenSent(idempotencyKey: string): boolean {
-  if (inMemorySentKeys.has(idempotencyKey)) return true;
-  return readSentKeysFromSessionStorage().has(idempotencyKey);
+export function hasRasqDemoAnalyticsEventBeenSent(
+  idempotencyKey: string,
+  internalTest = false,
+): boolean {
+  if (sentKeysStore(internalTest).has(idempotencyKey)) return true;
+  return readSentKeysFromSessionStorage(internalTest).has(idempotencyKey);
 }
 
-export function markRasqDemoAnalyticsEventSent(idempotencyKey: string): void {
-  persistSentKey(idempotencyKey);
+export function markRasqDemoAnalyticsEventSent(
+  idempotencyKey: string,
+  internalTest = false,
+): void {
+  persistSentKey(idempotencyKey, internalTest);
 }
 
 export function createRasqDemoVisitorSessionId(): string {
@@ -55,16 +102,22 @@ export function createRasqDemoVisitorSessionId(): string {
 
 export function getOrCreateRasqDemoVisitorSessionId(options?: { internalTest?: boolean }): string {
   const internalTest = options?.internalTest === true;
+  const storageKey = visitorStorageKey(internalTest);
+
   if (typeof sessionStorage !== "undefined") {
     try {
-      const existing = sessionStorage.getItem(VISITOR_SESSION_STORAGE_KEY);
+      const existing = sessionStorage.getItem(storageKey);
       if (existing) {
         if (internalTest && !existing.startsWith(RASQ_DEMO_INTERNAL_TEST_PREFIX)) {
           const testId = `${RASQ_DEMO_INTERNAL_TEST_PREFIX}${existing}`;
-          sessionStorage.setItem(VISITOR_SESSION_STORAGE_KEY, testId);
+          sessionStorage.setItem(storageKey, testId);
           return testId;
         }
-        return existing;
+        if (!internalTest && existing.startsWith(RASQ_DEMO_INTERNAL_TEST_PREFIX)) {
+          /* ignore stale test id in normal namespace */
+        } else {
+          return existing;
+        }
       }
     } catch {
       /* fall through */
@@ -75,7 +128,7 @@ export function getOrCreateRasqDemoVisitorSessionId(options?: { internalTest?: b
   const id = internalTest ? `${RASQ_DEMO_INTERNAL_TEST_PREFIX}${base}` : base;
   if (typeof sessionStorage !== "undefined") {
     try {
-      sessionStorage.setItem(VISITOR_SESSION_STORAGE_KEY, id);
+      sessionStorage.setItem(storageKey, id);
     } catch {
       /* ignore */
     }
@@ -106,22 +159,15 @@ export type TrackRasqDemoAnalyticsInput = {
   isInternalTest?: boolean;
 };
 
-/**
- * Fire-and-forget analytics POST. Never throws; dedupes by idempotency key in-memory and sessionStorage.
- */
-export function trackRasqDemoAnalyticsEvent(input: TrackRasqDemoAnalyticsInput): void {
-  const idempotencyKey = buildRasqDemoAnalyticsIdempotencyKey({
-    visitorSessionId: input.visitorSessionId,
-    attemptId: input.attemptId,
-    eventType: input.eventType,
-  });
+function shouldRetryAnalyticsResponse(status: number): boolean {
+  return status === 429 || status >= 500;
+}
 
-  if (hasRasqDemoAnalyticsEventBeenSent(idempotencyKey)) {
-    return;
-  }
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  markRasqDemoAnalyticsEventSent(idempotencyKey);
-
+async function postRasqDemoAnalyticsEventWithRetry(input: TrackRasqDemoAnalyticsInput): Promise<boolean> {
   const body = {
     visitorSessionId: input.visitorSessionId,
     attemptId: input.attemptId,
@@ -130,17 +176,90 @@ export function trackRasqDemoAnalyticsEvent(input: TrackRasqDemoAnalyticsInput):
     isInternalTest: input.isInternalTest === true,
   };
 
-  void fetch("/api/public/rasq-demo/analytics", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    keepalive: true,
-  }).catch(() => {
+  const fetchFn = resolveFetch();
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < MAX_ANALYTICS_POST_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetchFn("/api/public/rasq-demo/analytics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        keepalive: attempt === 0,
+      });
+
+      let parsed: { ok?: boolean; duplicate?: boolean } | null = null;
+      try {
+        parsed = (await response.json()) as { ok?: boolean; duplicate?: boolean };
+      } catch {
+        parsed = null;
+      }
+
+      if (response.ok && parsed?.ok === true) {
+        return true;
+      }
+
+      if (!shouldRetryAnalyticsResponse(response.status)) {
+        return false;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (attempt < MAX_ANALYTICS_POST_ATTEMPTS - 1) {
+      await sleep(ANALYTICS_RETRY_BASE_MS * (attempt + 1));
+    }
+  }
+
+  void lastError;
+  return false;
+}
+
+/**
+ * Fire-and-forget analytics POST. Never throws; marks sent only after server confirms persistence.
+ */
+export function trackRasqDemoAnalyticsEvent(input: TrackRasqDemoAnalyticsInput): void {
+  const internalTest = input.isInternalTest === true;
+  const idempotencyKey = buildRasqDemoAnalyticsIdempotencyKey({
+    visitorSessionId: input.visitorSessionId,
+    attemptId: input.attemptId,
+    eventType: input.eventType,
+  });
+
+  if (hasRasqDemoAnalyticsEventBeenSent(idempotencyKey, internalTest)) {
+    return;
+  }
+
+  const existingFlight = inFlightByKey.get(idempotencyKey);
+  if (existingFlight) {
+    void existingFlight;
+    return;
+  }
+
+  const flight = (async () => {
+    const persisted = await postRasqDemoAnalyticsEventWithRetry(input);
+    if (persisted) {
+      markRasqDemoAnalyticsEventSent(idempotencyKey, internalTest);
+    }
+  })().finally(() => {
+    inFlightByKey.delete(idempotencyKey);
+  });
+
+  inFlightByKey.set(idempotencyKey, flight);
+  void flight.catch(() => {
     /* analytics must not interrupt demo */
   });
 }
 
+/** Test-only: wait for in-flight analytics posts. */
+export async function __flushRasqDemoAnalyticsInFlightForTests(): Promise<void> {
+  await Promise.all([...inFlightByKey.values()]);
+}
+
 /** Test-only: reset dedupe state. */
 export function __resetRasqDemoAnalyticsClientForTests(): void {
-  inMemorySentKeys.clear();
+  inMemorySentKeysNormal.clear();
+  inMemorySentKeysTest.clear();
+  inFlightByKey.clear();
+  fetchOverride = undefined;
 }
