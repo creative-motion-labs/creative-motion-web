@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  PATIENT_PROFILE_SECTION_NAV,
   resolvePatientProfileSection,
   resolvePatientProfileSectionFromHash,
 } from "./patient-profile-workspace-sections";
@@ -30,5 +31,13 @@ describe("patient-profile-workspace-sections", () => {
       resolvePatientProfileSection("overview", "#rehabilitation-plan"),
       "overview",
     );
+  });
+
+  it("defines one canonical tabpanel id per workspace section", () => {
+    const panelIds = PATIENT_PROFILE_SECTION_NAV.map(
+      (item) => `patient-profile-section-${item.id}`,
+    );
+    assert.equal(new Set(panelIds).size, panelIds.length);
+    assert.equal(panelIds.length, 6);
   });
 });

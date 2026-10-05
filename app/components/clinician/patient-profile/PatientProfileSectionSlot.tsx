@@ -18,14 +18,19 @@ export function PatientProfileSectionSlot({
   activeSection,
   children,
   className = "space-y-6",
+  tabPanel = true,
 }: PatientProfileSectionSlotProps) {
   const isActive = activeSection === sectionId;
 
   return (
     <div
-      id={`patient-profile-section-${sectionId}`}
-      role="tabpanel"
-      aria-labelledby={`patient-profile-tab-${sectionId}`}
+      {...(tabPanel
+        ? {
+            id: `patient-profile-section-${sectionId}`,
+            role: "tabpanel" as const,
+            "aria-labelledby": `patient-profile-tab-${sectionId}`,
+          }
+        : {})}
       hidden={!isActive}
       className={isActive ? className : undefined}
     >

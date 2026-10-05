@@ -1019,16 +1019,13 @@ export default function PatientProfilePage() {
           </section>
         )}
 
-        <section
-          className={`grid gap-6 ${
-            profileSection === "overview" ? "xl:grid-cols-[1.35fr_0.85fr]" : ""
-          }`}
-        >
-          <div className="min-w-0 space-y-6">
             <PatientProfileSectionSlot
               sectionId="overview"
               activeSection={profileSection}
+              className=""
             >
+            <div className="grid gap-6 xl:grid-cols-[1.35fr_0.85fr]">
+            <div className="min-w-0 space-y-6">
             <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-6">
               <h2 className="text-lg font-bold text-white">Overview</h2>
               <p className="mt-1 mb-5 text-xs text-white/35">Concise summary — open a section below for full records.</p>
@@ -1157,6 +1154,134 @@ export default function PatientProfilePage() {
                 </button>
               </div>
             )}
+            </div>
+
+          <aside className="space-y-6">
+            <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-base font-bold text-white">Remote assessments</h2>
+                  <p className="mt-0.5 text-xs text-white/35">Links sent to this patient.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSendModalOpen(true)}
+                  className="flex items-center gap-1.5 rounded-[7px] border border-[#1D9E75]/20 bg-[#1D9E75]/8 px-3 py-1.5 text-xs font-semibold text-[#5DCAA5] transition hover:bg-[#1D9E75]/15"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  Send New
+                </button>
+              </div>
+
+              {remoteAssessments.length === 0 ? (
+                <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] px-4 py-5 text-center">
+                  <p className="text-xs text-[#6B7280]">No remote assessments sent yet.</p>
+                  <button
+                    type="button"
+                    onClick={() => setSendModalOpen(true)}
+                    className="mt-2 text-xs font-semibold text-[#5DCAA5] transition hover:text-[#1D9E75]"
+                  >
+                    Send first assessment →
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {remoteAssessments.slice(0, 5).map((ra) => {
+                    const isSubmitted = ra.status === "submitted";
+                    const isPending   = ra.status === "pending";
+                    const link = `${typeof window !== "undefined" ? window.location.origin : ""}/assessment/${ra.id}`;
+                    return (
+                      <div
+                        key={ra.id}
+                        className={`overflow-hidden rounded-[8px] border ${
+                          isSubmitted ? "border-[#1D9E75]/20 bg-[#1D9E75]/[0.04]" :
+                          isPending   ? "border-[#1E2D42] bg-[#0B1220]" :
+                          "border-amber-400/15 bg-amber-400/[0.03]"
+                        }`}
+                      >
+                        <div className="px-4 py-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="truncate text-xs font-semibold text-white/80">
+                                {ASSESSMENT_TYPE_LABELS[ra.assessmentType]}
+                              </p>
+                              <p className="mt-0.5 text-[11px] text-white/40">
+                                {new Date(ra.createdAt).toLocaleDateString()} ·{" "}
+                                {ra.includedSections.length} sections
+                              </p>
+                            </div>
+                            <span className={`shrink-0 rounded-[4px] border px-2 py-0.5 text-[10px] font-bold ${
+                              isSubmitted ? "border-[#1D9E75]/30 bg-[#1D9E75]/10 text-[#5DCAA5]" :
+                              isPending   ? "border-[#1E2D42] bg-[#0B1220] text-white/40" :
+                              "border-amber-400/25 bg-amber-400/10 text-amber-300"
+                            }`}>
+                              {isSubmitted ? "Submitted" : isPending ? "Awaiting Completion" : "In Progress"}
+                            </span>
+                          </div>
+
+                          {!isSubmitted && (
+                            <p className="mt-1 text-[11px] text-white/30">
+                              Expires in {daysUntilExpiry(ra)} days
+                            </p>
+                          )}
+                          {isSubmitted && (
+                            <p className="mt-2 text-[11px] text-[#5DCAA5]/80">Ready for review in Clinical Assessment Summary.</p>
+                          )}
+                        </div>
+
+                        <div className="flex gap-px border-t border-[#1E2D42]">
+                          {!isSubmitted && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try { await navigator.clipboard.writeText(link); } catch { /* ignore */ }
+                              }}
+                              className="flex-1 px-3 py-2.5 text-center text-[11px] font-semibold text-white/40 transition hover:bg-[#0B1220] hover:text-white/70"
+                            >
+                              Copy Link
+                            </button>
+                          )}
+                          {isSubmitted && ra.assessmentId ? (
+                            <Link
+                              href={`/clinician/assessment/report?patientId=${encodeURIComponent(patient.id)}&assessmentId=${encodeURIComponent(ra.assessmentId)}`}
+                              className="flex-1 px-3 py-2.5 text-center text-[11px] font-semibold text-[#5DCAA5] transition hover:bg-[#0B1220]"
+                            >
+                              Review submission
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {recentAssessments.length > 0 && (
+              <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
+                <h2 className="text-base font-bold text-white">Recent sessions</h2>
+                <div className="mt-4 space-y-3">
+                  {recentAssessments.map((item) => (
+                    <div key={`${item.id}-recent`} className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4">
+                      <p className="text-xs text-white/50">{new Date(item.createdAt).toLocaleDateString()}</p>
+                      <p className="mt-1 text-sm font-semibold text-white">
+                        {item.mode === "remote" ? "Remote" : "In-clinic"} session
+                      </p>
+                      <Link
+                        href={`/results?patientId=${patient.id}&assessmentId=${item.id}`}
+                        className="mt-3 inline-flex text-[11px] font-semibold text-[#5DCAA5] hover:text-[#1D9E75]"
+                      >
+                        Open session record →
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </aside>
+            </div>
             </PatientProfileSectionSlot>
 
             <PatientProfileSectionSlot
@@ -1215,6 +1340,49 @@ export default function PatientProfilePage() {
                       </div>
                     )}
 
+                    {remoteQuestionnaireSummary?.clinicalTranslationWarning ? (
+                      <div className="mt-4 rounded-[7px] border border-amber-300/25 bg-amber-400/10 px-3 py-2.5">
+                        <p className="text-xs leading-relaxed text-amber-100/90">
+                          {remoteQuestionnaireSummary.clinicalTranslationWarning}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {(clinicalSummary.metrics.length > 0 ||
+                      clinicalSummary.rows.length > 0 ||
+                      clinicalFocusLabels) && (
+                      <p className="mt-4 text-xs text-white/45">
+                        {clinicalSummary.metrics.length > 0
+                          ? `${clinicalSummary.metrics.length} recorded metric${clinicalSummary.metrics.length === 1 ? "" : "s"}`
+                          : null}
+                        {clinicalSummary.metrics.length > 0 && clinicalSummary.rows.length > 0
+                          ? " · "
+                          : null}
+                        {clinicalSummary.rows.length > 0
+                          ? `${clinicalSummary.rows.length} response field${clinicalSummary.rows.length === 1 ? "" : "s"}`
+                          : null}
+                        {clinicalFocusLabels &&
+                        clinicalSummary.metrics.length === 0 &&
+                        clinicalSummary.rows.length === 0
+                          ? "Clinical focus and program routing recorded"
+                          : null}
+                        {" "}— open details for full summary.
+                      </p>
+                    )}
+
+                    {clinicalSummaryAssessmentId && (
+                      <Link
+                        href={primaryReportHref}
+                        className="mt-4 inline-flex rounded-[7px] border border-[#1D9E75]/25 bg-[#1D9E75]/10 px-4 py-2.5 text-xs font-semibold text-[#5DCAA5] transition hover:bg-[#1D9E75]/15"
+                      >
+                        Review assessment report →
+                      </Link>
+                    )}
+
+                    {(clinicalFocusLabels ||
+                      clinicalSummary.metrics.length > 0 ||
+                      clinicalSummary.rows.length > 0) && (
+                    <ClinicianSectionDetailsToggle summaryLabel="View details">
                     {clinicalFocusLabels && (
                       <div className="mt-4 rounded-[8px] border border-cyan-400/20 bg-cyan-400/5 px-4 py-4">
                         <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-300/80">
@@ -1295,14 +1463,6 @@ export default function PatientProfilePage() {
                         </p>
                       </div>
                     )}
-
-                    {remoteQuestionnaireSummary?.clinicalTranslationWarning ? (
-                      <div className="mt-4 rounded-[7px] border border-amber-300/25 bg-amber-400/10 px-3 py-2.5">
-                        <p className="text-xs leading-relaxed text-amber-100/90">
-                          {remoteQuestionnaireSummary.clinicalTranslationWarning}
-                        </p>
-                      </div>
-                    ) : null}
 
                     {clinicalSummary.metrics.length > 0 && (
                       <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -1388,17 +1548,10 @@ export default function PatientProfilePage() {
                         })}
                       </dl>
                     )}
+                    </ClinicianSectionDetailsToggle>
+                    )}
 
                   </div>
-
-                  {clinicalSummaryAssessmentId && (
-                    <Link
-                      href={primaryReportHref}
-                      className="inline-flex rounded-[7px] border border-[#1D9E75]/25 bg-[#1D9E75]/10 px-4 py-2.5 text-xs font-semibold text-[#5DCAA5] transition hover:bg-[#1D9E75]/15"
-                    >
-                      Review assessment report →
-                    </Link>
-                  )}
 
                 </div>
               ) : ulmsBatterySummary ? (
@@ -1427,6 +1580,88 @@ export default function PatientProfilePage() {
                       Document in clinic
                     </Link>
                   </div>
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-6">
+              <h2 className="text-lg font-bold text-white">Clinical Documentation</h2>
+              <p className="mt-1 mb-6 text-xs text-white/35">SOAP notes and assessment archive.</p>
+
+              <div className="mb-6">
+                <h3 className="text-sm font-bold text-white">SOAP Documentation</h3>
+                <p className="text-xs text-white/45">Structured SOAP templates will be available in a future release.</p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <SoapPlaceholderCard title="Subjective" />
+                  <SoapPlaceholderCard title="Objective" />
+                  <SoapPlaceholderCard title="Assessment" />
+                  <SoapPlaceholderCard title="Plan" />
+                </div>
+              </div>
+
+              {(backendAssessmentHistory.length > 0 || assessments.length > 0) && (
+                <div className="space-y-5 border-t border-[#1E2D42] pt-6">
+                  {backendAssessmentHistory.length > 0 && (
+                    <div id="assessment-timeline">
+                      <h3 className="text-sm font-bold text-white">Assessment archive</h3>
+                      <div className="mt-3 space-y-3">
+                        {backendAssessmentHistory.map((row) => {
+                          const matchedLocal = assessments.find((a) => a.id === String(row.id));
+                          const scoreDisplay =
+                            typeof matchedLocal?.score === "number" && Number.isFinite(matchedLocal.score)
+                              ? `${matchedLocal.score}%`
+                              : "—";
+                          return (
+                            <div
+                              key={`backend-${row.id}`}
+                              className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-semibold text-white">{row.type || "Assessment"}</p>
+                                  <p className="mt-0.5 text-xs text-white/50">
+                                    {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                                  </p>
+                                </div>
+                                <ResultPill label={`Score: ${scoreDisplay}`} tone="score" />
+                              </div>
+                              <Link
+                                href={`/clinician/assessment/report?patientId=${patient.id}&assessmentId=${row.id}`}
+                                className="mt-3 inline-flex text-[11px] font-semibold text-[#5DCAA5] hover:text-[#1D9E75]"
+                              >
+                                View report →
+                              </Link>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {assessments.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-bold text-white">Local session archive</h3>
+                      <div className="mt-3 space-y-3">
+                        {assessments.map((item) => (
+                          <div key={item.id} className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4">
+                            <p className="text-sm font-semibold text-white">
+                              {item.sessionLabel?.trim() ||
+                                (item.mode === "remote" ? "Remote Assessment" : "In-Clinic Assessment")}
+                            </p>
+                            <p className="mt-0.5 text-xs text-white/50">
+                              {new Date(item.createdAt).toLocaleString()}
+                            </p>
+                            <Link
+                              href={`/results?patientId=${patient.id}&assessmentId=${item.id}`}
+                              className="mt-3 inline-flex text-[11px] font-semibold text-[#5DCAA5] hover:text-[#1D9E75]"
+                            >
+                              Open session record →
+                            </Link>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </section>
@@ -1630,230 +1865,6 @@ export default function PatientProfilePage() {
               </ClinicianSectionDetailsToggle>
             </section>
             </PatientProfileSectionSlot>
-
-            <PatientProfileSectionSlot
-              sectionId="assessments"
-              activeSection={profileSection}
-            >
-            <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-6">
-              <h2 className="text-lg font-bold text-white">Clinical Documentation</h2>
-              <p className="mt-1 mb-6 text-xs text-white/35">SOAP notes and assessment archive.</p>
-
-              <div className="mb-6">
-                <h3 className="text-sm font-bold text-white">SOAP Documentation</h3>
-                <p className="text-xs text-white/45">Structured SOAP templates will be available in a future release.</p>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <SoapPlaceholderCard title="Subjective" />
-                  <SoapPlaceholderCard title="Objective" />
-                  <SoapPlaceholderCard title="Assessment" />
-                  <SoapPlaceholderCard title="Plan" />
-                </div>
-              </div>
-
-              {(backendAssessmentHistory.length > 0 || assessments.length > 0) && (
-                <div className="space-y-5 border-t border-[#1E2D42] pt-6">
-                  {backendAssessmentHistory.length > 0 && (
-                    <div id="assessment-timeline">
-                      <h3 className="text-sm font-bold text-white">Assessment archive</h3>
-                      <div className="mt-3 space-y-3">
-                        {backendAssessmentHistory.map((row) => {
-                          const matchedLocal = assessments.find((a) => a.id === String(row.id));
-                          const scoreDisplay =
-                            typeof matchedLocal?.score === "number" && Number.isFinite(matchedLocal.score)
-                              ? `${matchedLocal.score}%`
-                              : "—";
-                          return (
-                            <div
-                              key={`backend-${row.id}`}
-                              className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4"
-                            >
-                              <div className="flex flex-wrap items-start justify-between gap-3">
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-semibold text-white">{row.type || "Assessment"}</p>
-                                  <p className="mt-0.5 text-xs text-white/50">
-                                    {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
-                                  </p>
-                                </div>
-                                <ResultPill label={`Score: ${scoreDisplay}`} tone="score" />
-                              </div>
-                              <Link
-                                href={`/clinician/assessment/report?patientId=${patient.id}&assessmentId=${row.id}`}
-                                className="mt-3 inline-flex text-[11px] font-semibold text-[#5DCAA5] hover:text-[#1D9E75]"
-                              >
-                                View report →
-                              </Link>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {assessments.length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-bold text-white">Local session archive</h3>
-                      <div className="mt-3 space-y-3">
-                        {assessments.map((item) => (
-                          <div key={item.id} className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4">
-                            <p className="text-sm font-semibold text-white">
-                              {item.sessionLabel?.trim() ||
-                                (item.mode === "remote" ? "Remote Assessment" : "In-Clinic Assessment")}
-                            </p>
-                            <p className="mt-0.5 text-xs text-white/50">
-                              {new Date(item.createdAt).toLocaleString()}
-                            </p>
-                            <Link
-                              href={`/results?patientId=${patient.id}&assessmentId=${item.id}`}
-                              className="mt-3 inline-flex text-[11px] font-semibold text-[#5DCAA5] hover:text-[#1D9E75]"
-                            >
-                              Open session record →
-                            </Link>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
-            </PatientProfileSectionSlot>
-          </div>
-
-          <PatientProfileSectionSlot
-            sectionId="overview"
-            activeSection={profileSection}
-            className="space-y-6"
-          >
-          <aside className="space-y-6">
-            {/* ── Remote Assessments panel ── */}
-            <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
-              <div className="mb-4 flex items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-base font-bold text-white">Remote assessments</h2>
-                  <p className="mt-0.5 text-xs text-white/35">Links sent to this patient.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSendModalOpen(true)}
-                  className="flex items-center gap-1.5 rounded-[7px] border border-[#1D9E75]/20 bg-[#1D9E75]/8 px-3 py-1.5 text-xs font-semibold text-[#5DCAA5] transition hover:bg-[#1D9E75]/15"
-                >
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                  </svg>
-                  Send New
-                </button>
-              </div>
-
-              {remoteAssessments.length === 0 ? (
-                <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] px-4 py-5 text-center">
-                  <p className="text-xs text-[#6B7280]">No remote assessments sent yet.</p>
-                  <button
-                    type="button"
-                    onClick={() => setSendModalOpen(true)}
-                    className="mt-2 text-xs font-semibold text-[#5DCAA5] transition hover:text-[#1D9E75]"
-                  >
-                    Send first assessment →
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {remoteAssessments.slice(0, 5).map((ra) => {
-                    const isSubmitted = ra.status === "submitted";
-                    const isPending   = ra.status === "pending";
-                    const link = `${typeof window !== "undefined" ? window.location.origin : ""}/assessment/${ra.id}`;
-                    return (
-                      <div
-                        key={ra.id}
-                        className={`overflow-hidden rounded-[8px] border ${
-                          isSubmitted ? "border-[#1D9E75]/20 bg-[#1D9E75]/[0.04]" :
-                          isPending   ? "border-[#1E2D42] bg-[#0B1220]" :
-                          "border-amber-400/15 bg-amber-400/[0.03]"
-                        }`}
-                      >
-                        <div className="px-4 py-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="truncate text-xs font-semibold text-white/80">
-                                {ASSESSMENT_TYPE_LABELS[ra.assessmentType]}
-                              </p>
-                              <p className="mt-0.5 text-[11px] text-white/40">
-                                {new Date(ra.createdAt).toLocaleDateString()} ·{" "}
-                                {ra.includedSections.length} sections
-                              </p>
-                            </div>
-                            <span className={`shrink-0 rounded-[4px] border px-2 py-0.5 text-[10px] font-bold ${
-                              isSubmitted ? "border-[#1D9E75]/30 bg-[#1D9E75]/10 text-[#5DCAA5]" :
-                              isPending   ? "border-[#1E2D42] bg-[#0B1220] text-white/40" :
-                              "border-amber-400/25 bg-amber-400/10 text-amber-300"
-                            }`}>
-                              {isSubmitted ? "Submitted" : isPending ? "Awaiting Completion" : "In Progress"}
-                            </span>
-                          </div>
-
-                          {!isSubmitted && (
-                            <p className="mt-1 text-[11px] text-white/30">
-                              Expires in {daysUntilExpiry(ra)} days
-                            </p>
-                          )}
-                          {isSubmitted && (
-                            <p className="mt-2 text-[11px] text-[#5DCAA5]/80">Ready for review in Clinical Assessment Summary.</p>
-                          )}
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex gap-px border-t border-[#1E2D42]">
-                          {!isSubmitted && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try { await navigator.clipboard.writeText(link); } catch { /* ignore */ }
-                              }}
-                              className="flex-1 px-3 py-2.5 text-center text-[11px] font-semibold text-white/40 transition hover:bg-[#0B1220] hover:text-white/70"
-                            >
-                              Copy Link
-                            </button>
-                          )}
-                          {isSubmitted && ra.assessmentId ? (
-                            <Link
-                              href={`/clinician/assessment/report?patientId=${encodeURIComponent(patient.id)}&assessmentId=${encodeURIComponent(ra.assessmentId)}`}
-                              className="flex-1 px-3 py-2.5 text-center text-[11px] font-semibold text-[#5DCAA5] transition hover:bg-[#0B1220]"
-                            >
-                              Review submission
-                            </Link>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            {/* Recent Results (local) */}
-            {recentAssessments.length > 0 && (
-              <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
-                <h2 className="text-base font-bold text-white">Recent sessions</h2>
-                <div className="mt-4 space-y-3">
-                  {recentAssessments.map((item) => (
-                    <div key={`${item.id}-recent`} className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4">
-                      <p className="text-xs text-white/50">{new Date(item.createdAt).toLocaleDateString()}</p>
-                      <p className="mt-1 text-sm font-semibold text-white">
-                        {item.mode === "remote" ? "Remote" : "In-clinic"} session
-                      </p>
-                      <Link
-                        href={`/results?patientId=${patient.id}&assessmentId=${item.id}`}
-                        className="mt-3 inline-flex text-[11px] font-semibold text-[#5DCAA5] hover:text-[#1D9E75]"
-                      >
-                        Open session record →
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-          </aside>
-          </PatientProfileSectionSlot>
-        </section>
       </div>
     </main>
     </>
