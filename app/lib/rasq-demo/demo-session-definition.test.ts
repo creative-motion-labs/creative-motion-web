@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { SessionOrchestrator } from "@/app/lib/session-orchestrator/session-orchestrator";
+import { RASQ_DEMO_D1_DIAGONAL_REACH_PATTERN } from "./rasq-demo-d1-diagonal-reach-pattern";
 import {
   RASQ_DEMO_PNF_D1_BLOCK_ID,
   RASQ_DEMO_REACH_RIGHT_BLOCK_ID,
@@ -25,6 +26,10 @@ describe("RASQ two-minute demo session definition", () => {
     assert.equal(RASQ_TWO_MINUTE_DEMO_SESSION.blocks[1]?.blockId, RASQ_DEMO_PNF_D1_BLOCK_ID);
     assert.equal(RASQ_TWO_MINUTE_DEMO_SESSION.blocks[1]?.prescribedRepetitions, 5);
     assert.equal(RASQ_TWO_MINUTE_DEMO_SESSION.blocks[1]?.blockType, "movement-pattern");
+    assert.equal(
+      RASQ_TWO_MINUTE_DEMO_SESSION.blocks[1]?.feedbackProfile,
+      RASQ_DEMO_D1_DIAGONAL_REACH_PATTERN.feedbackProfileKey,
+    );
   });
 
   it("completes the D1 block after five patternCompleted events", () => {
@@ -41,7 +46,11 @@ describe("RASQ two-minute demo session definition", () => {
 
     for (let i = 0; i < 5; i += 1) {
       orchestrator.reportInputEvent(
-        { type: "patternCompleted", patternId: "d1-inspired-diagonal-reach", capturedAtMs: T0 + 115_000 + i * 1000 },
+        {
+          type: "patternCompleted",
+          patternId: RASQ_DEMO_D1_DIAGONAL_REACH_PATTERN.id,
+          capturedAtMs: T0 + 115_000 + i * 1000,
+        },
         T0 + 115_000 + i * 1000,
       );
     }

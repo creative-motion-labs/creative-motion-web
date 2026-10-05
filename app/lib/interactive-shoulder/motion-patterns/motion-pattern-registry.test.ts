@@ -9,6 +9,7 @@ import {
   resolveFeedbackInteractionMode,
   resolveMotionPatternSequenceForSession,
 } from "./motion-pattern-registry";
+import { RASQ_DEMO_D1_DIAGONAL_REACH_FEEDBACK_PROFILE } from "@/app/lib/rasq-demo/rasq-demo-d1-diagonal-reach-pattern";
 import { D1_INSPIRED_DIAGONAL_REACH_FEEDBACK_PROFILE } from "./d1-inspired-diagonal-reach-pattern";
 import { samplePathAtProgress } from "./bezier-path";
 
@@ -20,6 +21,12 @@ describe("motion-pattern-registry", () => {
     assert.equal(pattern.id, "d1-inspired-diagonal-reach");
     assert.equal(pattern.nameEn, "D1-Inspired Diagonal Reach");
     assert.equal(pattern.nameAr, "الوصول القطري المستوحى من D1");
+  });
+
+  it("resolves public demo D1 profile additively", () => {
+    const demo = resolveActiveMotionPattern(RASQ_DEMO_D1_DIAGONAL_REACH_FEEDBACK_PROFILE, "right");
+    assert.ok(demo);
+    assert.equal(demo.id, "rasq-demo-d1-diagonal-reach");
   });
 
   it("falls back to reach-the-light-targets for unknown profiles", () => {

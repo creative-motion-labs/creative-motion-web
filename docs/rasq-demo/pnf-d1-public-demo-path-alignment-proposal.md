@@ -1,8 +1,8 @@
 # PNF D1 public demo — illustration vs live path alignment
 
-**Status:** Proposal only (no implementation in this document).  
-**Scope:** `/demo` public session and mobile guide imagery.  
-**Out of scope:** Shared `d1-inspired-diagonal-reach` pattern used by patient/rehab sessions, CV measurement pipeline, approved WebP artwork.
+**Status:** Implemented on PR #310 (`feature/demo-exercise-illustrations`).  
+**Scope:** `/demo` public session PNF block path + mobile/welcome guide imagery.  
+**Out of scope:** Shared `d1-inspired-diagonal-reach` pattern used by patient/rehab sessions, CV measurement pipeline, approved WebP artwork, camera mirroring, wrist transforms.
 
 ## Approved illustration (anatomical)
 
@@ -28,7 +28,7 @@ The PNF image is **not** welcome-only; participants see it beside the live camer
 
 - Block: `rasq-demo-pnf-d1-repetitions` in `demo-session-definition.ts`
 - `side: "right"`, `blockType: "movement-pattern"`
-- `feedbackProfile: d1-inspired-diagonal-reach` → shared D1-inspired pattern
+- `feedbackProfile: rasq-demo-d1-diagonal-reach` → demo-only pattern (`app/lib/rasq-demo/rasq-demo-d1-diagonal-reach-pattern.ts`)
 
 ### Authored waypoints (mirrored-preview space)
 
@@ -58,46 +58,25 @@ Mirroring fixes **measurement vs path coordinate agreement** (#277). It does **n
 
 - `TherapeuticPathLayer` draws `pattern.sampledPath` in normalized 0–1 coordinates (same mirrored-preview space as waypoints).
 
-## Actual mismatch
+## Historical mismatch (pre–PR #310 path fix)
 
-| | Illustration | Live demo (right block, mirrored-preview anatomy) |
-|---|--------------|---------------------------------------------------|
-| **Start** | Right side, low | **Left** side, low |
-| **End** | Left shoulder (contralateral high) | **Right** side, raised (ipsilateral high) |
-| **Diagonal story** | Ipsilateral low → contralateral shoulder | Contralateral low → ipsilateral high |
+Before `rasq-demo-d1-diagonal-reach`, the public demo reused `d1-inspired-diagonal-reach`, whose right-side path ran contralateral low → ipsilateral high — the inverse of the approved illustration.
 
-The paths are **rough mirror images in anatomical start/end**, not the same PNF D1 flexion story as the approved art. Prior PR copy that described a two-pose composite, OpenCV arrow redraw, or “aligned because preview is mirrored” was **incorrect** for the current single-frame asset and for anatomy.
+## Implementation (public demo only)
 
-**Reach to Right** block remains a separate check: side-biased reach targets vs seated reach art — not covered in detail here.
+1. **`RASQ_DEMO_D1_DIAGONAL_REACH_PATTERN`** — x-reflected waypoints from clinical D1 (start ≈ (0.66, 0.66) → end ≈ (0.34, 0.22) in mirrored-preview space for `side: right`).
+2. **Registry** — additive entry in `motion-pattern-registry.ts`.
+3. **`RASQ_TWO_MINUTE_DEMO_SESSION`** — PNF block `feedbackProfile: rasq-demo-d1-diagonal-reach` only.
+4. **Tests** — `rasq-demo-d1-diagonal-reach-pattern.test.ts`, updated `demo-session-definition.test.ts`, registry test.
 
-**Seated art vs standing camera:** Illustration is seated; demo allows seated/standing. That is a **presentation** mismatch only; the **path** mismatch above is independent of posture.
+Clinical `D1_INSPIRED_DIAGONAL_REACH_PATTERN`, stroke foundation catalog, and camera/wrist mirroring are unchanged.
 
-## Narrow correction proposal (public demo only)
+**Reach to Right** and seated-vs-standing presentation are unchanged.
 
-**Goals:** Live SVG path and mobile/welcome guide tell the same anatomical story; **no** edits to `D1_INSPIRED_DIAGONAL_REACH_PATTERN` or rehab catalog wiring.
+## Validation checklist
 
-**Recommended approach (smallest isolated change):**
-
-1. Add a **demo-only** motion pattern (new id + feedback profile key, e.g. `rasq-demo-d1-diagonal-reach`) under `app/lib/rasq-demo/`, with waypoints that in mirrored-preview space run **high x, high y → low x, low y** (right low → left shoulder), e.g. x-reflect the current D1 waypoint set for the right side:
-   - start ≈ (0.66, 0.66), end ≈ (0.34, 0.22), with intermediate points reflected accordingly.
-2. Register the pattern in `motion-pattern-registry.ts` (additive entry only).
-3. Point **only** `RASQ_TWO_MINUTE_DEMO_SESSION` PNF block at the new `feedbackProfile`.
-4. Add tests: demo session definition references new profile; resolved right-side path start/end anatomically match documented illustration anchors (normalized tolerance).
-5. Re-run QA capture (`scripts/capture-demo-illustrations-qa.mjs`) for mobile **active** PNF frame and spot-check overlay on Dev.
-
-**Alternatives (weaker):**
-
-- **Copy-only:** Short on-screen note during PNF block that the glowing path is a simplified demo line, not the illustrated trajectory — reduces confusion but leaves visual mismatch.
-- **Hide mobile guide during active block** — avoids juxtaposition but loses the intended coaching aid.
-
-**Explicit non-options:**
-
-- Changing shared D1 waypoints for all patient/rehab flows to match marketing art without clinical review.
-- Re-mirroring or flipping the illustration to match the old path without product approval.
-
-## Validation checklist (when implemented)
-
-- [ ] `/demo` PNF block: wrist can follow path; repetitions still complete.
-- [ ] Mobile: guide visible during PNF; path direction matches art at a glance.
-- [ ] Patient stroke foundation / clinical D1 blocks still use `d1-inspired-diagonal-reach`.
-- [ ] `npm test`, `npm run build`, QA PNGs updated if layout changes.
+- [x] Demo session + orchestrator: five `patternCompleted` events for `rasq-demo-d1-diagonal-reach`.
+- [x] Path direction regression tests (start/end normalized anchors).
+- [x] Patient stroke foundation / clinical D1 blocks still use `d1-inspired-diagonal-reach`.
+- [x] `npm test`, `npm run build`.
+- [ ] Manual: live overlay vs guide on camera-enabled run (automated QA uses skip-camera flow — see PR notes).

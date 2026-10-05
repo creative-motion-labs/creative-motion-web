@@ -1,4 +1,4 @@
-import { D1_INSPIRED_DIAGONAL_REACH_FEEDBACK_PROFILE } from "@/app/lib/interactive-shoulder/motion-patterns/d1-inspired-diagonal-reach-pattern";
+import { RASQ_DEMO_D1_DIAGONAL_REACH_FEEDBACK_PROFILE } from "./rasq-demo-d1-diagonal-reach-pattern";
 import type { SessionDefinition } from "@/app/lib/session-orchestrator/types";
 
 export const RASQ_DEMO_REACH_RIGHT_BLOCK_ID = "rasq-demo-reach-right";
@@ -49,7 +49,7 @@ export const RASQ_TWO_MINUTE_DEMO_SESSION: SessionDefinition = {
       side: "right",
       intensityLevel: 1,
       blockType: "movement-pattern",
-      feedbackProfile: D1_INSPIRED_DIAGONAL_REACH_FEEDBACK_PROFILE,
+      feedbackProfile: RASQ_DEMO_D1_DIAGONAL_REACH_FEEDBACK_PROFILE,
       safetyRules: {
         trackerLossGraceSeconds: 0,
         maxCompensationEventsBeforePause: 5,

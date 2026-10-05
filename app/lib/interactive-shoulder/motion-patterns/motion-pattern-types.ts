@@ -7,7 +7,10 @@ import {
   type SampledPath,
 } from "./bezier-path";
 
-export type MotionPatternId = "d1-inspired-diagonal-reach" | "reach-the-light-targets";
+export type MotionPatternId =
+  | "d1-inspired-diagonal-reach"
+  | "rasq-demo-d1-diagonal-reach"
+  | "reach-the-light-targets";
 
 export type MotionPatternWaypoint = NormalizedPoint & {
   label?: string;
