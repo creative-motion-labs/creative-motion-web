@@ -18,6 +18,6 @@ describe("RASQ demo exercise illustration assets", () => {
 
   it("uses descriptive alt text for accessibility", () => {
     assert.match(RASQ_DEMO_REACH_TO_RIGHT_ILLUSTRATION.alt, /right arm/i);
-    assert.match(RASQ_DEMO_PNF_D1_ILLUSTRATION.alt, /diagonal/i);
+    assert.match(RASQ_DEMO_PNF_D1_ILLUSTRATION.alt, /PNF D1/i);
   });
 });
