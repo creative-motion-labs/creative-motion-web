@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ObjectiveMetricChartCard } from "@/app/components/clinician/progress/ObjectiveMetricChartCard";
 import { usePatientObjectiveResults } from "@/app/hooks/usePatientObjectiveResults";
+import { ClinicianSectionDetailsToggle } from "@/app/components/clinician/patient-profile/ClinicianSectionDetailsToggle";
 import {
   OBJECTIVE_RESULTS_DISCLAIMER,
   OBJECTIVE_RESULTS_EMPTY_BODY,
@@ -79,11 +80,13 @@ export function PatientObjectiveResultsSection({
             </div>
           ) : null}
 
-          <div className="grid gap-4">
-            {series.map((item) => (
-              <ObjectiveMetricChartCard key={item.seriesId} series={item} />
-            ))}
-          </div>
+          <ClinicianSectionDetailsToggle summaryLabel="View details">
+            <div className="grid gap-4">
+              {series.map((item) => (
+                <ObjectiveMetricChartCard key={item.seriesId} series={item} />
+              ))}
+            </div>
+          </ClinicianSectionDetailsToggle>
         </div>
       )}
     </section>

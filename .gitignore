@@ -15,6 +15,9 @@ backend/
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
+/e2e-results/
 
 # next.js
 /.next/

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ClinicianSectionDetailsToggle } from "@/app/components/clinician/patient-profile/ClinicianSectionDetailsToggle";
 import { AssessmentMovementSummaryPanel } from "@/app/components/clinician/cv/AssessmentMovementSummaryPanel";
 import { GaitInterpretationSection } from "@/app/components/clinician/cv/GaitInterpretationSection";
 import { MotionAnalysisReportPanel } from "@/app/components/clinician/cv/MotionAnalysisReportPanel";
@@ -307,32 +308,34 @@ function PatientProfileCvReview({
         </p>
       ) : null}
 
-      <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/25">
-        Recent sessions
-      </p>
-
-      <div className="space-y-3">
-        {displayMetrics.map((row, index) => (
-          <div key={row.id}>
-            {index === 0 ? (
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#1D9E75]">
-                Latest in list
-              </p>
-            ) : null}
-            <SessionReviewCard
-              row={row}
-              exerciseName={exerciseNameById[row.exerciseId] ?? row.exerciseId}
-              showPatientLink={false}
-              profileMode
-            />
+      {displayMetrics.length > 0 ? (
+        <ClinicianSectionDetailsToggle summaryLabel="View details">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/25">
+            Recent sessions
+          </p>
+          <div className="space-y-3">
+            {displayMetrics.map((row, index) => (
+              <div key={row.id}>
+                {index === 0 ? (
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#1D9E75]">
+                    Latest in list
+                  </p>
+                ) : null}
+                <SessionReviewCard
+                  row={row}
+                  exerciseName={exerciseNameById[row.exerciseId] ?? row.exerciseId}
+                  showPatientLink={false}
+                  profileMode
+                />
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-
-      {metrics.length > maxSessions ? (
-        <p className="mt-3 text-[11px] text-[#6B7280]">
-          Showing {maxSessions} of {metrics.length} saved sessions for this patient.
-        </p>
+          {metrics.length > maxSessions ? (
+            <p className="text-[11px] text-[#6B7280]">
+              Showing {maxSessions} of {metrics.length} saved sessions for this patient.
+            </p>
+          ) : null}
+        </ClinicianSectionDetailsToggle>
       ) : null}
 
       <p className="mt-4 border-t border-[#1E2D42] pt-3 text-[11px] leading-relaxed text-[#6B7280]">
