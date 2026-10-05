@@ -17,10 +17,13 @@ function resolveBackendUrl(
   return fallback;
 }
 
+/** Determine production mode */
+const isProduction = process.env.NODE_ENV === "production";
+
 /** Creative Motion main backend (FastAPI on 8000). */
 const backendUrl = resolveBackendUrl(
   process.env.BACKEND_URL,
-  "http://127.0.0.1:8000",
+  isProduction ? "https://api.rasqhealth.com" : "http://127.0.0.1:8000",
 );
 
 /** Gait AI service (separate FastAPI on 8001). */
@@ -28,6 +31,11 @@ const gaitAiUrl = resolveBackendUrl(
   process.env.GAIT_AI_URL,
   "http://127.0.0.1:8001",
 );
+
+// Log backend configuration
+console.log(`[Next.js Config] Environment: ${process.env.NODE_ENV || 'development'}`);
+console.log(`[Next.js Config] Backend URL: ${backendUrl}`);
+console.log(`[Next.js Config] Gait AI URL: ${gaitAiUrl}`);
 
 const nextConfig: NextConfig = {
   /** Hostnames only (no protocol). Required for HMR when using LAN URL, e.g. http://192.168.x.x:3000 */
