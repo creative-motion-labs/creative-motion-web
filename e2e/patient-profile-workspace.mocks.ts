@@ -139,7 +139,13 @@ function buildCvMetric() {
   };
 }
 
-export async function installPatientProfileApiMocks(page: Page): Promise<void> {
+export type PatientProfileMockCvMode = "populated" | "empty" | "error";
+
+export async function installPatientProfileApiMocks(
+  page: Page,
+  options?: { cvMode?: PatientProfileMockCvMode },
+): Promise<void> {
+  const cvMode = options?.cvMode ?? "populated";
   const assessmentDetail = buildAssessmentDetail();
 
   await page.route("**/api/**", async (route) => {
@@ -189,6 +195,12 @@ export async function installPatientProfileApiMocks(page: Page): Promise<void> {
     }
 
     if (pathname === "/api/cv/session-metrics") {
+      if (cvMode === "empty") {
+        return json(route, { metrics: [], demoMode: false, demoNotice: null });
+      }
+      if (cvMode === "error") {
+        return json(route, { error: "Could not load session metrics (E2E mock)" }, 401);
+      }
       return json(route, { metrics: [buildCvMetric()], demoMode: false, demoNotice: null });
     }
 
