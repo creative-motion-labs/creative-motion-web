@@ -130,7 +130,8 @@ function createMockAdmin(initial = {}, faults = {}) {
       const api = {
         select() { return api; }, eq(col, val) { state.filters.push({ col, val }); return api; },
         in(col, vals) { state.filters.push({ col, vals }); return api; },
-        order() { return api; }, range(start, end) { state.range = [start, end]; return api; },
+        order() { return api; }, limit(n) { state.limit = n; return api; },
+        range(start, end) { state.range = [start, end]; return api; },
         insert(row) { state.op = "insert"; state.payload = structuredClone(row); return api; },
         delete() { state.op = "delete"; return api; },
         maybeSingle() { state.single = true; return api; },
@@ -437,6 +438,87 @@ describe("verified cleanup and dependent ownership", () => {
     assert.equal(f.admin.store.patients.length, 0);
     await assert.rejects(() => f.run(), /Cannot import/);
   });
+  it("skips inbound checks only when session_motion_summaries is absent (PGRST205)", async () => {
+    const f = setup();
+    await f.run();
+    const realFrom = f.admin.from.bind(f.admin);
+    f.admin.from = (table) => {
+      if (table === "session_motion_summaries") {
+        const api = {
+          select() { return api; },
+          limit() { return api; },
+          then(resolve) {
+            resolve({
+              data: null,
+              error: {
+                code: "PGRST205",
+                message: "Could not find the table 'public.session_motion_summaries' in the schema cache",
+              },
+            });
+          },
+        };
+        return api;
+      }
+      return realFrom(table);
+    };
+    await rollbackRunVerified(f.admin, f.manifest, f.options);
+    assert.equal(f.saved().status, "rolled_back");
+    assert.equal(f.saved().rollbackAttempt.ok, true);
+    assert.equal(f.admin.store.patients.length, 0);
+  });
+  it("blocks rollback when session_motion_summaries probe fails for non-PGRST205 errors", async () => {
+    const f = setup();
+    await f.run();
+    const realFrom = f.admin.from.bind(f.admin);
+    f.admin.from = (table) => {
+      if (table === "session_motion_summaries") {
+        const api = {
+          select() { return api; },
+          limit() { return api; },
+          then(resolve) {
+            resolve({
+              data: null,
+              error: { code: "PGRST301", message: "permission denied for table session_motion_summaries" },
+            });
+          },
+        };
+        return api;
+      }
+      return realFrom(table);
+    };
+    await assert.rejects(() => rollbackRunVerified(f.admin, f.manifest, f.options), /Rollback incomplete/);
+    assert.equal(writes(f.admin, "delete").length, 0);
+    assert.equal(f.saved().rollbackAttempt.ok, false);
+  });
+  it("does not treat PGRST205 on required inbound tables as skippable", async () => {
+    const f = setup();
+    await f.run();
+    const realFrom = f.admin.from.bind(f.admin);
+    f.admin.from = (table) => {
+      if (table === "patient_access_tokens") {
+        const api = {
+          select() { return api; },
+          in() { return api; },
+          order() { return api; },
+          range() { return api; },
+          limit() { return api; },
+          then(resolve) {
+            resolve({
+              data: null,
+              error: {
+                code: "PGRST205",
+                message: "Could not find the table 'public.patient_access_tokens' in the schema cache",
+              },
+            });
+          },
+        };
+        return api;
+      }
+      return realFrom(table);
+    };
+    await assert.rejects(() => rollbackRunVerified(f.admin, f.manifest, f.options), /Rollback incomplete/);
+    assert.equal(writes(f.admin, "delete").length, 0);
+  });
 });
 
 describe("measured values, dates, source, and local durability", () => {
@@ -569,11 +651,11 @@ describe("ambiguous requests and fail-closed dependency reads", () => {
     assert.equal(saved.destPatientId, originalPatientId);
     assert.equal(f.admin.store.patients.length, 1); assert.equal(f.admin.store.assessments.length, 2);
   });
-  it("does not clean up when a dependency table cannot be inspected", async () => {
+  it("does not clean up when a dependency table cannot be inspected (auth/network)", async () => {
     let blockRead = false;
     const f = setup(false, {}, { before(state) {
       if (blockRead && state.op === "select" && state.table === "patient_access_tokens") {
-        return { data: null, error: { code: "42P01", message: "missing table" } };
+        return { data: null, error: { code: "", message: "fetch failed: network timeout" } };
       }
     } });
     await f.run(); blockRead = true;

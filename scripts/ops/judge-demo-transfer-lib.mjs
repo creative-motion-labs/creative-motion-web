@@ -474,6 +474,26 @@ async function readRow(admin, table, id) {
   }
 }
 
+/** Legacy optional inbound table — not in all staging schemas; never copied by transfer. */
+export const OPTIONAL_ABSENT_INBOUND_TABLE = "session_motion_summaries";
+
+/** Only PGRST205 on session_motion_summaries may be skipped; no broad "missing table" heuristics. */
+export function isOptionalSessionMotionSummariesAbsent(error) {
+  return error?.code === "PGRST205";
+}
+
+async function readInboundDependencyRows(admin, table, column, parentIds) {
+  if (table === OPTIONAL_ABSENT_INBOUND_TABLE) {
+    const { error } = await admin.from(table).select("id").limit(1);
+    if (!error) {
+      return readAllRows(() => admin.from(table).select("*").in(column, parentIds));
+    }
+    if (isOptionalSessionMotionSummariesAbsent(error)) return [];
+    throw recoveryError("Dependency/table read failed; no cleanup is safe", error);
+  }
+  return readAllRows(() => admin.from(table).select("*").in(column, parentIds));
+}
+
 export async function readAllRows(queryFactory) {
   const rows = [];
   for (let offset = 0; ; offset += 500) {
@@ -544,7 +564,7 @@ async function assertNoUnownedDependents(admin, manifest, parentTable = null) {
     if (parentTable && parent !== parentTable) continue;
     const parentIds = Object.values(manifest.idMappings[parent] ?? {});
     if (!parentIds.length) continue;
-    const rows = await readAllRows(() => admin.from(table).select("*").in(column, parentIds));
+    const rows = await readInboundDependencyRows(admin, table, column, parentIds);
     for (const actual of rows) {
       const expected = manifest.plannedRows[table]?.find((r) => r.id === actual.id);
       if (!(manifest.insertedLedger[table] ?? []).includes(actual.id) ||

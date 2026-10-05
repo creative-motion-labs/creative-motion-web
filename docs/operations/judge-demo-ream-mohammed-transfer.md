@@ -126,6 +126,9 @@ fabricate evidence, re-run measurements, or claim report availability.
 Existing UI eligibility rules may also hide a report for certain exercise/source
 types or insufficient evidence. The legacy `session_motion_summaries` table is
 not used by the traced UI report path; it remains an excluded dependency guard.
+Rollback skips inbound checks for that table **only** when PostgREST returns
+**PGRST205** (table absent from schema). Permission, network, and all other
+dependency read errors still block cleanup.
 
 Older exports without a CV inventory are refused before allocating IDs/writing.
 Preserve any incomplete run and reconcile it with ops; do not overwrite its

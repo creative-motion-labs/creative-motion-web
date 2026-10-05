@@ -99,6 +99,10 @@ function parseArgs(argv) {
 
 async function optionalTableCount(admin, table, patientId) {
   try {
+    const { error: probeErr } = await admin.from(table).select("id").limit(1);
+    if (probeErr) {
+      return { available: false, error: probeErr.message };
+    }
     const { count, error } = await admin
       .from(table)
       .select("id", { count: "exact", head: true })
