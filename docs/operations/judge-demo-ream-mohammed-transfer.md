@@ -21,7 +21,7 @@ Mutation commands require explicitly exported `DEST_SUPABASE_URL` and `DEST_SERV
 
 Set `TRANSFER_EXPORT_DIR` to a private directory **outside Git**, including outside any symlink into the repository. Exports, manifests, regenerated destination tokens, keys, and backups must never be committed. Source `patient_access_tokens` are excluded; source remote tokens, session log tokens, ULMS token hashes and payload tokens are stripped from exported rows/snapshots.
 
-Use the repository's supported Node version (20 or 22), on a filesystem that supports file and directory `fsync` (for example Linux/WSL). Files are created with mode `0600`; newly created export directories use `0700`. Manifest writes flush a private temporary file, rename atomically, then flush the directory. A failed flush stops mutations.
+Use the repository's supported Node version (20 or 22), on a filesystem that supports **file** `fsync` (for example Linux/WSL or a local non-synced folder — avoid OneDrive/cloud sync roots for `TRANSFER_EXPORT_DIR`). Files are created with mode `0600`; newly created export directories use `0700`. Manifest writes flush a private temporary file, **strict file fsync**, atomic rename, **read-back verification**, then best-effort directory fsync. Failed file fsync or read-back throws `LedgerPersistenceError` and `persist()` stops mutations before the next insert.
 
 The CLI holds an exclusive per-run `.lock` before reading or replacing the manifest. If a process was killed, inspect the lock's host/PID and confirm no transfer process is running before removing **only the stale lock file**. Retry using the original run UUID and original files. Locks on another host or of uncertain ownership require operator reconciliation. Do not delete/reset the manifest or export to bypass a lock.
 
@@ -37,6 +37,7 @@ node scripts/ops/judge-demo-patient-transfer.mjs --import --run-id UUID
 node scripts/ops/judge-demo-patient-transfer.mjs --verify --run-id UUID
 node scripts/ops/judge-demo-patient-transfer.mjs --rollback --run-id UUID
 node scripts/ops/judge-demo-patient-transfer.mjs --list-demo-clones
+node scripts/ops/judge-demo-patient-transfer.mjs --rehearsal-preflight
 ```
 
 Exactly one mode is required. Unknown flags, invalid UUIDs, and `--purge-demo-clone` are rejected. `--list-demo-clones` is read-only: a name/file pattern is not ownership evidence. Exporting over an existing run is refused, including when it is incomplete.
@@ -147,8 +148,21 @@ This report-coverage extension passed 46 local mocked tests. It did not import
 patient data, query a live database, deploy, migrate, merge, or verify a real
 browser report. Windows durability limitations from a5d8c36 remain to be reviewed.
 
+## Staging rehearsal plan (read-only preflight first)
+
+1. **Preflight (no writes):** `node scripts/ops/judge-demo-patient-transfer.mjs --rehearsal-preflight`  
+   Optional: set explicit `DEST_SUPABASE_URL` + `DEST_SERVICE_ROLE_KEY` to staging (same ref as source) to validate mutation credentials before import.
+2. **Export dir:** private path **outside Git and OneDrive**; `TRANSFER_EXPORT_DIR=...`
+3. **Export:** `--export` → save `runId`
+4. **Import (staging only):** `TRANSFER_CONFIRM_STAGING=true` + explicit `DEST_*` → `--import --run-id UUID`
+5. **Verify:** `--verify --run-id UUID` (counts, destination integrity, **source** measurement/date unchanged)
+6. **Manual UI spot-check** on clone (Motion Analysis / Progress / Outcomes) — read-only, no new sessions
+7. **Rollback:** `--rollback --run-id UUID` → confirm manifest `rollbackAttempt.ok` and `--rehearsal-preflight` shows `existingDemoClones: 0`
+
+Repeat import uses a **new export run** only after rollback or reconciliation; never overwrite an existing manifest.
+
 ## Remaining staging/manual checks
 
 Review actual staging schema/trigger parity before a fresh rehearsal, including inbound FKs added outside repository migrations. The dependency list reflects migrations 000–025 plus the legacy motion-summary patient link; it is not a dynamic schema discovery system. Freeze application writes to the rehearsal clone while importing/verifying/rolling back. Supabase REST operations and preflight SELECTs are not one database transaction and do not provide a cross-process database lock.
 
-On staging only, run one new export/import/verify/rollback cycle with this revision and confirm source values/dates unchanged and every clone ID absent afterward. This has **not** been performed for this revision. Existing source data, Production, analytics, and other release PRs are outside this safety update. Production import still requires a separately reviewed operational design; this script intentionally remains unable to write to Production.
+On staging only, run one new export/import/verify/rollback cycle with this revision and confirm source values/dates unchanged and every clone ID absent afterward. **Preflight SELECTs may be run before that cycle; import/rollback are not started until approved.** Existing source data, Production, analytics, and other release PRs are outside this safety update. Production import still requires a separately reviewed operational design; this script intentionally remains unable to write to Production.

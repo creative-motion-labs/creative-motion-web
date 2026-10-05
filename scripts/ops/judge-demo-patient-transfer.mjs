@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import {
   DEFAULT_SOURCE_PATIENT_ID,
   DEST_DISPLAY_NAME,
+  STAGING_PROJECT_REF,
   TABLE_PIPELINE,
   buildReportDataCoverage,
   buildIntegritySnapshot,
@@ -65,7 +66,15 @@ function resolveSourceCredentials() {
 }
 
 function parseArgs(argv) {
-  const modes = ["--dry-run", "--export", "--import", "--verify", "--rollback", "--list-demo-clones"];
+  const modes = [
+    "--dry-run",
+    "--export",
+    "--import",
+    "--verify",
+    "--rollback",
+    "--list-demo-clones",
+    "--rehearsal-preflight",
+  ];
   if (argv.filter((arg) => modes.includes(arg)).length !== 1) throw new Error("Choose exactly one transfer command");
   for (let i = 0; i < argv.length; i++) {
     if (modes.includes(argv[i])) continue;
@@ -83,7 +92,129 @@ function parseArgs(argv) {
     verify: argv.includes("--verify"),
     rollback: argv.includes("--rollback"),
     listDemoClones: argv.includes("--list-demo-clones"),
+    rehearsalPreflight: argv.includes("--rehearsal-preflight"),
     runId: runIdIdx >= 0 ? argv[runIdIdx + 1] : null,
+  };
+}
+
+async function optionalTableCount(admin, table, patientId) {
+  try {
+    const { count, error } = await admin
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      .eq("patient_id", patientId);
+    if (error) return { available: false, error: error.message };
+    return { available: true, count: count ?? 0 };
+  } catch (error) {
+    return { available: false, error: error.message ?? String(error) };
+  }
+}
+
+async function rehearsalPreflight(sourceAdmin, patientId, destCreds) {
+  const src = resolveSourceCredentials();
+  const sourceRef = extractSupabaseProjectRef(src.url);
+  const blockers = [];
+  if (sourceRef !== STAGING_PROJECT_REF) {
+    blockers.push(`source_project_ref_expected_${STAGING_PROJECT_REF}_got_${sourceRef ?? "unparseable"}`);
+  }
+  let destRef = null;
+  if (destCreds) {
+    destRef = extractSupabaseProjectRef(destCreds.url);
+    if (destRef !== STAGING_PROJECT_REF) {
+      blockers.push(`dest_project_ref_expected_${STAGING_PROJECT_REF}_got_${destRef ?? "unparseable"}`);
+    }
+  }
+
+  const { patient, counts } = await inventory(sourceAdmin, patientId);
+  if (patientId === DEFAULT_SOURCE_PATIENT_ID && patient.id !== DEFAULT_SOURCE_PATIENT_ID) {
+    blockers.push("source_patient_id_mismatch");
+  }
+
+  const { count: cvMotionQualityRows, error: cvMqErr } = await sourceAdmin
+    .from("cv_session_metrics")
+    .select("id", { count: "exact", head: true })
+    .eq("patient_id", patientId)
+    .not("motion_quality", "is", null);
+  if (cvMqErr) blockers.push(`cv_session_metrics_motion_quality_count: ${cvMqErr.message}`);
+
+  const assignmentRows = await fetchTableRows(
+    sourceAdmin,
+    { table: "upper_limb_motor_screen_assignments", scope: "patient_id" },
+    patientId,
+    [],
+  );
+  const tables = {};
+  for (const spec of TABLE_PIPELINE) {
+    tables[spec.table] = await fetchTableRows(
+      sourceAdmin,
+      spec,
+      patientId,
+      assignmentRows.map((r) => r.id),
+    );
+  }
+  const reportDataCoverage = buildReportDataCoverage(tables);
+  const dependencyAdmin = destCreds
+    ? (await import("@supabase/supabase-js")).createClient(destCreds.url, destCreds.key, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      })
+    : sourceAdmin;
+
+  let dependencyChecks = null;
+  try {
+    dependencyChecks = await validateDestinationDeps(
+      dependencyAdmin,
+      { tables: { treatment_plans: tables.treatment_plans, plan_sessions: tables.plan_sessions, patients: tables.patients } },
+      patient.provider_id,
+    );
+  } catch (error) {
+    blockers.push(`dependency_validation: ${error.message}`);
+  }
+
+  const inboundProbe = {
+    patient_access_tokens: await optionalTableCount(sourceAdmin, "patient_access_tokens", patientId),
+    session_motion_summaries: await optionalTableCount(sourceAdmin, "session_motion_summaries", patientId),
+  };
+
+  const demoClones = await readAllRows(() =>
+    sourceAdmin
+      .from("patients")
+      .select("id, file_number, created_at")
+      .eq("full_name", DEST_DISPLAY_NAME),
+  );
+
+  const warnings = [];
+  if ((counts.cv_session_metrics ?? 0) === 0) {
+    warnings.push("cv_report_evidence_absent_on_source");
+  }
+
+  return {
+    phase: "rehearsal-preflight",
+    readOnly: true,
+    sourceProjectRef: sourceRef,
+    destProjectRef: destRef,
+    stagingRefExpected: STAGING_PROJECT_REF,
+    sourcePatient: {
+      id: patient.id,
+      file_number: patient.file_number,
+      provider_id: patient.provider_id,
+    },
+    tableCounts: counts,
+    reportDataCoverage: {
+      motionAnalysis: {
+        rows: counts.cv_session_metrics ?? 0,
+        rowsWithMotionQuality: cvMotionQualityRows ?? 0,
+        sourceDataPresent: (counts.cv_session_metrics ?? 0) > 0,
+      },
+      progress: reportDataCoverage.progress,
+      outcomes: reportDataCoverage.outcomes,
+      browserVerified: false,
+    },
+    dependencyChecks,
+    inboundProbe,
+    existingDemoClones: demoClones.length,
+    warnings,
+    blockers,
+    readyForExport: blockers.length === 0,
   };
 }
 
@@ -331,8 +462,14 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const patientId = process.env.SOURCE_PATIENT_ID?.trim() || DEFAULT_SOURCE_PATIENT_ID;
   const needsDest = args.importMode || args.verify || args.rollback || args.listDemoClones;
-  // Resolve/validate explicit destination BEFORE constructing any mutation client.
-  const dest = needsDest ? requireExplicitDestCredentials() : null;
+  let dest = needsDest ? requireExplicitDestCredentials() : null;
+  if (args.rehearsalPreflight) {
+    try {
+      dest = requireExplicitDestCredentials();
+    } catch {
+      dest = null;
+    }
+  }
   if (args.importMode || args.rollback) assertStagingWriteGate();
   const { createClient } = await import("@supabase/supabase-js");
   const destAdmin = dest ? createClient(dest.url, dest.key, {
@@ -341,6 +478,12 @@ async function main() {
   function sourceClient() {
     const src = resolveSourceCredentials();
     return createClient(src.url, src.key, { auth: { autoRefreshToken: false, persistSession: false } });
+  }
+  if (args.rehearsalPreflight) {
+    const report = await rehearsalPreflight(sourceClient(), patientId, dest);
+    console.log(JSON.stringify(report, null, 2));
+    if (!report.readyForExport) process.exitCode = 1;
+    return;
   }
   if (args.dryRun) {
     const { patient, counts } = await inventory(sourceClient(), patientId);
