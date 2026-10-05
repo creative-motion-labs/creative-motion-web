@@ -98,11 +98,17 @@ import { extractDemoMeta } from "@/app/lib/api/demo-fallback-client";
 import {
   parseNumericDemoPatientId,
 } from "@/app/lib/api/patient-id-utils";
+import { usePatientProfileSection } from "@/app/hooks/usePatientProfileSection";
+import { PatientProfileSectionNav } from "@/app/components/clinician/patient-profile/PatientProfileSectionNav";
+import { PatientProfileSectionSlot } from "@/app/components/clinician/patient-profile/PatientProfileSectionSlot";
+import { ClinicianSectionDetailsToggle } from "@/app/components/clinician/patient-profile/ClinicianSectionDetailsToggle";
 
 export default function PatientProfilePage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { section: profileSection, setSection: setProfileSection } =
+    usePatientProfileSection();
   const id = String(params.id || "");
   // Pure numeric route ids only — UUID Supabase patients skip legacy FastAPI assessment fetch.
   const legacyNumericPatientId = parseNumericDemoPatientId(id);
@@ -880,29 +886,11 @@ export default function PatientProfilePage() {
                 {patient.status}
               </span>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <a href="#clinical-assessment-summary" className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Assessment
-              </a>
-              <a href="#rehabilitation-plan" className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Treatment plan
-              </a>
-              <a href="#progress-objective-results" className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Objective results
-              </a>
-              <a href="#progress-snapshot" className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Progress
-              </a>
-              <Link href={`/clinician/patients/${patient.id}/outcomes`} className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Outcomes
-              </Link>
-              <a href="#movement-tracking-sessions" className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Movement tracking
-              </a>
-              <Link href="/clinician/results" className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Results
-              </Link>
-            </div>
+            <PatientProfileSectionNav
+              activeSection={profileSection}
+              onSelectSection={setProfileSection}
+              patientId={patient.id}
+            />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link
@@ -1031,12 +1019,19 @@ export default function PatientProfilePage() {
           </section>
         )}
 
-        <section className="grid gap-6 xl:grid-cols-[1.35fr_0.85fr]">
-          <div className="space-y-6">
-            {/* Clinical Overview */}
+        <section
+          className={`grid gap-6 ${
+            profileSection === "overview" ? "xl:grid-cols-[1.35fr_0.85fr]" : ""
+          }`}
+        >
+          <div className="min-w-0 space-y-6">
+            <PatientProfileSectionSlot
+              sectionId="overview"
+              activeSection={profileSection}
+            >
             <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-6">
-              <h2 className="text-lg font-bold text-white">Clinical Overview</h2>
-              <p className="mt-1 mb-5 text-xs text-white/35">Quick read on where this patient is in rehab.</p>
+              <h2 className="text-lg font-bold text-white">Overview</h2>
+              <p className="mt-1 mb-5 text-xs text-white/35">Concise summary — open a section below for full records.</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <InfoCard label="Clinical Status" value={patient.status} />
                 <InfoCard label="Latest Assessment" value={overviewLatestAssessment} />
@@ -1053,9 +1048,29 @@ export default function PatientProfilePage() {
                   <p className="mt-2 text-[10px] italic text-white/30">{OPERATIONAL_STATUS_ONLY}</p>
                 </div>
               )}
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <ProfileDomainNavCard
+                  title="Assessment results"
+                  description="Submitted clinical and remote assessments"
+                  onOpen={() => setProfileSection("assessments")}
+                />
+                <ProfileDomainNavCard
+                  title="Progress over time"
+                  description="Plan adherence and objective assessment trends"
+                  onOpen={() => setProfileSection("progress")}
+                />
+                <ProfileDomainNavCard
+                  title="Interactive session outcomes"
+                  description="Structured interactive sessions (separate from CV movement reports)"
+                  href={`/clinician/patients/${patient.id}/outcomes`}
+                />
+                <ProfileDomainNavCard
+                  title="CV movement reports"
+                  description="Prototype movement tracking sessions for therapist review"
+                  onOpen={() => setProfileSection("movement")}
+                />
+              </div>
             </section>
-
-            <PatientObjectiveResultsSection patientId={patient.id} />
 
             {/* Quick actions */}
             <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
@@ -1142,7 +1157,12 @@ export default function PatientProfilePage() {
                 </button>
               </div>
             )}
+            </PatientProfileSectionSlot>
 
+            <PatientProfileSectionSlot
+              sectionId="assessments"
+              activeSection={profileSection}
+            >
             {ulmsBatterySummary && ulmsBatteryDetail ? (
               <RemoteUpperLimbBatteryResultsCard
                 summary={ulmsBatterySummary}
@@ -1411,7 +1431,12 @@ export default function PatientProfilePage() {
               )}
             </section>
 
-            {/* Rehabilitation Plan */}
+            </PatientProfileSectionSlot>
+
+            <PatientProfileSectionSlot
+              sectionId="plan"
+              activeSection={profileSection}
+            >
             <TreatmentPlanSection
               patientId={patient.id}
               plan={treatmentPlan}
@@ -1419,21 +1444,6 @@ export default function PatientProfilePage() {
             />
 
             <PreviousPlansSummary plans={previousPlanRows} />
-
-            {/* Progress Snapshot */}
-            <ProgressSnapshotSection
-              patientId={patient.id}
-              plan={treatmentPlan}
-              planProgress={planProgress}
-              adherence={adherence}
-              onReviewAcknowledged={(reviewedAt) => {
-                setPlanProgress((prev) =>
-                  prev
-                    ? { ...prev, reviewAcknowledged: true, reviewedAt }
-                    : prev,
-                );
-              }}
-            />
 
             <AiClinicianSummaryCard
               patientId={patient.id}
@@ -1445,26 +1455,6 @@ export default function PatientProfilePage() {
               diagnosis={patient.diagnosis}
             />
 
-            <CvPatientCvMetricsSection patientId={patient.id} />
-
-            {(planProgress || adherence) && treatmentPlan ? (
-              <PatientAdherenceSummary
-                sessionsCompleted={
-                  planProgress?.sessionsCompleted ?? adherence?.sessionsCompleted ?? 0
-                }
-                totalSessions={planProgress?.totalSessions ?? adherence?.totalSessions ?? 0}
-                lastActivityAt={
-                  planProgress?.lastCompletedAt ?? adherence?.lastActiveAt ?? null
-                }
-              />
-            ) : null}
-
-            <PatientJourneyTimeline
-              events={rehabilitationTimelineEvents}
-              patientName={patient.full_name}
-            />
-
-            {/* Patient access link */}
             {treatmentPlan?.patientToken && (
               <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280]">
@@ -1497,7 +1487,154 @@ export default function PatientProfilePage() {
               </section>
             )}
 
-            {/* Clinical Documentation */}
+            </PatientProfileSectionSlot>
+
+            <PatientProfileSectionSlot
+              sectionId="progress"
+              activeSection={profileSection}
+            >
+            <ProgressSnapshotSection
+              patientId={patient.id}
+              plan={treatmentPlan}
+              planProgress={planProgress}
+              adherence={adherence}
+              onReviewAcknowledged={(reviewedAt) => {
+                setPlanProgress((prev) =>
+                  prev
+                    ? { ...prev, reviewAcknowledged: true, reviewedAt }
+                    : prev,
+                );
+              }}
+            />
+
+            <PatientObjectiveResultsSection patientId={patient.id} />
+
+            {(planProgress || adherence) && treatmentPlan ? (
+              <PatientAdherenceSummary
+                sessionsCompleted={
+                  planProgress?.sessionsCompleted ?? adherence?.sessionsCompleted ?? 0
+                }
+                totalSessions={planProgress?.totalSessions ?? adherence?.totalSessions ?? 0}
+                lastActivityAt={
+                  planProgress?.lastCompletedAt ?? adherence?.lastActiveAt ?? null
+                }
+              />
+            ) : null}
+
+            <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-white/25">
+                Interactive session outcomes
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-white/45">
+                Structured interactive sessions are reviewed on the Outcomes hub (separate from CV movement reports and assessment summaries on this profile).
+              </p>
+              <Link
+                href={`/clinician/patients/${patient.id}/outcomes`}
+                className="mt-3 inline-flex rounded-[7px] border border-[#1D9E75]/25 bg-[#1D9E75]/8 px-3.5 py-2 text-xs font-semibold text-[#5DCAA5] transition hover:bg-[#1D9E75]/14"
+              >
+                Open Outcomes hub →
+              </Link>
+            </section>
+
+            </PatientProfileSectionSlot>
+
+            <PatientProfileSectionSlot
+              sectionId="movement"
+              activeSection={profileSection}
+            >
+            <CvPatientCvMetricsSection patientId={patient.id} />
+            </PatientProfileSectionSlot>
+
+            <PatientProfileSectionSlot
+              sectionId="activity"
+              activeSection={profileSection}
+            >
+            <PatientJourneyTimeline
+              events={rehabilitationTimelineEvents}
+              patientName={patient.full_name}
+            />
+
+            <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-6">
+              <h2 className="text-lg font-bold text-white">Therapy Session Results</h2>
+                <p className="mt-1 text-sm text-white/50">
+                  Optional in-browser therapy sessions for this patient.
+                </p>
+
+              <div className="mt-6">
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/25">
+                  Care flow
+                </p>
+                <TherapyProgressFlow nextActionLine={flowNextAction} />
+              </div>
+
+              <ClinicianSectionDetailsToggle summaryLabel="View details">
+              <div className="mt-6">
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/25">
+                  Therapy trends
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <InfoCard
+                    label="Latest total steps"
+                    value={
+                      therapyTrends.latestSteps != null ? String(therapyTrends.latestSteps) : "—"
+                    }
+                  />
+                  <InfoCard
+                    label="Latest symmetry"
+                    value={
+                      therapyTrends.latestSymmetry != null
+                        ? `${therapyTrends.latestSymmetry}%`
+                        : "—"
+                    }
+                  />
+                  <InfoCard
+                    label="Latest movement quality"
+                    value={
+                      therapyTrends.latestMovementQuality != null
+                        ? String(therapyTrends.latestMovementQuality)
+                        : "—"
+                    }
+                  />
+                  <InfoCard
+                    label="Best session (steps)"
+                    value={
+                      therapyTrends.bestSession
+                        ? `${therapyTrends.bestSession.totalSteps ?? "—"} reps · ${therapyTrends.bestSession.recordedAt ? new Date(therapyTrends.bestSession.recordedAt).toLocaleDateString() : "—"}`
+                        : "—"
+                    }
+                  />
+                  <InfoCard
+                    label="Logged therapy sessions"
+                    value={String(therapyTrends.count)}
+                  />
+                </div>
+              </div>
+
+              {therapyLoading && (
+                <div className="mt-5 rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4 text-sm text-white/40">
+                  Loading therapy reports…
+                </div>
+              )}
+
+              <div className="mt-5 space-y-5">
+                {!therapyLoading && therapySessions.length > 0 ? (
+                  therapySessions.map((t) => (
+                    <TherapySessionHistoryEntry key={t.id} t={t} />
+                  ))
+                ) : !therapyLoading ? (
+                  <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-5 text-sm text-white/40">
+                    No therapy sessions logged yet.
+                  </div>
+                ) : null}
+              </div>
+              </ClinicianSectionDetailsToggle>
+            </section>
+            </PatientProfileSectionSlot>
+
+            <PatientProfileSectionSlot
+              sectionId="assessments"
+              activeSection={profileSection}
+            >
             <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-6">
               <h2 className="text-lg font-bold text-white">Clinical Documentation</h2>
               <p className="mt-1 mb-6 text-xs text-white/35">SOAP notes and assessment archive.</p>
@@ -1579,83 +1716,14 @@ export default function PatientProfilePage() {
                 </div>
               )}
             </section>
-
-            <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-6">
-              <h2 className="text-lg font-bold text-white">Therapy Session Results</h2>
-                <p className="mt-1 text-sm text-white/50">
-                  Optional in-browser therapy sessions for this patient.
-                </p>
-
-              <div className="mt-6">
-                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/25">
-                  Care flow
-                </p>
-                <TherapyProgressFlow nextActionLine={flowNextAction} />
-              </div>
-
-              <div className="mt-6">
-                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/25">
-                  Therapy trends
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <InfoCard
-                    label="Latest total steps"
-                    value={
-                      therapyTrends.latestSteps != null ? String(therapyTrends.latestSteps) : "—"
-                    }
-                  />
-                  <InfoCard
-                    label="Latest symmetry"
-                    value={
-                      therapyTrends.latestSymmetry != null
-                        ? `${therapyTrends.latestSymmetry}%`
-                        : "—"
-                    }
-                  />
-                  <InfoCard
-                    label="Latest movement quality"
-                    value={
-                      therapyTrends.latestMovementQuality != null
-                        ? String(therapyTrends.latestMovementQuality)
-                        : "—"
-                    }
-                  />
-                  <InfoCard
-                    label="Best session (steps)"
-                    value={
-                      therapyTrends.bestSession
-                        ? `${therapyTrends.bestSession.totalSteps ?? "—"} reps · ${therapyTrends.bestSession.recordedAt ? new Date(therapyTrends.bestSession.recordedAt).toLocaleDateString() : "—"}`
-                        : "—"
-                    }
-                  />
-                  <InfoCard
-                    label="Logged therapy sessions"
-                    value={String(therapyTrends.count)}
-                  />
-                </div>
-              </div>
-
-              {therapyLoading && (
-                <div className="mt-5 rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4 text-sm text-white/40">
-                  Loading therapy reports…
-                </div>
-              )}
-
-              <div className="mt-5 space-y-5">
-                {!therapyLoading && therapySessions.length > 0 ? (
-                  therapySessions.map((t) => (
-                    <TherapySessionHistoryEntry key={t.id} t={t} />
-                  ))
-                ) : !therapyLoading ? (
-                  <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-5 text-sm text-white/40">
-                    No therapy sessions logged yet.
-                  </div>
-                ) : null}
-              </div>
-            </section>
+            </PatientProfileSectionSlot>
           </div>
 
-          {/* Sidebar */}
+          <PatientProfileSectionSlot
+            sectionId="overview"
+            activeSection={profileSection}
+            className="space-y-6"
+          >
           <aside className="space-y-6">
             {/* ── Remote Assessments panel ── */}
             <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
@@ -1784,6 +1852,7 @@ export default function PatientProfilePage() {
               </section>
             )}
           </aside>
+          </PatientProfileSectionSlot>
         </section>
       </div>
     </main>
@@ -2056,7 +2125,7 @@ function ProgressSnapshotSection({
             <ClinicalActionCard
               action={planProgress.clinicalAction}
               patientNote={planProgress.latestPatientNote}
-              planSessionsHref={`#rehabilitation-plan`}
+              planSessionsHref={`/clinician/patients/${patientId}?section=plan#rehabilitation-plan`}
               review={
                 planProgress.needsReview
                   ? {
@@ -2094,7 +2163,8 @@ function ProgressSnapshotSection({
         )}
 
         {adherence && plan && sessionsDone > 0 && (
-          <div className="mt-4 rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4">
+          <ClinicianSectionDetailsToggle summaryLabel="View details">
+          <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4">
             <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/25">
               Session adherence
             </p>
@@ -2115,6 +2185,7 @@ function ProgressSnapshotSection({
               })}
             </div>
           </div>
+          </ClinicianSectionDetailsToggle>
         )}
 
         <Link
@@ -2214,6 +2285,7 @@ function TreatmentPlanSection({
             </div>
           )}
 
+          <ClinicianSectionDetailsToggle summaryLabel="View details">
           <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4">
             <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/25">
               Session schedule ({plan.sessions.filter((s) => s.status !== "completed").length} remaining)
@@ -2238,6 +2310,7 @@ function TreatmentPlanSection({
               clinically validated · reps are assistive only.
             </p>
           </div>
+          </ClinicianSectionDetailsToggle>
         </div>
       )}
     </section>
@@ -2298,5 +2371,41 @@ function InfoCard({ label, value }: { label: string; value: string }) {
         {value}
       </p>
     </div>
+  );
+}
+
+function ProfileDomainNavCard({
+  title,
+  description,
+  onOpen,
+  href,
+}: {
+  title: string;
+  description: string;
+  onOpen?: () => void;
+  href?: string;
+}) {
+  const className =
+    "rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4 text-left transition hover:border-[#1D9E75]/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1D9E75]/50";
+  const inner = (
+    <>
+      <p className="text-sm font-semibold text-white">{title}</p>
+      <p className="mt-1 text-[11px] leading-relaxed text-white/40">{description}</p>
+      <span className="mt-2 inline-block text-[11px] font-semibold text-[#5DCAA5]">
+        Open →
+      </span>
+    </>
+  );
+  if (href) {
+    return (
+      <Link href={href} className={className}>
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" className={`${className} w-full`} onClick={onOpen}>
+      {inner}
+    </button>
   );
 }
