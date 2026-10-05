@@ -62,6 +62,17 @@ describe("resolveOrchestratorTherapeuticSide", () => {
     });
     assert.equal(resolved, null);
   });
+
+  it("keeps prescribed left when a movement block declares side right", () => {
+    const resolved = resolveOrchestratorTherapeuticSide({
+      prescribedSide: "left",
+      clinicalPrescribedSideRequired: true,
+      blocks: [{ side: "right" }],
+    });
+    assert.ok(resolved);
+    assert.equal(resolved.side, "left");
+    assert.equal(resolved.source, "prescribed");
+  });
 });
 
 describe("resolveClinicalPrescribedSideForRuntime", () => {

@@ -1,7 +1,4 @@
 import type { ShoulderAbductionReachSide } from "@/app/lib/shoulder-rehabilitation";
-import {
-  RASQ_DEMO_D1_DIAGONAL_REACH_PATTERN,
-} from "@/app/lib/rasq-demo/rasq-demo-d1-diagonal-reach-pattern";
 import { D1_INSPIRED_DIAGONAL_REACH_PATTERN } from "./d1-inspired-diagonal-reach-pattern";
 import type { MotionPattern, ResolvedMotionPattern } from "./motion-pattern-types";
 import { resolveMotionPatternForSide } from "./motion-pattern-types";
@@ -12,7 +9,6 @@ export type FeedbackInteractionMode = "motion-pattern" | "reach-the-light-target
 
 const MOTION_PATTERN_REGISTRY: Record<string, MotionPattern> = {
   [D1_INSPIRED_DIAGONAL_REACH_PATTERN.feedbackProfileKey]: D1_INSPIRED_DIAGONAL_REACH_PATTERN,
-  [RASQ_DEMO_D1_DIAGONAL_REACH_PATTERN.feedbackProfileKey]: RASQ_DEMO_D1_DIAGONAL_REACH_PATTERN,
 };
 
 export function getRegisteredMotionPattern(feedbackProfileKey: string): MotionPattern | null {
