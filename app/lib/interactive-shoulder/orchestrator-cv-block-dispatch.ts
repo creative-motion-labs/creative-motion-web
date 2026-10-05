@@ -117,15 +117,9 @@ export function resolveOrchestratorHudFeedbackMode(
 export function resetRunnerStatesForBlockTransition(input: {
   block: MovementBlock;
   side: ShoulderAbductionReachSide;
-  /**
-   * Optional override for motion-pattern geometry only (public /demo PNF).
-   * Therapeutic/detector side remains `input.side`.
-   */
-  motionPatternPresentationSide?: ShoulderAbductionReachSide;
 }): OrchestratorCvBlockTransitionResult {
   const blockType = resolveOrchestratorBlockType(input.block);
-  const patternSide = input.motionPatternPresentationSide ?? input.side;
-  const resolvedPattern = resolveActiveMotionPattern(input.block.feedbackProfile, patternSide);
+  const resolvedPattern = resolveActiveMotionPattern(input.block.feedbackProfile, input.side);
 
   const states: ActiveBlockRunnerStates = {
     instructional: createInitialInstructionalLifecycle(),
