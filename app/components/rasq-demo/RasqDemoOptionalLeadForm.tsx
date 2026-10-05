@@ -38,8 +38,10 @@ export function RasqDemoOptionalLeadForm({
   const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [emailRetryMessage, setEmailRetryMessage] = useState<string | null>(null);
+  const [confirmationEmailNotice, setConfirmationEmailNotice] = useState<string | null>(null);
 
-  function showThankYou() {
+  function showThankYou(notice?: string | null) {
+    setConfirmationEmailNotice(notice ?? null);
     setStage("thank_you");
     setStatus("done");
     onSubmitted?.();
@@ -151,11 +153,19 @@ export function RasqDemoOptionalLeadForm({
         setStatus("idle");
         return;
       }
-      if (data.confirmationEmail?.sent === false && data.confirmationEmail.reason === "not-configured") {
-        showThankYou();
-        return;
+
+      let notice: string | null = null;
+      if (data.confirmationEmail?.sent === true) {
+        notice =
+          "We sent a confirmation email to the address you provided. If it does not arrive within a few minutes, check your spam folder.";
+      } else if (
+        data.confirmationEmail?.sent === false &&
+        data.confirmationEmail.reason === "not-configured"
+      ) {
+        notice =
+          "Your details were saved, but a confirmation email could not be sent right now. The RASQ team still has the information you shared.";
       }
-      showThankYou();
+      showThankYou(notice);
     } catch {
       setStatus("error");
       setErrorMessage("Unable to save your details.");
@@ -173,6 +183,11 @@ export function RasqDemoOptionalLeadForm({
               ? " We appreciate your interest."
               : " You can close this page whenever you are ready."}
         </p>
+        {confirmationEmailNotice ? (
+          <p className="mt-2 text-sm text-[#475569]" role="status">
+            {confirmationEmailNotice}
+          </p>
+        ) : null}
       </div>
     );
   }
