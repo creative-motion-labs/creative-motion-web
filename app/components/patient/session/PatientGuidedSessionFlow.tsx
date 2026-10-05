@@ -9,6 +9,10 @@ import {
   guidedSessionUi,
   sessionExerciseFlowUi,
 } from "@/app/lib/patient-portal-ui";
+import {
+  buildGuidedRestCountdownScopeKey,
+  resolveGuidedRestCountdownOnScopeChange,
+} from "@/app/lib/patient-portal/guided-session-rest-countdown";
 import { PatientSessionProgressStrip } from "@/app/components/patient/PatientExerciseSessionCard";
 
 const CARD_SHADOW = "shadow-[0_8px_30px_rgba(10,15,26,0.06)]";
@@ -251,13 +255,19 @@ export function GuidedSessionRestScreen({
   const ui = guidedSessionUi(lang);
   const hasCountdown = restSeconds != null && restSeconds > 0;
   const countdownStart = hasCountdown ? Math.max(0, Math.floor(restSeconds!)) : 0;
-  const countdownScopeKey = `${restPhaseKey}:${countdownStart}`;
+  const countdownScopeKey = buildGuidedRestCountdownScopeKey(restPhaseKey, countdownStart);
   const [countdownScopeKeyState, setCountdownScopeKeyState] = useState(countdownScopeKey);
   const [secondsLeft, setSecondsLeft] = useState(countdownStart);
 
-  if (countdownScopeKeyState !== countdownScopeKey) {
-    setCountdownScopeKeyState(countdownScopeKey);
-    setSecondsLeft(countdownStart);
+  const scopeReset = resolveGuidedRestCountdownOnScopeChange({
+    countdownScopeKey,
+    countdownScopeKeyState,
+    countdownStart,
+    secondsLeft,
+  });
+  if (scopeReset.countdownScopeKeyState !== countdownScopeKeyState) {
+    setCountdownScopeKeyState(scopeReset.countdownScopeKeyState);
+    setSecondsLeft(scopeReset.secondsLeft);
   }
 
   useEffect(() => {

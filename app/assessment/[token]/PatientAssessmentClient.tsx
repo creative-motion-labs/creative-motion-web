@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useRasqVoiceConsentFromStorage } from "@/app/lib/patient-portal/voice-consent-storage";
 import {
   getRemoteAssessment,
   updateRemoteAssessmentDraft,
@@ -405,8 +406,12 @@ function ReviewSection({
 
 export function PatientAssessmentClient() {
   const params = useParams();
-  const router = useRouter();
   const token = String(params.token ?? "");
+  return <PatientAssessmentClientForToken key={token} token={token} />;
+}
+
+function PatientAssessmentClientForToken({ token }: { token: string }) {
+  const router = useRouter();
 
   const [req, setReq] = useState<RemoteAssessmentRequest | null>(null);
   const [tokenState, setTokenState] = useState<"loading" | "valid" | "invalid">(() =>
@@ -419,9 +424,7 @@ export function PatientAssessmentClient() {
   const [lang, setLang] = useState<PatientLang>("en");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [voiceConsentGiven, setVoiceConsentGiven] = useState(
-    () => typeof window !== "undefined" && sessionStorage.getItem("rasq_voice_consent") === "1",
-  );
+  const voiceConsentGiven = useRasqVoiceConsentFromStorage();
   const [showConsentBanner, setShowConsentBanner] = useState(false);
   const [voiceMethods, setVoiceMethods] = useState<Record<string, "voice">>({});
   const [voiceReviewDismissed, setVoiceReviewDismissed] = useState<Record<string, boolean>>({});
@@ -611,7 +614,6 @@ export function PatientAssessmentClient() {
   }
 
   function handleVoiceConsentAccept() {
-    setVoiceConsentGiven(true);
     setShowConsentBanner(false);
   }
 

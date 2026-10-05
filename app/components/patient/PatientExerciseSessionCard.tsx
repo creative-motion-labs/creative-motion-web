@@ -27,6 +27,7 @@ import {
   sessionExerciseUi,
   type PatientCvReadinessDisplayState,
 } from "@/app/lib/patient-portal-ui";
+import { buildCvReadinessScopeKey } from "@/app/lib/patient-portal/cv-readiness-scope";
 
 export type ExerciseCardStep = "preview" | "active" | "done";
 
@@ -117,7 +118,7 @@ export function PatientExerciseSessionCard({
     (isCvEnabledExercise(view.exerciseId) || isInteractiveShoulder) && step === "preview";
   const showCvReadinessBanner =
     (isPatientCvCaptureWired(view.exerciseId) || isInteractiveShoulder) && step === "active";
-  const cvReadinessScopeKey = `${view.exerciseId}:${step}`;
+  const cvReadinessScopeKey = buildCvReadinessScopeKey(view.exerciseId, step);
   const [cvReadinessScopeKeyState, setCvReadinessScopeKeyState] = useState(cvReadinessScopeKey);
   const [cvReadinessState, setCvReadinessState] =
     useState<PatientCvReadinessDisplayState | null>(null);

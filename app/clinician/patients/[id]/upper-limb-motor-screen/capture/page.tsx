@@ -22,7 +22,12 @@ import type {
 export default function UpperLimbLateralReachCapturePage() {
   const params = useParams();
   const patientId = String(params.id || "");
+  return (
+    <UpperLimbLateralReachCaptureContent key={patientId || "missing"} patientId={patientId} />
+  );
+}
 
+function UpperLimbLateralReachCaptureContent({ patientId }: { patientId: string }) {
   const invalidPatientId = !patientId;
   const [patient, setPatient] = useState<PatientRow | null>(null);
   const [loadingPatient, setLoadingPatient] = useState(!invalidPatientId);
@@ -52,8 +57,17 @@ export default function UpperLimbLateralReachCapturePage() {
       return;
     }
 
-    void fetch(`/api/patients/${encodeURIComponent(patientId)}`, { cache: "no-store" })
+    const controller = new AbortController();
+    const fetchPatientId = patientId;
+
+    void fetch(`/api/patients/${encodeURIComponent(fetchPatientId)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then(async (response) => {
+        if (controller.signal.aborted) {
+          return;
+        }
         if (response.status === 404) {
           setPatient(null);
           setPatientError(true);
@@ -65,12 +79,24 @@ export default function UpperLimbLateralReachCapturePage() {
         }
         setPatient((await response.json()) as PatientRow);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) {
+          return;
+        }
         setPatientError(true);
+        if (process.env.NODE_ENV === "development" && error instanceof Error) {
+          console.debug("[upper-limb-capture] patient load failed", error.message);
+        }
       })
       .finally(() => {
-        setLoadingPatient(false);
+        if (!controller.signal.aborted) {
+          setLoadingPatient(false);
+        }
       });
+
+    return () => {
+      controller.abort();
+    };
   }, [patientId]);
 
   const ensureAssignment = useCallback(async () => {

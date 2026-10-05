@@ -14,7 +14,6 @@ import {
   normalizeRemoteUlmsAssessmentToken,
   REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE,
 } from "@/app/lib/upper-limb-motor-screen/remote-assessment-token";
-
 type RemoteAssessmentContext = {
   assignmentId: string;
   prescribedSide: BatteryPrescribedSide | null;
@@ -23,8 +22,12 @@ type RemoteAssessmentContext = {
 
 export default function PatientRemoteUlmsAssessmentPage() {
   const params = useParams();
+  const token = normalizeRemoteUlmsAssessmentToken(String(params.token || "")) ?? "";
+  return <PatientRemoteUlmsAssessmentContent key={token || "invalid"} token={token} />;
+}
+
+function PatientRemoteUlmsAssessmentContent({ token }: { token: string }) {
   const router = useRouter();
-  const token = normalizeRemoteUlmsAssessmentToken(String(params.token || ""));
   const invalidToken = !token;
 
   const [context, setContext] = useState<RemoteAssessmentContext | null>(null);
@@ -44,8 +47,17 @@ export default function PatientRemoteUlmsAssessmentPage() {
       return;
     }
 
-    void fetch(`/api/patient/assessment/${encodeURIComponent(token)}`, { cache: "no-store" })
+    const controller = new AbortController();
+    const fetchToken = token;
+
+    void fetch(`/api/patient/assessment/${encodeURIComponent(fetchToken)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then(async (response) => {
+        if (controller.signal.aborted) {
+          return;
+        }
         if (!response.ok) {
           const body = (await response.json().catch(() => null)) as { error?: string } | null;
           setLoadError(body?.error ?? REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE);
@@ -54,12 +66,24 @@ export default function PatientRemoteUlmsAssessmentPage() {
         const data = (await response.json()) as RemoteAssessmentContext;
         setContext(data);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) {
+          return;
+        }
         setLoadError("Could not load this assessment link. Check your connection and try again.");
+        if (process.env.NODE_ENV === "development" && error instanceof Error) {
+          console.debug("[remote-ulms-assessment] load failed", error.message);
+        }
       })
       .finally(() => {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       });
+
+    return () => {
+      controller.abort();
+    };
   }, [token]);
 
   const submitBattery = useCallback(
