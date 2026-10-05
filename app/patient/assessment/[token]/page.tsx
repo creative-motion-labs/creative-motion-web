@@ -25,10 +25,13 @@ export default function PatientRemoteUlmsAssessmentPage() {
   const params = useParams();
   const router = useRouter();
   const token = normalizeRemoteUlmsAssessmentToken(String(params.token || ""));
+  const invalidToken = !token;
 
   const [context, setContext] = useState<RemoteAssessmentContext | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(!invalidToken);
+  const [loadError, setLoadError] = useState<string | null>(
+    invalidToken ? REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE : null,
+  );
 
   const [sessionKey, setSessionKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -38,13 +41,9 @@ export default function PatientRemoteUlmsAssessmentPage() {
 
   useEffect(() => {
     if (!token) {
-      setLoadError(REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE);
-      setLoading(false);
       return;
     }
 
-    setLoading(true);
-    setLoadError(null);
     void fetch(`/api/patient/assessment/${encodeURIComponent(token)}`, { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) {

@@ -117,12 +117,15 @@ export function PatientExerciseSessionCard({
     (isCvEnabledExercise(view.exerciseId) || isInteractiveShoulder) && step === "preview";
   const showCvReadinessBanner =
     (isPatientCvCaptureWired(view.exerciseId) || isInteractiveShoulder) && step === "active";
+  const cvReadinessScopeKey = `${view.exerciseId}:${step}`;
+  const [cvReadinessScopeKeyState, setCvReadinessScopeKeyState] = useState(cvReadinessScopeKey);
   const [cvReadinessState, setCvReadinessState] =
     useState<PatientCvReadinessDisplayState | null>(null);
 
-  useEffect(() => {
+  if (cvReadinessScopeKeyState !== cvReadinessScopeKey) {
+    setCvReadinessScopeKeyState(cvReadinessScopeKey);
     setCvReadinessState(null);
-  }, [view.exerciseId, step]);
+  }
 
   const handleCaptureReadinessChange = useCallback(
     (payload: {

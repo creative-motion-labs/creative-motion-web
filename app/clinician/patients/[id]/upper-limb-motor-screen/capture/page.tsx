@@ -23,9 +23,10 @@ export default function UpperLimbLateralReachCapturePage() {
   const params = useParams();
   const patientId = String(params.id || "");
 
+  const invalidPatientId = !patientId;
   const [patient, setPatient] = useState<PatientRow | null>(null);
-  const [loadingPatient, setLoadingPatient] = useState(true);
-  const [patientError, setPatientError] = useState(false);
+  const [loadingPatient, setLoadingPatient] = useState(!invalidPatientId);
+  const [patientError, setPatientError] = useState(invalidPatientId);
 
   const [testedSide, setTestedSide] = useState<UpperLimbSide>("right");
   const [assignmentId, setAssignmentId] = useState<string | null>(null);
@@ -48,13 +49,9 @@ export default function UpperLimbLateralReachCapturePage() {
 
   useEffect(() => {
     if (!patientId) {
-      setPatientError(true);
-      setLoadingPatient(false);
       return;
     }
 
-    setLoadingPatient(true);
-    setPatientError(false);
     void fetch(`/api/patients/${encodeURIComponent(patientId)}`, { cache: "no-store" })
       .then(async (response) => {
         if (response.status === 404) {

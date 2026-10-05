@@ -21,7 +21,7 @@ import {
 describe("booth voice inactivity scheduling", () => {
   it("fires first cue after 8s idle with good tracking", () => {
     const t0 = 1_000_000;
-    let state = createBoothInactivityState("reach", t0);
+    const state = createBoothInactivityState("reach", t0);
     const before = evaluateBoothInactivityCue(state, {
       nowMs: t0 + BOOTH_INACTIVITY_FIRST_DELAY_MS - 1,
       trackingGood: true,

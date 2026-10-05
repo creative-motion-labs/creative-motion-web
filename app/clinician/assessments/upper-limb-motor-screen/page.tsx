@@ -26,8 +26,6 @@ export default function UpperLimbMotorScreenEntryPage() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
-    setLoadError(false);
     void fetch("/api/patients", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) {

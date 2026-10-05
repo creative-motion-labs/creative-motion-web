@@ -195,7 +195,7 @@ function simulateReachTheLight(side: ShoulderAbductionReachSide, seeds: readonly
   const collisionRadius = DEFAULT_TARGET_HIT_CONFIG.collisionRadius;
   const resting = restingWristPreview(side);
 
-  let spawned = tickTargetLifecycle(state, {
+  const spawned = tickTargetLifecycle(state, {
     wrist: resting,
     nowMs,
     side,

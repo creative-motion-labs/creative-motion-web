@@ -250,25 +250,29 @@ export function GuidedSessionRestScreen({
 }) {
   const ui = guidedSessionUi(lang);
   const hasCountdown = restSeconds != null && restSeconds > 0;
-  const [secondsLeft, setSecondsLeft] = useState(() =>
-    hasCountdown ? Math.max(0, Math.floor(restSeconds!)) : 0,
-  );
+  const countdownStart = hasCountdown ? Math.max(0, Math.floor(restSeconds!)) : 0;
+  const countdownScopeKey = `${restPhaseKey}:${countdownStart}`;
+  const [countdownScopeKeyState, setCountdownScopeKeyState] = useState(countdownScopeKey);
+  const [secondsLeft, setSecondsLeft] = useState(countdownStart);
+
+  if (countdownScopeKeyState !== countdownScopeKey) {
+    setCountdownScopeKeyState(countdownScopeKey);
+    setSecondsLeft(countdownStart);
+  }
 
   useEffect(() => {
     if (!hasCountdown) {
-      setSecondsLeft(0);
       return;
     }
-
-    const start = Math.max(0, Math.floor(restSeconds!));
-    setSecondsLeft(start);
 
     const timer = window.setInterval(() => {
       setSecondsLeft((current) => (current <= 0 ? 0 : current - 1));
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [hasCountdown, restSeconds, restPhaseKey]);
+  }, [hasCountdown, countdownScopeKey]);
+
+  const displaySecondsLeft = hasCountdown ? secondsLeft : 0;
 
   return (
     <div className={`space-y-6 ${arClass}`} dir={textDir}>
@@ -290,11 +294,11 @@ export function GuidedSessionRestScreen({
 
         {hasCountdown ? (
           <div className="mt-5" aria-live="polite" aria-atomic="true">
-            {secondsLeft > 0 ? (
+            {displaySecondsLeft > 0 ? (
               <p
                 className="text-[40px] font-bold leading-tight text-[#1D9E75]"
               >
-                {ui.restCountdownSeconds(secondsLeft)}
+                {ui.restCountdownSeconds(displaySecondsLeft)}
               </p>
             ) : (
               <p className="text-[18px] font-semibold text-[#1D9E75]">{ui.restReadyForNext}</p>

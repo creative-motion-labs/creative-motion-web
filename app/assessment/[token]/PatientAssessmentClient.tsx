@@ -409,7 +409,9 @@ export function PatientAssessmentClient() {
   const token = String(params.token ?? "");
 
   const [req, setReq] = useState<RemoteAssessmentRequest | null>(null);
-  const [tokenState, setTokenState] = useState<"loading" | "valid" | "invalid">("loading");
+  const [tokenState, setTokenState] = useState<"loading" | "valid" | "invalid">(() =>
+    token ? "loading" : "invalid",
+  );
   const [stage, setStage] = useState<Stage>("section");
   const [sectionIdx, setSectionIdx] = useState(0);
   const [consentGiven, setConsentGiven] = useState(false);
@@ -417,7 +419,9 @@ export function PatientAssessmentClient() {
   const [lang, setLang] = useState<PatientLang>("en");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [voiceConsentGiven, setVoiceConsentGiven] = useState(false);
+  const [voiceConsentGiven, setVoiceConsentGiven] = useState(
+    () => typeof window !== "undefined" && sessionStorage.getItem("rasq_voice_consent") === "1",
+  );
   const [showConsentBanner, setShowConsentBanner] = useState(false);
   const [voiceMethods, setVoiceMethods] = useState<Record<string, "voice">>({});
   const [voiceReviewDismissed, setVoiceReviewDismissed] = useState<Record<string, boolean>>({});
@@ -425,14 +429,7 @@ export function PatientAssessmentClient() {
   const [submitVoiceError, setSubmitVoiceError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (sessionStorage.getItem("rasq_voice_consent") === "1") {
-      setVoiceConsentGiven(true);
-    }
-  }, []);
-
-  useEffect(() => {
     if (!token) {
-      setTokenState("invalid");
       return;
     }
 
