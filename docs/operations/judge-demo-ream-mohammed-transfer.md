@@ -1,7 +1,7 @@
 # Judge demo — Ream Mohammed patient transfer (tooling)
 
-**Status:** Preparation only. **Do not run against Production** until explicitly approved.  
-**No patient rows, exports, secrets, or tokens belong in Git.**
+**Status:** Staging rehearsal completed (2026-10-05). **No Production writes** until explicitly approved.  
+**No patient rows, export JSON, secrets, or tokens belong in Git.**
 
 ## Source patient (staging — creative-motion-staging)
 
@@ -13,7 +13,7 @@
 | Provider UUID | `057ed99a-9c0e-4b18-807d-7f36488c0d32` |
 | Created | 2026-10-02 |
 
-### Related record counts (staging, read-only inventory)
+### Related record counts (staging inventory)
 
 | Table | Count |
 |--------|------:|
@@ -26,60 +26,131 @@
 | `upper_limb_motor_screen_assignments` | 32 |
 | `upper_limb_motor_screen_session_results` | 0 |
 | `remote_assessment_requests` | 1 |
-| `patient_access_tokens` | 10 |
+| `patient_access_tokens` | 10 (**not copied**) |
 | `ai_clinician_summaries` | 0 |
-| `cv_session_metrics` | 0 |
-| `speech_transcription_sessions` | 0 |
-| `clinical_review_acknowledgments` | 0 |
 
 ## Destination label
 
-Imported patient display name: **`Demo — Ream Mohammed`**  
-Preserve assessment/plan/session **timestamps and measured values**; remap primary keys and foreign keys only.
+Clone display name: **`Demo — Ream Mohammed`**  
+File number pattern: `{source-file}-demo-{runId8}` (unique per provider).  
+**Measured fields, JSON payloads, and timestamps are preserved**; primary keys, idempotency keys, portal tokens, and remote link secrets are remapped or cleared.
 
-## Production dependencies (read-only checks before any import)
+## Schema scope (FK-aware)
 
-Run on **Production** Supabase with **SELECT only** (no writes):
+The script walks tables in dependency order and handles FKs explicitly:
 
-1. **Target provider** exists for the clinician account that will own the demo patient.
-2. **Schema parity** — migrations through clinical/plan tables applied (compare `supabase_migrations.schema_migrations` or known migration list with staging).
-3. **Catalog references** — if any `treatment_plans.structured_data` or plan sessions reference `rehabilitation_program_catalog` IDs, confirm those catalog rows exist in Production (read-only `select id from rehabilitation_program_catalog where id in (...)` from export manifest).
-4. **Source patient on Production** — verify whether UUID `3724b668-2975-429b-a558-fe8698df73d2` already exists; if absent, import is insert-only for that UUID tree.
+| Table | Scoped by | Notes |
+|--------|-----------|--------|
+| `patients` | source id | New UUID on import |
+| `assessments` | `patient_id` | Remaps `provider_id` |
+| `treatment_plans` | `patient_id` | Remaps `assessment_id`; new `catalog_assignment_request_id` when set |
+| `plan_sessions` | `patient_id` | Remaps `plan_id` |
+| `session_logs` | `patient_id` | Remaps `plan_id`, `plan_session_id`; **new** synthetic `patient_token` |
+| `interactive_shoulder_movement_outcomes` | `patient_id` | Remaps `plan_id`, `plan_session_id` |
+| `upper_limb_motor_screen_assignments` | `patient_id` | New row `id`; patches `assignment_payload.id`; clears `token_hash`; new `assignment_request_id` when set |
+| `upper_limb_motor_screen_session_results` | **`assignment_id`** (not patient_id alone) | Loaded for exported assignment ids only |
+| `remote_assessment_requests` | `patient_id` | **`token` omitted on export**; new token on import |
+| `ai_clinician_summaries` | `patient_id` | Included when present |
 
-## Transfer scope (in dependency order)
+**Excluded:** `patient_access_tokens` and all portal/remote secrets.
 
-1. `patients` (new row or clone with new id — manifest records mapping)
-2. `assessments`
-3. `treatment_plans`
-4. `plan_sessions`
-5. `session_logs`
-6. `interactive_shoulder_movement_outcomes`
-7. `upper_limb_motor_screen_assignments` → `upper_limb_motor_screen_session_results` (if any on export)
-8. `remote_assessment_requests` (optional; exclude tokens from export files)
-9. **Exclude from automated export by default:** `patient_access_tokens` (rotate/regenerate in destination environment instead of copying secrets)
+## Destination dependency checks (before insert)
 
-## Repeat-safe tooling
+On `--import`, the script validates (SELECT only):
 
-Use `scripts/ops/judge-demo-patient-transfer.mjs`:
+1. Destination **provider** exists (`DEST_PROVIDER_ID` or source provider id).
+2. Each `treatment_plans.source_treatment_program_id` → row in `treatment_programs`.
+3. Each `plan_sessions.source_program_session_id` → row in `program_sessions`.
 
-- Requires env: `SOURCE_SUPABASE_URL`, `SOURCE_SERVICE_ROLE_KEY`, `DEST_SUPABASE_URL`, `DEST_SERVICE_ROLE_KEY`, `TRANSFER_EXPORT_DIR` (local path **outside** repo).
-- Writes `manifest.json` under `TRANSFER_EXPORT_DIR` with old→new id map and `transfer_run_id` (UUID).
-- **`--dry-run`** — counts and manifest only, no destination writes.
-- **`--import`** — destination writes (staging rehearsal only until Production approved).
-- **`--rollback --run-id <transfer_run_id>`** — deletes rows created in that run using manifest (destination only).
+Import **refuses** if any destination row id already exists (no overwrites).
 
-## Verification (after import)
+## Tooling: `scripts/ops/judge-demo-patient-transfer.mjs`
 
-Run `supabase/queries/judge_demo_ream_mohammed_verify.sql` with `:dest_patient_id` set to the new patient UUID from manifest.
+### Environment
 
-Expected: counts match source inventory; `full_name = 'Demo — Ream Mohammed'`; assessment dates unchanged vs export snapshot.
+| Variable | Purpose |
+|----------|---------|
+| `SOURCE_SUPABASE_URL` / `SOURCE_SERVICE_ROLE_KEY` | Source (defaults to `.env.local` `NEXT_PUBLIC_*` + service role) |
+| `DEST_SUPABASE_URL` / `DEST_SERVICE_ROLE_KEY` | Destination (defaults to same as source for staging clone rehearsal) |
+| `DEST_PROVIDER_ID` | Optional; defaults to source provider |
+| `TRANSFER_EXPORT_DIR` | **Required** for export/import/verify/rollback — path **outside** repo |
+| `TRANSFER_CONFIRM_STAGING=true` | Required for any write (`--import`, `--rollback`, `--purge-demo-clone`) |
+| `SOURCE_PATIENT_ID` | Optional; defaults to Ream staging UUID above |
 
-## Rollback
+### Commands
 
-Run `supabase/queries/judge_demo_ream_mohammed_rollback.sql` with `:transfer_run_id` / patient id from manifest (child tables first). Keep manifest file for audit; do not commit manifest to Git.
+```bash
+# Inventory only (source)
+node scripts/ops/judge-demo-patient-transfer.mjs --dry-run
+
+# Export bundle + manifest (no DB writes on destination)
+node scripts/ops/judge-demo-patient-transfer.mjs --export [--run-id UUID]
+
+# Import clone on destination (staging rehearsal only until Production approved)
+node scripts/ops/judge-demo-patient-transfer.mjs --import --run-id UUID
+
+# Verify clone counts vs manifest; confirm source patient unchanged
+node scripts/ops/judge-demo-patient-transfer.mjs --verify --run-id UUID
+
+# Ledger-only rollback (refuses if extra rows exist on clone patient)
+node scripts/ops/judge-demo-patient-transfer.mjs --rollback --run-id UUID
+
+# List / purge failed partial clones (Demo name + `-demo-` file number only)
+node scripts/ops/judge-demo-patient-transfer.mjs --list-demo-clones
+node scripts/ops/judge-demo-patient-transfer.mjs --purge-demo-clone --dest-patient-id UUID
+```
+
+### Manifest (`manifest-{runId}.json` under `TRANSFER_EXPORT_DIR`)
+
+- `status`: `exported` → `imported` → `rolled_back`
+- `idMappings`: per-table `{ sourceUuid: destUuid }`
+- `insertedLedger`: per-table list of **exact** destination ids created
+- `expectedCounts`, `dependencyChecks`, `destPatientId`, `destProviderId`
+
+Repeat safety:
+
+- Re-running `--import` for the same run after success **errors** (export a new run for another clone).
+- Failed imports **compensate** (delete partial ledger) before throwing.
+- `--rollback` deletes **only** ledger ids and **refuses** if the clone patient has any other rows.
+
+## Verification SQL
+
+`supabase/queries/judge_demo_ream_mohammed_verify.sql` — set UUID with psql:
+
+```text
+\set dest_patient_id '00000000-0000-0000-0000-000000000000'
+```
+
+Uses `:'dest_patient_id'::uuid` on all predicates.
+
+## Rollback SQL (fallback)
+
+`supabase/queries/judge_demo_ream_mohammed_rollback.sql` — manual **ledger id arrays** only; prefer `node … --rollback`. Default file ends in `ROLLBACK;`.
+
+## Staging rehearsal (2026-10-05)
+
+On **creative-motion-staging** (same DB for source and destination):
+
+| Step | Result |
+|------|--------|
+| `--dry-run` on source `3724b668…` | Counts match inventory table above |
+| `--export` + `--import` + `--verify` | Clone counts matched; `full_name` = `Demo — Ream Mohammed`; source `reem mohammed` unchanged |
+| Second `--import` same run | Refused (already imported) |
+| `--rollback` | Ledger rows removed; manifest `rolled_back` |
+| Second export/import/rollback cycle | Success |
+| `--list-demo-clones` after cleanup | **0** clones (one partial orphan from an earlier failed attempt was removed with `--purge-demo-clone`) |
+
+**Production:** not exercised. Use read-only dependency checks from this doc before any Production import approval.
+
+## Production dependencies (read-only, before Production import)
+
+1. Target provider exists.
+2. Schema parity through tables in scope.
+3. Catalog ids from export manifest exist in Production (`treatment_programs`, `program_sessions`).
+4. Confirm source UUID is absent on Production (insert-only clone).
 
 ## Safety
 
-- Never commit export JSON, backups, `.env`, service role keys, or portal tokens.
-- Do not execute Production writes from CI.
-- Clinical tables only — no changes to `rasq_demo_*` analytics/leads.
+- Never commit export JSON, manifests, backups, `.env`, or service role keys.
+- Do not run writes with Production URLs.
+- Clinical tables only — no `rasq_demo_*` analytics/leads.
