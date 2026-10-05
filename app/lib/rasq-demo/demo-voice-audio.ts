@@ -73,6 +73,7 @@ export function stopRasqDemoVoicePlayback(): void {
 /** Unlocks narration HTMLAudio after a user gesture (separate from target SFX element). */
 export function unlockRasqDemoVoiceAudio(): void {
   if (!canUseHtmlAudio()) return;
+  voiceAudioUnlocked = true;
   const src = rasqDemoVoicePublicSrc("welcome");
   const AudioCtor = (globalThis as { Audio: typeof Audio }).Audio;
   const audio = new AudioCtor(src);
@@ -115,6 +116,7 @@ export function playRasqDemoVoiceCue(cue: RasqDemoVoiceCue, onPlaybackFailed?: (
   const AudioCtor = (globalThis as { Audio: typeof Audio }).Audio;
   const audio = new AudioCtor(src);
   audio.preload = "auto";
+  audio.volume = 1;
   currentPlayback = audio;
   const playPromise = audio.play();
   if (playPromise && typeof playPromise.then === "function") {

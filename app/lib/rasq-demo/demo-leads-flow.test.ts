@@ -269,6 +269,26 @@ describe("RASQ demo lead capture and confirmation email", () => {
     assert.doesNotMatch(html, /hello@rasqhealth\.com/);
   });
 
+  it("returns not-configured without persisting send-failed when Resend is missing", async () => {
+    const rows: RowStore = new Map();
+    __setRasqDemoResendClientForTests(null);
+
+    const result = await processRasqDemoLeadSubmit({
+      payload: { ...basePayload },
+      submitIntent: "share",
+      hasContactOrConsent: true,
+      adminClient: createMockSupabase(rows),
+    });
+
+    assert.equal(result.ok, true);
+    if (result.ok && result.stored) {
+      assert.equal(result.confirmationEmail.sent, false);
+      assert.equal(result.confirmationEmail.reason, "not-configured");
+    }
+    const row = rows.get("session-abc");
+    assert.equal(row?.confirmation_email_last_error, null);
+  });
+
   it("uses branded RASQ confirmation email headers", () => {
     assert.equal(RASQ_DEMO_CONFIRMATION_EMAIL_SUBJECT, "We received your RASQ demo interest");
     assert.equal(RASQ_DEMO_CONFIRMATION_FROM, "RASQ Team <aisha@rasqhealth.com>");

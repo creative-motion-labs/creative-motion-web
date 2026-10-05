@@ -151,6 +151,10 @@ export function RasqDemoOptionalLeadForm({
         setStatus("idle");
         return;
       }
+      if (data.confirmationEmail?.sent === false && data.confirmationEmail.reason === "not-configured") {
+        showThankYou();
+        return;
+      }
       showThankYou();
     } catch {
       setStatus("error");

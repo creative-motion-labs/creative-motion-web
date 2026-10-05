@@ -29,6 +29,10 @@ function getResendClient(): Resend | null {
   return new Resend(apiKey);
 }
 
+export function isRasqDemoConfirmationEmailServiceConfigured(): boolean {
+  return getResendClient() !== null;
+}
+
 export function buildRasqDemoConfirmationEmailHtml(recipientName: string | null): string {
   const greeting = recipientName ? `Hi ${escapeHtml(recipientName)},` : "Hello,";
   const disclaimer = escapeHtml(RASQ_DEMO_MOVEMENT_DISCLAIMER);
