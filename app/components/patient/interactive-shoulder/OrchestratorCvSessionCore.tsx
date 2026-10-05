@@ -1128,6 +1128,7 @@ export function OrchestratorCvSessionCore({
     if (publicDemoConsent) {
       skipCameraWithoutConsentRef.current = true;
       setConsentAccepted(true);
+      onDemoTargetPopAudioUnlock?.();
       onPublicDemoCameraPathSelected?.("no_camera");
       return;
     }

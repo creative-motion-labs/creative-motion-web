@@ -36,6 +36,7 @@ describe("demo target pop unlock and shared audio", () => {
     assert.match(controls, /handleMuteToggle[\s\S]*unlockRasqDemoAudioFromUserGesture\(\)/);
     assert.match(controls, /handleReplay[\s\S]*unlockRasqDemoAudioFromUserGesture\(\)/);
     assert.match(orchestratorSession, /onDemoTargetPopAudioUnlock=\{unlockRasqDemoAudioFromUserGesture\}/);
+    assert.match(core, /handleSkipCameraClick[\s\S]*onDemoTargetPopAudioUnlock\?\.\(\)/);
     assert.match(core, /onDemoTargetPopAudioUnlock\?\.\(\)/);
   });
 

@@ -79,13 +79,6 @@ export function RasqDemoExperience() {
     });
   }, [visitorSessionId, internalTest]);
 
-  useEffect(() => {
-    if (phase !== "welcome") return;
-    if (welcomeCuePlayedRef.current) return;
-    welcomeCuePlayedRef.current = true;
-    playRasqDemoGuidanceCue("welcome");
-  }, [phase]);
-
   const handleCameraPathSelected = useCallback(
     (path: RasqDemoAnalyticsCameraPath) => {
       cameraPathRef.current = path;
@@ -101,8 +94,12 @@ export function RasqDemoExperience() {
   );
 
   const handleStart = useCallback(() => {
-    unlockRasqDemoAudioFromUserGesture();
     stopRasqDemoVoicePlayback();
+    unlockRasqDemoAudioFromUserGesture();
+    if (!welcomeCuePlayedRef.current) {
+      welcomeCuePlayedRef.current = true;
+      playRasqDemoGuidanceCue("welcome");
+    }
     resetRasqDemoSessionCompletionVoice();
     resetRasqDemoPnfEndpointPlayedRepetitions();
     resetRasqDemoPnfRepetitionTickPlayed();
