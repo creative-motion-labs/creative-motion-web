@@ -8,6 +8,7 @@ export const API_ERRORS = {
   GENERIC: "Something went wrong.",
   UNABLE: "Unable to complete request.",
   UNAUTHORIZED: "Unauthorized.",
+  FORBIDDEN: "Forbidden.",
   SERVICE_UNAVAILABLE: "Service temporarily unavailable.",
   PATIENT_NOT_FOUND: "Patient not found.",
   INVALID_PATIENT_LINK: "Invalid or expired link.",

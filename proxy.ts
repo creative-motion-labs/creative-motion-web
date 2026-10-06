@@ -1,10 +1,16 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
   getProtectedRouteDecision,
   resolveProxyAuthed,
 } from "./app/lib/proxy-auth";
+import {
+  isAccessStatusPublicPath,
+  resolveClinicianGateRedirect,
+} from "./app/lib/proxy-clinician-access";
+import { resolveSafeReturnTo } from "./app/lib/auth/safe-return-to";
 import {
   isPr313QaPath,
   isPr313QaPublicInCurrentRuntime,
@@ -18,6 +24,8 @@ import {
 const PUBLIC_PREFIXES = [
   "/login",
   "/signup",
+  "/pending-approval",
+  "/access-unavailable",
   "/reset-password",
   "/update-password",
   // All FastAPI routes — FastAPI handles its own JWT auth (Bearer token).
@@ -99,6 +107,7 @@ export async function proxy(request: NextRequest) {
   // capture whether the caller has a valid Supabase session.
   // This is a no-op when env vars are not yet populated.
   let supabaseAuthed = false;
+  let authUserId: string | null = null;
 
   if (supabaseUrl && supabaseKey) {
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
@@ -121,6 +130,7 @@ export async function proxy(request: NextRequest) {
     // IMPORTANT: no code between createServerClient and getUser().
     const { data: { user } } = await supabase.auth.getUser();
     supabaseAuthed = Boolean(user);
+    authUserId = user?.id ?? null;
   }
 
   // cm_token may still be set for legacy FastAPI client calls, but proxy auth
@@ -132,8 +142,53 @@ export async function proxy(request: NextRequest) {
     nodeEnv: process.env.NODE_ENV,
   });
 
-  // Already authenticated — bounce away from auth pages
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const adminClient =
+    supabaseUrl && serviceRoleKey
+      ? createAdminClient(supabaseUrl, serviceRoleKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        })
+      : null;
+
+  if (authed && authUserId && adminClient && isAccessStatusPublicPath(pathname)) {
+    const gate = await resolveClinicianGateRedirect({
+      pathname: "/clinician",
+      authUserId,
+      adminClient,
+      cmToken,
+      nodeEnv: process.env.NODE_ENV,
+    });
+    if (gate && gate !== pathname) {
+      return NextResponse.redirect(new URL(gate, request.url));
+    }
+  }
+
+  if (authed && authUserId && adminClient) {
+    const gateRedirect = await resolveClinicianGateRedirect({
+      pathname,
+      authUserId,
+      adminClient,
+      cmToken,
+      nodeEnv: process.env.NODE_ENV,
+    });
+    if (gateRedirect) {
+      return NextResponse.redirect(new URL(gateRedirect, request.url));
+    }
+  }
+
+  // Already authenticated — bounce away from auth pages to a safe destination
   if (authed && (pathname === "/login" || pathname === "/signup")) {
+    if (authUserId && adminClient) {
+      const gate = await resolveClinicianGateRedirect({
+        pathname: "/clinician",
+        authUserId,
+        adminClient,
+        cmToken,
+        nodeEnv: process.env.NODE_ENV,
+      });
+      const dest = gate ?? "/clinician";
+      return NextResponse.redirect(new URL(dest, request.url));
+    }
     return NextResponse.redirect(new URL("/clinician", request.url));
   }
 
@@ -143,7 +198,10 @@ export async function proxy(request: NextRequest) {
   }
   if (protectedDecision === "redirect-login") {
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("returnTo", pathname);
+    loginUrl.searchParams.set(
+      "returnTo",
+      resolveSafeReturnTo(pathname, "/clinician"),
+    );
     return NextResponse.redirect(loginUrl);
   }
 

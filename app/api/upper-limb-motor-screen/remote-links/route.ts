@@ -1,3 +1,4 @@
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 /**
  * POST /api/upper-limb-motor-screen/remote-links
  *
@@ -60,13 +61,9 @@ export async function POST(req: NextRequest) {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const {
-    data: { user },
-    error: authError,
-  } = await sessionClient.auth.getUser();
-  if (authError ?? !user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   const limited = checkClinicianWriteLimit(user.id, "upper-limb-motor-screen:remote-links:create");
   if (!limited.allowed) return rateLimitExceededResponse(limited.retryAfterSec);

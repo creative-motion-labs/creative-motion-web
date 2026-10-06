@@ -32,6 +32,7 @@ import {
   type RateLimitResult,
 } from "@/app/lib/rate-limit";
 import { ownershipErrorResponse, serviceUnavailableResponse } from "@/app/lib/api/safe-errors";
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 
 const CREATE_ERROR = "Failed to create assignment.";
 
@@ -71,6 +72,7 @@ function isUuidString(value: unknown): value is string {
 export type UpperLimbAssignmentPostDependencies = {
   /** Resolves the authenticated caller, or null if unauthenticated. */
   getAuthenticatedUser: () => Promise<{ id: string } | null>;
+  resolveAuthFailure?: () => Promise<NextResponse | null>;
   /** Service-role client used for ownership lookup and the insert. */
   adminClient: SupabaseClient;
   checkWriteLimit: (providerId: string, route: string) => RateLimitResult;
@@ -81,7 +83,13 @@ export type UpperLimbAssignmentPostDependencies = {
 export function createUpperLimbAssignmentPostHandler(deps: UpperLimbAssignmentPostDependencies) {
   return async function handlePost(req: NextRequest): Promise<NextResponse> {
     const user = await deps.getAuthenticatedUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    if (!user) {
+      const failure = deps.resolveAuthFailure
+        ? await deps.resolveAuthFailure()
+        : null;
+      if (failure) return failure;
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
 
     const limited = deps.checkWriteLimit(user.id, "upper-limb-motor-screen:assignments:create");
     if (!limited.allowed) return rateLimitExceededResponse(limited.retryAfterSec);
@@ -198,12 +206,14 @@ async function buildRealDependencies(): Promise<UpperLimbAssignmentPostDependenc
 
   return {
     getAuthenticatedUser: async () => {
-      const {
-        data: { user },
-        error,
-      } = await sessionClient.auth.getUser();
-      if (error || !user) return null;
-      return { id: user.id };
+      const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+      if (!auth.ok) return null;
+      return { id: auth.user.id };
+    },
+    resolveAuthFailure: async () => {
+      const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+      if (!auth.ok) return auth.response;
+      return null;
     },
     adminClient,
     checkWriteLimit: checkClinicianWriteLimit,

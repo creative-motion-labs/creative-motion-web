@@ -7,6 +7,7 @@ export type ProviderRow = {
   clinic_name: string | null;
   email: string | null;
   role: string;
+  approval_status?: string;
   created_at: string;
   updated_at: string;
 };
@@ -20,7 +21,7 @@ export type EnsureProviderInput = {
 export type EnsureProviderResult =
   | { ok: true; provider: ProviderRow; created: boolean }
   | { ok: false; pending: true; reason: string }
-  | { ok: false; pending: false; error: string };
+  | { ok: false; pending: false; error: string; code?: "not_found" | "forbidden" };
 
 const MAX_FIELD_LEN = 200;
 
@@ -37,7 +38,7 @@ function sanitizeEmail(value: unknown): string | undefined {
   return email.toLowerCase();
 }
 
-/** Strip untrusted keys; never accept provider id from the client. */
+/** Strip untrusted keys; never accept provider id, role, or approval from the client. */
 export function parseSafeProviderBody(raw: Record<string, unknown>): EnsureProviderInput {
   const clinic = raw.clinic_name;
   return {
@@ -79,18 +80,20 @@ function resolveInsertFields(
   return { name, clinic_name, email };
 }
 
+const PROVIDER_SELECT =
+  "id, name, clinic_name, email, role, approval_status, created_at, updated_at";
+
 /**
- * Idempotent: returns existing provider row or creates one for auth.uid().
- * Never creates duplicates (select-then-insert).
+ * Returns an existing provider row only — never creates a row (pilot access control).
  */
 export async function ensureProviderForUser(
   writeClient: SupabaseClient,
   user: User,
-  body: EnsureProviderInput = {},
+  _body: EnsureProviderInput = {},
 ): Promise<EnsureProviderResult> {
   const { data: existing, error: selectErr } = await writeClient
     .from("providers")
-    .select("id, name, clinic_name, email, role, created_at, updated_at")
+    .select(PROVIDER_SELECT)
     .eq("id", user.id)
     .maybeSingle<ProviderRow>();
 
@@ -110,48 +113,78 @@ export async function ensureProviderForUser(
     return { ok: true, provider: existing, created: false };
   }
 
-  const fields = resolveInsertFields(user, body);
+  return {
+    ok: false,
+    pending: false,
+    error: "provider_not_provisioned",
+    code: "not_found",
+  };
+}
 
-  const { data: inserted, error: insertErr } = await writeClient
+/**
+ * Updates non-privileged profile fields for an existing approved provider.
+ */
+export async function updateProviderProfileForUser(
+  writeClient: SupabaseClient,
+  user: User,
+  body: EnsureProviderInput,
+): Promise<EnsureProviderResult> {
+  const existingResult = await ensureProviderForUser(writeClient, user);
+  if (!existingResult.ok) return existingResult;
+
+  const fields = resolveInsertFields(user, body);
+  const { data: updated, error } = await writeClient
     .from("providers")
-    .insert({
-      id: user.id,
+    .update({
       name: fields.name,
       clinic_name: fields.clinic_name,
       email: fields.email,
-      role: "provider",
     })
-    .select("id, name, clinic_name, email, role, created_at, updated_at")
+    .eq("id", user.id)
+    .select(PROVIDER_SELECT)
     .single<ProviderRow>();
 
-  if (insertErr) {
-    if (insertErr.code === "42P01") {
-      return {
-        ok: false,
-        pending: true,
-        reason: "providers_table_not_yet_migrated",
-      };
-    }
-    // Race: another request inserted first
-    if (insertErr.code === "23505") {
-      const { data: raced } = await writeClient
-        .from("providers")
-        .select("id, name, clinic_name, email, role, created_at, updated_at")
-        .eq("id", user.id)
-        .maybeSingle<ProviderRow>();
-      if (raced) {
-        return { ok: true, provider: raced, created: false };
-      }
-    }
-    console.error("[ensure-provider] insert error");
-    return { ok: false, pending: false, error: "provider_insert_failed" };
+  if (error) {
+    console.error("[ensure-provider] profile update error");
+    return { ok: false, pending: false, error: "provider_update_failed" };
   }
 
-  if (!inserted) {
-    return { ok: false, pending: false, error: "provider_insert_failed" };
+  return { ok: true, provider: updated, created: false };
+}
+
+export async function upsertApprovedProviderForUser(
+  writeClient: SupabaseClient,
+  user: User,
+  body: EnsureProviderInput,
+  reviewedBy: string,
+): Promise<EnsureProviderResult> {
+  const fields = resolveInsertFields(user, body);
+  const now = new Date().toISOString();
+
+  const { data, error } = await writeClient
+    .from("providers")
+    .upsert(
+      {
+        id: user.id,
+        name: fields.name,
+        clinic_name: fields.clinic_name,
+        email: fields.email,
+        role: "provider",
+        approval_status: "approved",
+        approved_at: now,
+        approved_by: reviewedBy,
+      },
+      { onConflict: "id" },
+    )
+    .select(PROVIDER_SELECT)
+    .single<ProviderRow>();
+
+  if (error) {
+    console.error("[ensure-provider] approved upsert error");
+    return { ok: false, pending: false, error: "provider_approval_provision_failed" };
   }
 
-  return { ok: true, provider: inserted, created: true };
+  return { ok: true, provider: data, created: true };
 }
 
 export function buildProviderWriteClient(

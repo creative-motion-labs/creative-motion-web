@@ -1,3 +1,4 @@
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 /**
  * POST /api/cv/session-metrics — persist derived CV metrics (Model C)
  * GET  /api/cv/session-metrics — list recent derived metrics for authenticated provider
@@ -143,13 +144,9 @@ export async function POST(req: NextRequest) {
   }
   const { sessionClient, adminClient } = clients;
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await sessionClient.auth.getUser();
-  if (authErr ?? !user) {
-    return NextResponse.json({ error: API_ERRORS.UNAUTHORIZED }, { status: 401 });
-  }
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   let body: PostBody;
   try {
@@ -283,13 +280,9 @@ export async function GET(req: NextRequest) {
   }
   const { sessionClient, adminClient } = clients;
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await sessionClient.auth.getUser();
-  if (authErr ?? !user) {
-    return NextResponse.json({ error: API_ERRORS.UNAUTHORIZED }, { status: 401 });
-  }
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   const planId = searchParams.get("planId")?.trim() || null;
   const planSessionId = searchParams.get("planSessionId")?.trim() || null;

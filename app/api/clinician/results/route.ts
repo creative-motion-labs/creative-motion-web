@@ -29,6 +29,7 @@ import {
   type AssessmentSnapshot,
 } from "../../../lib/assessment-snapshot";
 import { demoFallbackIfUnavailable } from "../../../lib/api/demo-fallback-server";
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 import { getDemoClinicianResults } from "@/app/lib/demo/local-demo-fallback";
 
 export type ClinicianResultStatus = "pending_review" | "active" | "completed";
@@ -114,13 +115,9 @@ export async function GET(_req: NextRequest) {
   if (demo) return demo;
   const { sessionClient, adminClient } = clients!;
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await sessionClient.auth.getUser();
-  if (authErr ?? !user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   type PatientRow = { id: string; full_name: string };
   const { data: patients, error: patientsErr } = await adminClient

@@ -1,5 +1,7 @@
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { buildOpenAiHealthReport } from "@/app/lib/ai/openai-health";
 import { serviceUnavailableResponse } from "@/app/lib/api/safe-errors";
@@ -28,13 +30,15 @@ export async function GET() {
     },
   });
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await sessionClient.auth.getUser();
-  if (authErr ?? !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const adminClient = serviceKey
+    ? createAdminClient(supabaseUrl, serviceKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      })
+    : sessionClient;
+
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
 
   const report = await buildOpenAiHealthReport();
   return NextResponse.json(report);

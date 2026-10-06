@@ -1,3 +1,4 @@
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -67,13 +68,9 @@ export function createCatalogProgramsGetHandler(
       return jsonNoStore({ error: "Service temporarily unavailable." }, 503);
     }
 
-    const {
-      data: { user },
-      error: authErr,
-    } = await clients.sessionClient.auth.getUser();
-    if (authErr ?? !user) {
-      return jsonNoStore({ error: "Unauthorized." }, 401);
-    }
+    const auth = await requireAuthenticatedApprovedUser(clients.sessionClient, clients.adminClient);
+    if (!auth.ok) return auth.response;
+    const user = auth.user;
 
     const { data: programRows, error: listError } = await clients.adminClient
       .from("treatment_programs")

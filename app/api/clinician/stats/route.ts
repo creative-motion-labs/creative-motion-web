@@ -12,6 +12,7 @@ import type { NextRequest } from "next/server";
 import { fetchClinicianStats } from "@/app/lib/clinician/clinician-stats";
 import { demoFallbackIfUnavailable } from "../../../lib/api/demo-fallback-server";
 import { getDemoDashboardStats } from "@/app/lib/demo/local-demo-fallback";
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 
 async function buildClients() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -44,13 +45,9 @@ export async function GET(_req: NextRequest) {
   if (demo) return demo;
   const { sessionClient, adminClient } = clients!;
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await sessionClient.auth.getUser();
-  if (authErr ?? !user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   const stats = await fetchClinicianStats(adminClient, user.id);
   return NextResponse.json(stats);

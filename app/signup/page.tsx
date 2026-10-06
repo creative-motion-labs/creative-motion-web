@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { registerClinician } from "../lib/api";
-import { ensureProviderProfile } from "../lib/auth/ensure-provider-client";
+import { submitProviderAccessRequest } from "../lib/auth/ensure-provider-client";
 import { createClient as createSupabaseClient } from "../lib/supabase/browser";
 
 const SUPABASE_CONFIGURED = Boolean(
@@ -67,7 +67,8 @@ export default function SignupPage() {
   const [confirm,      setConfirm]      = useState("");
   const [error,        setError]        = useState("");
   const [loading,      setLoading]      = useState(false);
-  const [confirmSent,  setConfirmSent]  = useState(false);
+  const [registrationReceived, setRegistrationReceived] = useState(false);
+  const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
 
   async function handleSignup() {
     setError("");
@@ -100,23 +101,16 @@ export default function SignupPage() {
         }
 
         if (data.session) {
-          // Session active — providers row required before clinician entry
-          await ensureProviderProfile({
+          await submitProviderAccessRequest({
             name: name.trim(),
             clinic_name: practice.trim() || null,
             email: email.trim().toLowerCase(),
           });
-
-          if (practice.trim()) {
-            localStorage.setItem("cm_practice_name", practice.trim());
-          }
-
-          router.push("/clinician/dashboard");
-          router.refresh();
         } else {
-          // Email confirmation required — no session yet; check-email UI only
-          setConfirmSent(true);
+          setNeedsEmailConfirmation(true);
         }
+
+        setRegistrationReceived(true);
       } else {
         // ── FastAPI fallback (pre-Supabase accounts) ─────────────────────
         await registerClinician({
@@ -168,8 +162,8 @@ export default function SignupPage() {
               RASQ
             </span>
           </Link>
-          <span className="rounded-[5px] border border-[#1E2D42] bg-[#0F1825] px-2.5 py-1 text-[11px] font-semibold text-white/35">
-            Provider signup
+            <span className="rounded-[5px] border border-[#1E2D42] bg-[#0F1825] px-2.5 py-1 text-[11px] font-semibold text-white/35">
+            Request access
           </span>
         </div>
 
@@ -182,33 +176,38 @@ export default function SignupPage() {
               className="text-xl font-bold text-white"
               style={{ fontFamily: "var(--rasq-font-display, sans-serif)" }}
             >
-              Create your workspace
+              Request access to RASQ
             </h1>
             <p className="mt-1.5 text-sm leading-6 text-white/40">
-              Start managing patients, assessments, and rehabilitation plans.
+              Submit your details for pilot review. Clinician workspace access is granted
+              after approval.
             </p>
           </div>
 
-          {/* Email confirmation screen */}
-          {confirmSent ? (
+          {registrationReceived ? (
             <div className="space-y-4">
               <div className="rounded-[7px] border border-[#1D9E75]/25 bg-[#1D9E75]/8 px-4 py-4">
-                <p className="text-sm font-semibold text-[#5DCAA5]">Check your email</p>
-                <p className="mt-1 text-sm leading-6 text-white/50">
-                  We sent a confirmation link to{" "}
-                  <span className="font-semibold text-white/70">{email}</span>.
-                  Click it to activate your account, then{" "}
+                <p className="text-sm font-semibold text-[#5DCAA5]">Registration Received</p>
+                <p className="mt-2 text-sm leading-6 text-white/50">
+                  Thank you for your interest in RASQ. Your registration request has been
+                  received and is pending review. Our team will contact you regarding access.
+                </p>
+                {needsEmailConfirmation && (
+                  <p className="mt-3 text-sm leading-6 text-white/45">
+                    If email confirmation is required, please check your inbox for{" "}
+                    <span className="font-semibold text-white/70">{email}</span> before signing in.
+                  </p>
+                )}
+                <p className="mt-4 text-sm">
                   <Link href="/login" className="font-semibold text-[#5DCAA5] underline underline-offset-2">
-                    sign in
+                    Return to sign in
                   </Link>
-                  .
                 </p>
               </div>
             </div>
           ) : null}
 
-          {/* Fields */}
-          {!confirmSent && (
+          {!registrationReceived && (
           <div
             className="space-y-4"
             onKeyDown={(e) => { if (e.key === "Enter") void handleSignup(); }}
@@ -264,7 +263,7 @@ export default function SignupPage() {
               disabled={loading}
               className="w-full rounded-[7px] bg-[#1D9E75] py-3.5 text-sm font-bold text-white transition hover:bg-[#179165] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading ? "Creating workspace…" : "Create workspace"}
+              {loading ? "Submitting request…" : "Request access"}
             </button>
 
             <p className="pt-1 text-center text-sm text-white/30">

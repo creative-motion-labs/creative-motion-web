@@ -25,9 +25,11 @@ import {
   type RateLimitResult,
 } from "@/app/lib/rate-limit";
 import { serviceUnavailableResponse } from "@/app/lib/api/safe-errors";
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 
 export type UpperLimbSessionResultFinalizeDependencies = {
   getAuthenticatedUser: () => Promise<{ id: string } | null>;
+  resolveAuthFailure?: () => Promise<NextResponse | null>;
   adminClient: SupabaseClient;
   checkWriteLimit: (providerId: string, route: string) => RateLimitResult;
 };
@@ -42,7 +44,13 @@ export function createUpperLimbSessionResultFinalizeHandler(
     sessionResultId: string,
   ): Promise<NextResponse> {
     const user = await deps.getAuthenticatedUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    if (!user) {
+      const failure = deps.resolveAuthFailure
+        ? await deps.resolveAuthFailure()
+        : null;
+      if (failure) return failure;
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
 
     const limited = deps.checkWriteLimit(
       user.id,
@@ -94,12 +102,14 @@ async function buildRealDependencies(): Promise<UpperLimbSessionResultFinalizeDe
 
   return {
     getAuthenticatedUser: async () => {
-      const {
-        data: { user },
-        error,
-      } = await sessionClient.auth.getUser();
-      if (error || !user) return null;
-      return { id: user.id };
+      const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+      if (!auth.ok) return null;
+      return { id: auth.user.id };
+    },
+    resolveAuthFailure: async () => {
+      const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+      if (!auth.ok) return auth.response;
+      return null;
     },
     adminClient,
     checkWriteLimit: checkClinicianWriteLimit,

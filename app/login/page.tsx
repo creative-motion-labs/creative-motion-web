@@ -12,7 +12,11 @@ import {
   resolveClinicianLoginBackend,
   resolveClinicianLoginSupabaseError,
 } from "../lib/auth/clinician-login-errors";
-import { ensureProviderProfile } from "../lib/auth/ensure-provider-client";
+import { resolveSafeReturnTo } from "../lib/auth/safe-return-to";
+import {
+  ensureProviderProfile,
+  resolvePostLoginPath,
+} from "../lib/auth/ensure-provider-client";
 import { setupDevAuthSession } from "../lib/dev-auth";
 import { createClient as createSupabaseClient } from "../lib/supabase/browser";
 
@@ -68,7 +72,7 @@ function LoginForm() {
   const [loading, setLoading]   = useState(false);
 
   const cfg = ROLE_CONFIG[role];
-  const redirectDest = returnTo || cfg.defaultRedirect;
+  const redirectDest = resolveSafeReturnTo(returnTo, cfg.defaultRedirect);
 
   async function handleLogin() {
     if (!email.trim() || !password) {
@@ -99,11 +103,16 @@ function LoginForm() {
         });
 
         if (!sbError) {
-          // Repair missing providers row from auth metadata before clinician entry
-          await ensureProviderProfile({
-            email: email.trim().toLowerCase(),
+          const destination = await resolvePostLoginPath({
+            returnTo: redirectDest,
+            defaultRedirect: cfg.defaultRedirect,
           });
-          router.push(redirectDest);
+          if (destination.startsWith("/clinician") || destination.startsWith("/admin")) {
+            await ensureProviderProfile({
+              email: email.trim().toLowerCase(),
+            });
+          }
+          router.push(destination);
           router.refresh();
           return;
         }

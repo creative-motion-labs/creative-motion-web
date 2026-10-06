@@ -1,6 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PatientsRow } from "./supabase/database.types";
 import { API_ERRORS } from "./api/safe-errors";
+import {
+  forbiddenResponseForAccessState,
+  isClinicianWorkspaceAllowed,
+  resolveClinicianAccessState,
+} from "./auth/provider-authorization";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -10,7 +15,7 @@ export type PatientRow = PatientsRow;
 export type OwnershipOk = { ok: true; patient: PatientRow };
 export type OwnershipFail = {
   ok: false;
-  httpStatus: 401 | 404 | 500;
+  httpStatus: 401 | 403 | 404 | 500;
   message: string;
 };
 export type OwnershipResult = OwnershipOk | OwnershipFail;
@@ -38,6 +43,16 @@ export async function validatePatientOwnership(
   patientId: string,
   providerId: string,
 ): Promise<OwnershipResult> {
+  const access = await resolveClinicianAccessState(supabase, providerId);
+  if (!isClinicianWorkspaceAllowed(access)) {
+    const detail = forbiddenResponseForAccessState(access);
+    return {
+      ok: false,
+      httpStatus: detail.status,
+      message: API_ERRORS.FORBIDDEN,
+    };
+  }
+
   const { data: patient, error } = await supabase
     .from("patients")
     .select("*")
