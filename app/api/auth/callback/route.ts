@@ -1,22 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import {
-  buildProviderWriteClient,
-  ensureProviderForUser,
-} from "../../../lib/auth/ensure-provider";
+import { resolvePostLoginDestination } from "@/app/lib/auth/post-login-redirect";
+import { resolveSafeReturnTo } from "@/app/lib/auth/safe-return-to";
 
 /**
  * Supabase OAuth / Magic Link / PKCE callback handler.
  *
- * Exchanges the code for a session, ensures a providers row exists,
- * then redirects to the intended destination.
+ * Exchanges the code for a session, then redirects based on provider approval.
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/clinician/dashboard";
+  const nextRaw = searchParams.get("next") ?? "/clinician/dashboard";
 
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=missing_code`);
@@ -26,7 +24,7 @@ export async function GET(request: NextRequest) {
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseUrl || !supabaseKey) {
+  if (!supabaseUrl || !supabaseKey || !serviceRoleKey) {
     return NextResponse.redirect(`${origin}/login?error=supabase_not_configured`);
   }
 
@@ -65,18 +63,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`);
   }
 
-  const writeClient = buildProviderWriteClient(
-    supabaseUrl,
-    serviceRoleKey,
-    supabase,
-  );
+  const adminClient = createAdminClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
-  const providerResult = await ensureProviderForUser(writeClient, user);
+  const resolved = await resolvePostLoginDestination({
+    adminClient,
+    authUserId: user.id,
+    returnToRaw: nextRaw,
+    roleDefaultRedirect: "/clinician/dashboard",
+  });
 
-  if (!providerResult.ok) {
-    console.error("[auth/callback] provider setup failed");
-    return NextResponse.redirect(`${origin}/login?error=provider_setup_failed`);
-  }
+  const path = resolved.path.startsWith("/")
+    ? resolved.path
+    : resolveSafeReturnTo(nextRaw, "/clinician/dashboard");
 
-  return NextResponse.redirect(`${origin}${next}`);
+  return NextResponse.redirect(`${origin}${path}`);
 }

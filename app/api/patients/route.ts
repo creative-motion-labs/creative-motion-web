@@ -20,6 +20,7 @@ import {
   checkClinicianWriteLimit,
   rateLimitExceededResponse,
 } from "../../lib/rate-limit";
+import { guardApprovedProviderApiAccess } from "../../lib/api/require-approved-provider";
 
 // ── Shared client factory ──────────────────────────────────────────────────────
 
@@ -117,6 +118,9 @@ export async function GET(_req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
+  const forbidden = await guardApprovedProviderApiAccess(adminClient, user.id);
+  if (forbidden) return forbidden;
+
   // ── Query own patients directly by provider_id ───────────────────────────────
   const { data: patients, error: queryError } = await adminClient
     .from("patients")
@@ -182,6 +186,9 @@ export async function POST(req: NextRequest) {
   if (authError ?? !user) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
+
+  const forbidden = await guardApprovedProviderApiAccess(adminClient, user.id);
+  if (forbidden) return forbidden;
 
   const limited = checkClinicianWriteLimit(user.id, "patients:create");
   if (!limited.allowed) {

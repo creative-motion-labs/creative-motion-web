@@ -6,7 +6,12 @@ import {
   buildProviderWriteClient,
   ensureProviderForUser,
   parseSafeProviderBody,
+  updateProviderProfileForUser,
 } from "../../../lib/auth/ensure-provider";
+import {
+  isClinicianWorkspaceAllowed,
+  resolveClinicianAccessState,
+} from "../../../lib/auth/provider-authorization";
 import { serviceUnavailableResponse } from "../../../lib/api/safe-errors";
 
 /**
@@ -65,7 +70,19 @@ export async function POST(request: NextRequest) {
     sessionClient,
   );
 
-  const result = await ensureProviderForUser(writeClient, user, safeBody);
+  const access = await resolveClinicianAccessState(writeClient, user.id);
+  if (!isClinicianWorkspaceAllowed(access)) {
+    return NextResponse.json(
+      { ok: false, error: "Forbidden.", code: "provider_not_approved" },
+      { status: 403 },
+    );
+  }
+
+  const existing = await ensureProviderForUser(writeClient, user, safeBody);
+  const result =
+    existing.ok
+      ? await updateProviderProfileForUser(writeClient, user, safeBody)
+      : existing;
 
   if (!result.ok) {
     if (result.pending) {
