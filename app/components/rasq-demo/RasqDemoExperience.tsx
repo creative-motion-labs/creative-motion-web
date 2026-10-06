@@ -42,13 +42,10 @@ export function RasqDemoExperience() {
   const internalTest = isRasqDemoAnalyticsTestModeFromSearch(searchParams.toString());
 
   const [phase, setPhase] = useState<RasqDemoPhase>("welcome");
-  const [visitorSessionId, setVisitorSessionId] = useState(() =>
-    getOrCreateRasqDemoVisitorSessionId({ internalTest }),
+  const visitorSessionId = useMemo(
+    () => getOrCreateRasqDemoVisitorSessionId({ internalTest }),
+    [internalTest],
   );
-
-  useEffect(() => {
-    setVisitorSessionId(getOrCreateRasqDemoVisitorSessionId({ internalTest }));
-  }, [internalTest]);
   const [demoSessionId, setDemoSessionId] = useState(() =>
     createRasqDemoAttemptId({ internalTest }),
   );

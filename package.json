@@ -11,7 +11,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npx tsx --test app/lib/rasq-demo/*.test.ts app/lib/cv/cv-patient-profile-movement-view.test.ts app/lib/interactive-shoulder/orchestrator-cv-raf-loop-stable.test.ts app/lib/interactive-shoulder/orchestrator-cv-demo-init-stable.test.ts",
+    "test": "npx tsx --test app/lib/rasq-demo/*.test.ts app/lib/patient-portal/voice-consent-storage.test.ts app/lib/patient-portal/guided-session-rest-countdown.test.ts app/lib/patient-portal/patient-route-fetch-guard.test.ts app/lib/patient-portal/cv-readiness-scope.test.ts app/lib/qa/pr313-production-guard.test.ts app/lib/interactive-shoulder/interactive-shoulder-laterality-equivalence.test.ts app/lib/cv/cv-patient-profile-movement-view.test.ts app/lib/interactive-shoulder/orchestrator-cv-raf-loop-stable.test.ts app/lib/interactive-shoulder/orchestrator-cv-demo-init-stable.test.ts",
+    "release:lint-changed": "node scripts/regenerate-lint-changed-files.mjs upstream/main HEAD && node scripts/release/lint-changed-report.mjs",
+    "release:gates": "npm test && npm run release:lint-changed && npm run build",
+    "release:verify-prod-qa-block": "node scripts/release/verify-production-qa-block.mjs",
+    "test:e2e-pr313": "playwright test e2e/pr313-lifecycle-verify.spec.ts --project=desktop-chrome",
     "test:e2e-patient-profile": "playwright test e2e/patient-profile-workspace.spec.ts",
     "test:ops-transfer": "node --test scripts/ops/judge-demo-patient-transfer.test.mjs",
     "ops:rehearsal-preflight": "node scripts/ops/judge-demo-patient-transfer.mjs --rehearsal-preflight"

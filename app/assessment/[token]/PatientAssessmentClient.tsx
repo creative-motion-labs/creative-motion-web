@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useRasqVoiceConsentFromStorage } from "@/app/lib/patient-portal/voice-consent-storage";
+import { shouldIgnorePatientRouteFetchResult } from "@/app/lib/patient-portal/patient-route-fetch-guard";
 import {
   getRemoteAssessment,
   updateRemoteAssessmentDraft,
@@ -405,11 +407,17 @@ function ReviewSection({
 
 export function PatientAssessmentClient() {
   const params = useParams();
-  const router = useRouter();
   const token = String(params.token ?? "");
+  return <PatientAssessmentClientForToken key={token} token={token} />;
+}
+
+function PatientAssessmentClientForToken({ token }: { token: string }) {
+  const router = useRouter();
 
   const [req, setReq] = useState<RemoteAssessmentRequest | null>(null);
-  const [tokenState, setTokenState] = useState<"loading" | "valid" | "invalid">("loading");
+  const [tokenState, setTokenState] = useState<"loading" | "valid" | "invalid">(() =>
+    token ? "loading" : "invalid",
+  );
   const [stage, setStage] = useState<Stage>("section");
   const [sectionIdx, setSectionIdx] = useState(0);
   const [consentGiven, setConsentGiven] = useState(false);
@@ -417,30 +425,38 @@ export function PatientAssessmentClient() {
   const [lang, setLang] = useState<PatientLang>("en");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [voiceConsentGiven, setVoiceConsentGiven] = useState(false);
+  const voiceConsentGiven = useRasqVoiceConsentFromStorage();
   const [showConsentBanner, setShowConsentBanner] = useState(false);
   const [voiceMethods, setVoiceMethods] = useState<Record<string, "voice">>({});
   const [voiceReviewDismissed, setVoiceReviewDismissed] = useState<Record<string, boolean>>({});
   const [voiceTranscriptionFailed, setVoiceTranscriptionFailed] = useState<Record<string, boolean>>({});
   const [submitVoiceError, setSubmitVoiceError] = useState<string | null>(null);
+  const activeTokenRef = useRef(token);
 
   useEffect(() => {
-    if (sessionStorage.getItem("rasq_voice_consent") === "1") {
-      setVoiceConsentGiven(true);
-    }
-  }, []);
+    activeTokenRef.current = token;
+  }, [token]);
 
   useEffect(() => {
     if (!token) {
-      setTokenState("invalid");
       return;
     }
 
     let cancelled = false;
+    const requestToken = token;
 
     void (async () => {
-      const r = await getRemoteAssessment(token);
-      if (cancelled) return;
+      const r = await getRemoteAssessment(requestToken);
+      if (
+        cancelled ||
+        shouldIgnorePatientRouteFetchResult({
+          aborted: false,
+          activeToken: activeTokenRef.current,
+          responseToken: requestToken,
+        })
+      ) {
+        return;
+      }
       if (!r || isExpired(r) || r.status === "submitted") {
         setTokenState("invalid");
         return;
@@ -614,7 +630,6 @@ export function PatientAssessmentClient() {
   }
 
   function handleVoiceConsentAccept() {
-    setVoiceConsentGiven(true);
     setShowConsentBanner(false);
   }
 
@@ -770,7 +785,7 @@ export function PatientAssessmentClient() {
               dir={formDir}
               lang={formLang}
             >
-              {showConsentBanner && (
+              {showConsentBanner && !voiceConsentGiven && (
                 <div className="mb-5">
                   <VoiceConsentBanner lang={lang} onAccept={handleVoiceConsentAccept} />
                 </div>
@@ -782,7 +797,11 @@ export function PatientAssessmentClient() {
                 lang={lang}
                 assessmentToken={token}
                 voiceConsentGiven={voiceConsentGiven}
-                onConsentNeeded={() => setShowConsentBanner(true)}
+                onConsentNeeded={() => {
+                  if (!voiceConsentGiven) {
+                    setShowConsentBanner(true);
+                  }
+                }}
                 onVoiceTranscript={(fieldKey, text) =>
                   handleVoiceTranscript(currentSection, fieldKey, text)
                 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { OrchestratorCvSessionCore } from "@/app/components/patient/interactive-shoulder/OrchestratorCvSessionCore";
 import type { InteractiveShoulderSessionCompletionSnapshot } from "@/app/lib/interactive-shoulder/orchestrator-cv-session-types";
 import type { ShoulderAbductionReachPoseDetectorSnapshot } from "@/app/lib/cv/shoulder-abduction-reach-pose-detector";
@@ -116,7 +116,10 @@ export function RasqDemoOrchestratorSession({
   const demoRenderCountRef = useRef(0);
   const confirmedReachTargetIdsRef = useRef(new Set<string>());
   const startedReachTargetIdsRef = useRef(new Set<string>());
-  demoRenderCountRef.current += 1;
+
+  useLayoutEffect(() => {
+    demoRenderCountRef.current += 1;
+  });
 
   useEffect(() => {
     reachPerformanceRef.current = reachPerformance;

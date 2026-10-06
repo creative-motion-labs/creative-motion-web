@@ -5,6 +5,11 @@ import {
   getProtectedRouteDecision,
   resolveProxyAuthed,
 } from "./app/lib/proxy-auth";
+import {
+  isPr313QaPath,
+  isPr313QaPublicInCurrentRuntime,
+  shouldBlockPr313QaInProduction,
+} from "./app/lib/qa/pr313-production-guard";
 
 /**
  * Public routes that never require a session.
@@ -61,12 +66,28 @@ const PUBLIC_PATHS = new Set([
 
 function isPublic(pathname: string): boolean {
   if (pathname === "/") return true;
+  if (
+    isPr313QaPath(pathname) &&
+    isPr313QaPublicInCurrentRuntime(process.env.NODE_ENV, process.env.VERCEL_ENV)
+  ) {
+    return true;
+  }
   if (PUBLIC_PATHS.has(pathname)) return true;
   return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (
+    shouldBlockPr313QaInProduction(
+      pathname,
+      process.env.NODE_ENV,
+      process.env.VERCEL_ENV,
+    )
+  ) {
+    return new NextResponse(null, { status: 404 });
+  }
 
   let response = NextResponse.next({ request });
 

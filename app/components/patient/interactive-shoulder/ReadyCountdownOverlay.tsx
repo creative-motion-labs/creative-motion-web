@@ -28,8 +28,11 @@ export function ReadyCountdownOverlay({
   const onCompleteRef = useRef(onComplete);
   const onTickRef = useRef(onTick);
   const reducedMotionCompleteRef = useRef(false);
-  onCompleteRef.current = onComplete;
-  onTickRef.current = onTick;
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+    onTickRef.current = onTick;
+  }, [onComplete, onTick]);
 
   useEffect(() => {
     traceOrchestratorCvInit("countdown-effect", { reducedMotion, showBegin, stepIndex });

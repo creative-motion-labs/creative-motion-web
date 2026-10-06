@@ -18,14 +18,21 @@ import type {
   UpperLimbMovementAttemptResult,
   UpperLimbSide,
 } from "@/app/lib/upper-limb-motor-screen/types";
+import { shouldIgnorePatientRouteFetchResult } from "@/app/lib/patient-portal/patient-route-fetch-guard";
 
 export default function UpperLimbLateralReachCapturePage() {
   const params = useParams();
   const patientId = String(params.id || "");
+  return (
+    <UpperLimbLateralReachCaptureContent key={patientId || "missing"} patientId={patientId} />
+  );
+}
 
+function UpperLimbLateralReachCaptureContent({ patientId }: { patientId: string }) {
+  const invalidPatientId = !patientId;
   const [patient, setPatient] = useState<PatientRow | null>(null);
-  const [loadingPatient, setLoadingPatient] = useState(true);
-  const [patientError, setPatientError] = useState(false);
+  const [loadingPatient, setLoadingPatient] = useState(!invalidPatientId);
+  const [patientError, setPatientError] = useState(invalidPatientId);
 
   const [testedSide, setTestedSide] = useState<UpperLimbSide>("right");
   const [assignmentId, setAssignmentId] = useState<string | null>(null);
@@ -41,22 +48,38 @@ export default function UpperLimbLateralReachCapturePage() {
 
   const assignmentSubmitterRef = useRef(createLateralReachAssignmentSubmitter());
   const assignmentIdRef = useRef<string | null>(null);
+  const activePatientIdRef = useRef(patientId);
 
   useEffect(() => {
     assignmentIdRef.current = assignmentId;
   }, [assignmentId]);
 
   useEffect(() => {
+    activePatientIdRef.current = patientId;
+  }, [patientId]);
+
+  useEffect(() => {
     if (!patientId) {
-      setPatientError(true);
-      setLoadingPatient(false);
       return;
     }
 
-    setLoadingPatient(true);
-    setPatientError(false);
-    void fetch(`/api/patients/${encodeURIComponent(patientId)}`, { cache: "no-store" })
+    const controller = new AbortController();
+    const fetchPatientId = patientId;
+
+    void fetch(`/api/patients/${encodeURIComponent(fetchPatientId)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then(async (response) => {
+        if (
+          shouldIgnorePatientRouteFetchResult({
+            aborted: controller.signal.aborted,
+            activeToken: activePatientIdRef.current,
+            responseToken: fetchPatientId,
+          })
+        ) {
+          return;
+        }
         if (response.status === 404) {
           setPatient(null);
           setPatientError(true);
@@ -68,12 +91,36 @@ export default function UpperLimbLateralReachCapturePage() {
         }
         setPatient((await response.json()) as PatientRow);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        if (
+          shouldIgnorePatientRouteFetchResult({
+            aborted: controller.signal.aborted,
+            activeToken: activePatientIdRef.current,
+            responseToken: fetchPatientId,
+          })
+        ) {
+          return;
+        }
         setPatientError(true);
+        if (process.env.NODE_ENV === "development" && error instanceof Error) {
+          console.debug("[upper-limb-capture] patient load failed", error.message);
+        }
       })
       .finally(() => {
-        setLoadingPatient(false);
+        if (
+          !shouldIgnorePatientRouteFetchResult({
+            aborted: controller.signal.aborted,
+            activeToken: activePatientIdRef.current,
+            responseToken: fetchPatientId,
+          })
+        ) {
+          setLoadingPatient(false);
+        }
       });
+
+    return () => {
+      controller.abort();
+    };
   }, [patientId]);
 
   const ensureAssignment = useCallback(async () => {

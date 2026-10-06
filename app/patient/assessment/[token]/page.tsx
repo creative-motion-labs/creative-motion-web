@@ -14,6 +14,7 @@ import {
   normalizeRemoteUlmsAssessmentToken,
   REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE,
 } from "@/app/lib/upper-limb-motor-screen/remote-assessment-token";
+import { shouldIgnorePatientRouteFetchResult } from "@/app/lib/patient-portal/patient-route-fetch-guard";
 
 type RemoteAssessmentContext = {
   assignmentId: string;
@@ -23,30 +24,53 @@ type RemoteAssessmentContext = {
 
 export default function PatientRemoteUlmsAssessmentPage() {
   const params = useParams();
+  const token = normalizeRemoteUlmsAssessmentToken(String(params.token || "")) ?? "";
+  return <PatientRemoteUlmsAssessmentContent key={token || "invalid"} token={token} />;
+}
+
+function PatientRemoteUlmsAssessmentContent({ token }: { token: string }) {
   const router = useRouter();
-  const token = normalizeRemoteUlmsAssessmentToken(String(params.token || ""));
+  const invalidToken = !token;
 
   const [context, setContext] = useState<RemoteAssessmentContext | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(!invalidToken);
+  const [loadError, setLoadError] = useState<string | null>(
+    invalidToken ? REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE : null,
+  );
 
   const [sessionKey, setSessionKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [completedPayload, setCompletedPayload] = useState<RemoteUpperLimbBatteryPayload | null>(null);
   const submitStartedRef = useRef(false);
+  const activeTokenRef = useRef(token);
+
+  useEffect(() => {
+    activeTokenRef.current = token;
+  }, [token]);
 
   useEffect(() => {
     if (!token) {
-      setLoadError(REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE);
-      setLoading(false);
       return;
     }
 
-    setLoading(true);
-    setLoadError(null);
-    void fetch(`/api/patient/assessment/${encodeURIComponent(token)}`, { cache: "no-store" })
+    const controller = new AbortController();
+    const fetchToken = token;
+
+    void fetch(`/api/patient/assessment/${encodeURIComponent(fetchToken)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then(async (response) => {
+        if (
+          shouldIgnorePatientRouteFetchResult({
+            aborted: controller.signal.aborted,
+            activeToken: activeTokenRef.current,
+            responseToken: fetchToken,
+          })
+        ) {
+          return;
+        }
         if (!response.ok) {
           const body = (await response.json().catch(() => null)) as { error?: string } | null;
           setLoadError(body?.error ?? REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE);
@@ -55,12 +79,36 @@ export default function PatientRemoteUlmsAssessmentPage() {
         const data = (await response.json()) as RemoteAssessmentContext;
         setContext(data);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        if (
+          shouldIgnorePatientRouteFetchResult({
+            aborted: controller.signal.aborted,
+            activeToken: activeTokenRef.current,
+            responseToken: fetchToken,
+          })
+        ) {
+          return;
+        }
         setLoadError("Could not load this assessment link. Check your connection and try again.");
+        if (process.env.NODE_ENV === "development" && error instanceof Error) {
+          console.debug("[remote-ulms-assessment] load failed", error.message);
+        }
       })
       .finally(() => {
-        setLoading(false);
+        if (
+          !shouldIgnorePatientRouteFetchResult({
+            aborted: controller.signal.aborted,
+            activeToken: activeTokenRef.current,
+            responseToken: fetchToken,
+          })
+        ) {
+          setLoading(false);
+        }
       });
+
+    return () => {
+      controller.abort();
+    };
   }, [token]);
 
   const submitBattery = useCallback(

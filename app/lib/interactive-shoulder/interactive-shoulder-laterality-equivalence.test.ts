@@ -39,6 +39,7 @@ import {
   tickPatternLifecycle,
 } from "./motion-patterns/pattern-lifecycle";
 import type { NormalizedPoint } from "./types";
+import { MOVEMENT_REP_CONFIRM_MIN_TICKS } from "@/app/lib/movement-rep-confirmation";
 
 const T0 = 12_000_000;
 const L_SHOULDER = 11;
@@ -137,6 +138,14 @@ function peakLeftMirroredWithLean(): PoseLandmark[] {
   return mirrorLandmarksHorizontal(peakRightDetectorStyleWithLean());
 }
 
+/** Matches MOVEMENT_REP_CONFIRM_MIN_TICKS used by shoulder abduction rep FSM. */
+function holdLandmarkFrame(
+  frame: () => PoseLandmark[],
+  ticks = MOVEMENT_REP_CONFIRM_MIN_TICKS,
+): PoseLandmark[][] {
+  return Array.from({ length: ticks }, () => frame());
+}
+
 function driveDetector(
   side: ShoulderAbductionReachSide,
   sequence: PoseLandmark[][],
@@ -195,7 +204,7 @@ function simulateReachTheLight(side: ShoulderAbductionReachSide, seeds: readonly
   const collisionRadius = DEFAULT_TARGET_HIT_CONFIG.collisionRadius;
   const resting = restingWristPreview(side);
 
-  let spawned = tickTargetLifecycle(state, {
+  const spawned = tickTargetLifecycle(state, {
     wrist: resting,
     nowMs,
     side,
@@ -404,12 +413,9 @@ describe("interactive-shoulder laterality equivalence QA", () => {
     };
 
     const sequence = [
-      restingRightDetectorStyle(),
-      restingRightDetectorStyle(),
-      peakRightDetectorStyle(),
-      peakRightDetectorStyle(),
-      restingRightDetectorStyle(),
-      restingRightDetectorStyle(),
+      ...holdLandmarkFrame(restingRightDetectorStyle),
+      ...holdLandmarkFrame(peakRightDetectorStyle),
+      ...holdLandmarkFrame(restingRightDetectorStyle),
     ];
     const mirroredSequence = sequence.map((landmarks) => mirrorLandmarksHorizontal(landmarks));
 

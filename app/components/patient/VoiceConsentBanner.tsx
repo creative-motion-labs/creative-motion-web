@@ -2,6 +2,7 @@
 
 import { voiceLabel } from "@/app/components/patient/voice-ui-labels";
 import type { PatientLang } from "@/app/components/patient/LanguageToggle";
+import { persistRasqVoiceConsent } from "@/app/lib/patient-portal/voice-consent-storage";
 
 type Props = {
   lang: PatientLang;
@@ -10,7 +11,7 @@ type Props = {
 
 export function VoiceConsentBanner({ lang, onAccept }: Props) {
   function handleAccept() {
-    sessionStorage.setItem("rasq_voice_consent", "1");
+    persistRasqVoiceConsent();
     onAccept();
   }
 
