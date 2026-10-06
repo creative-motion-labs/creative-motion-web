@@ -13,6 +13,7 @@ import {
   resolveClinicianLoginSupabaseError,
 } from "../lib/auth/clinician-login-errors";
 import { ensureProviderProfile } from "../lib/auth/ensure-provider-client";
+import { resolveSafeAuthRedirectPath } from "../lib/auth/safe-redirect";
 import { setupDevAuthSession } from "../lib/dev-auth";
 import { createClient as createSupabaseClient } from "../lib/supabase/browser";
 
@@ -59,7 +60,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
 
   const urlRole  = resolveRole(searchParams.get("role"));
-  const returnTo = searchParams.get("returnTo") ?? "";
+  const returnTo = searchParams.get("returnTo");
 
   const [role, setRole]         = useState<Role>(urlRole);
   const [email, setEmail]       = useState("");
@@ -68,7 +69,8 @@ function LoginForm() {
   const [loading, setLoading]   = useState(false);
 
   const cfg = ROLE_CONFIG[role];
-  const redirectDest = returnTo || cfg.defaultRedirect;
+  // Internal paths only — external/protocol-relative/script URLs fall back to the role default.
+  const redirectDest = resolveSafeAuthRedirectPath(returnTo, cfg.defaultRedirect);
 
   async function handleLogin() {
     if (!email.trim() || !password) {
