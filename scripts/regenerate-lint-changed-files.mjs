@@ -18,5 +18,6 @@ const files = raw
   })
   .sort();
 
-writeFileSync("scripts/lint-changed-files.txt", `${files.join("\n")}\n`);
-console.log(`wrote ${files.length} paths (${base}...${head})`);
+const outPath = process.env.LINT_CHANGED_FILES_OUT ?? "scripts/release/lint-changed-files.txt";
+writeFileSync(outPath, `${files.join("\n")}\n`);
+console.log(`wrote ${files.length} paths to ${outPath} (${base}...${head})`);
