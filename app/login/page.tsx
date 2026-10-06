@@ -8,6 +8,8 @@ import { TrustFooter } from "../components/trust/TrustFooter";
 import { loginClinician } from "../lib/api";
 import {
   CLINICIAN_LOGIN_INVALID_CREDENTIALS_MESSAGE,
+  isLegacyClinicianFastApiLoginAllowed,
+  resolveClinicianLoginBackend,
   resolveClinicianLoginSupabaseError,
 } from "../lib/auth/clinician-login-errors";
 import { ensureProviderProfile } from "../lib/auth/ensure-provider-client";
@@ -77,9 +79,19 @@ function LoginForm() {
     setLoading(true);
 
     try {
+      const loginBackend = resolveClinicianLoginBackend({
+        supabaseConfigured: SUPABASE_CONFIGURED,
+        nodeEnv: process.env.NODE_ENV,
+      });
+
+      if (loginBackend.kind === "fail_closed") {
+        setError(loginBackend.message);
+        return;
+      }
+
       // ── Primary: Supabase Auth ───────────────────────────────────────────
       // Used for all new accounts created via /signup.
-      if (SUPABASE_CONFIGURED) {
+      if (loginBackend.kind === "use_supabase") {
         const supabase = createSupabaseClient();
         const { error: sbError } = await supabase.auth.signInWithPassword({
           email: email.trim().toLowerCase(),
@@ -100,6 +112,7 @@ function LoginForm() {
           supabaseConfigured: true,
           errorMessage: sbError.message,
           errorCode: sbError.code,
+          nodeEnv: process.env.NODE_ENV,
         });
 
         if (decision.kind === "show_message") {
@@ -111,6 +124,22 @@ function LoginForm() {
           setError(CLINICIAN_LOGIN_INVALID_CREDENTIALS_MESSAGE);
           return;
         }
+
+        if (
+          decision.kind === "legacy_fastapi_fallback" &&
+          isLegacyClinicianFastApiLoginAllowed({
+            supabaseConfigured: true,
+            nodeEnv: process.env.NODE_ENV,
+          })
+        ) {
+          await loginClinician(email.trim(), password);
+          router.push(redirectDest);
+          router.refresh();
+          return;
+        }
+
+        setError(CLINICIAN_LOGIN_INVALID_CREDENTIALS_MESSAGE);
+        return;
       }
 
       // ── Fallback: FastAPI JWT (local dev only when Supabase is not configured) ──
