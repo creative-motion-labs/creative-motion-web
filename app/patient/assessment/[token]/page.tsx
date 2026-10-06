@@ -44,7 +44,10 @@ function PatientRemoteUlmsAssessmentContent({ token }: { token: string }) {
   const [completedPayload, setCompletedPayload] = useState<RemoteUpperLimbBatteryPayload | null>(null);
   const submitStartedRef = useRef(false);
   const activeTokenRef = useRef(token);
-  activeTokenRef.current = token;
+
+  useEffect(() => {
+    activeTokenRef.current = token;
+  }, [token]);
 
   useEffect(() => {
     if (!token) {

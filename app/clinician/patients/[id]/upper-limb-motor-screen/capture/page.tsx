@@ -49,11 +49,14 @@ function UpperLimbLateralReachCaptureContent({ patientId }: { patientId: string 
   const assignmentSubmitterRef = useRef(createLateralReachAssignmentSubmitter());
   const assignmentIdRef = useRef<string | null>(null);
   const activePatientIdRef = useRef(patientId);
-  activePatientIdRef.current = patientId;
 
   useEffect(() => {
     assignmentIdRef.current = assignmentId;
   }, [assignmentId]);
+
+  useEffect(() => {
+    activePatientIdRef.current = patientId;
+  }, [patientId]);
 
   useEffect(() => {
     if (!patientId) {

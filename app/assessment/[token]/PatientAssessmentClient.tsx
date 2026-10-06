@@ -432,7 +432,10 @@ function PatientAssessmentClientForToken({ token }: { token: string }) {
   const [voiceTranscriptionFailed, setVoiceTranscriptionFailed] = useState<Record<string, boolean>>({});
   const [submitVoiceError, setSubmitVoiceError] = useState<string | null>(null);
   const activeTokenRef = useRef(token);
-  activeTokenRef.current = token;
+
+  useEffect(() => {
+    activeTokenRef.current = token;
+  }, [token]);
 
   useEffect(() => {
     if (!token) {
