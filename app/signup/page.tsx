@@ -133,8 +133,7 @@ export default function SignupPage() {
                   Thank you for your interest in RASQ.
                 </h1>
                 <p className="mt-2 text-sm leading-6 text-white/50">
-                  We&apos;ve received your request and our team will contact you regarding provider
-                  access.
+                  We&apos;ve received your request and will contact you regarding provider access.
                 </p>
                 <p className="mt-4 text-sm">
                   <Link
@@ -153,10 +152,11 @@ export default function SignupPage() {
                   className="text-xl font-bold text-white"
                   style={{ fontFamily: "var(--rasq-font-display, sans-serif)" }}
                 >
-                  Request provider access
+                  Request Provider Access
                 </h1>
                 <p className="mt-1.5 text-sm leading-6 text-white/40">
-                  Share your details and our team will follow up about clinician workspace access.
+                  Interested in using RASQ? Share your details and we&apos;ll review your request for
+                  provider access.
                 </p>
               </div>
 
@@ -183,7 +183,7 @@ export default function SignupPage() {
                   autoComplete="name"
                 />
                 <Field
-                  label="Practice / clinic name"
+                  label="Practice / Clinic"
                   value={practice}
                   onChange={setPractice}
                   placeholder="City Rehabilitation Centre"
@@ -202,7 +202,7 @@ export default function SignupPage() {
                   disabled={loading}
                   className="w-full rounded-[7px] bg-[#1D9E75] py-3.5 text-sm font-bold text-white transition hover:bg-[#179165] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {loading ? "Submitting…" : "Request Provider Access"}
+                  {loading ? "Submitting…" : "Request Access"}
                 </button>
 
                 <p className="pt-1 text-center text-sm text-white/30">
