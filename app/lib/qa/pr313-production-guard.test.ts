@@ -8,6 +8,7 @@ import {
   isPr313QaPath,
   isPr313QaPublicInCurrentRuntime,
   shouldBlockPr313QaInProduction,
+  shouldShowPr313FloatingNav,
 } from "./pr313-production-guard";
 
 describe("PR313 QA production guard", () => {
@@ -48,5 +49,20 @@ describe("PR313 QA production guard", () => {
   it("allows public access outside production", () => {
     assert.equal(isPr313QaPublicInCurrentRuntime("development", "preview"), true);
     assert.equal(isPr313QaPublicInCurrentRuntime("production", "production"), false);
+  });
+
+  it("hides floating QA nav in production even when the QA flag is enabled", () => {
+    assert.equal(
+      shouldShowPr313FloatingNav({ qaNavFlag: "1", nodeEnv: "production", vercelEnv: "preview" }),
+      false,
+    );
+    assert.equal(
+      shouldShowPr313FloatingNav({ qaNavFlag: "1", nodeEnv: "development", vercelEnv: "preview" }),
+      true,
+    );
+    assert.equal(
+      shouldShowPr313FloatingNav({ qaNavFlag: undefined, nodeEnv: "development", vercelEnv: "preview" }),
+      false,
+    );
   });
 });

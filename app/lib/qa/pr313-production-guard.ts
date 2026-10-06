@@ -27,3 +27,11 @@ export function isPr313QaNavEnabled(
 ): boolean {
   return navFlag === "1" && !isProductionRuntime(nodeEnv, vercelEnv);
 }
+
+export function shouldShowPr313FloatingNav(options: {
+  qaNavFlag?: string;
+  nodeEnv?: string;
+  vercelEnv?: string;
+}): boolean {
+  return isPr313QaNavEnabled(options.qaNavFlag, options.nodeEnv, options.vercelEnv);
+}

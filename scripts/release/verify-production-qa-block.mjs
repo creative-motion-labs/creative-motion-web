@@ -11,7 +11,7 @@ const cases = [
   { path: "/qa/pr313", expect: 404 },
   { path: "/qa/pr313/rest-countdown", expect: 404 },
   { path: "/qa/pr313/nav-assessment", expect: 404 },
-  { path: "/demo", expect: 200 },
+  { path: "/demo", expect: 200, noFloatingNav: true },
   { path: "/assessment/not-a-valid-token", expect: 200, noFloatingNav: true },
   { path: "/patient/assessment/not-a-valid-token", expect: 200, noFloatingNav: true },
 ];

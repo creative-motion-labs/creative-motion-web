@@ -18,6 +18,7 @@ import type {
   UpperLimbMovementAttemptResult,
   UpperLimbSide,
 } from "@/app/lib/upper-limb-motor-screen/types";
+import { shouldIgnorePatientRouteFetchResult } from "@/app/lib/patient-portal/patient-route-fetch-guard";
 
 export default function UpperLimbLateralReachCapturePage() {
   const params = useParams();
@@ -47,6 +48,8 @@ function UpperLimbLateralReachCaptureContent({ patientId }: { patientId: string 
 
   const assignmentSubmitterRef = useRef(createLateralReachAssignmentSubmitter());
   const assignmentIdRef = useRef<string | null>(null);
+  const activePatientIdRef = useRef(patientId);
+  activePatientIdRef.current = patientId;
 
   useEffect(() => {
     assignmentIdRef.current = assignmentId;
@@ -65,7 +68,13 @@ function UpperLimbLateralReachCaptureContent({ patientId }: { patientId: string 
       signal: controller.signal,
     })
       .then(async (response) => {
-        if (controller.signal.aborted) {
+        if (
+          shouldIgnorePatientRouteFetchResult({
+            aborted: controller.signal.aborted,
+            activeToken: activePatientIdRef.current,
+            responseToken: fetchPatientId,
+          })
+        ) {
           return;
         }
         if (response.status === 404) {
@@ -80,7 +89,13 @@ function UpperLimbLateralReachCaptureContent({ patientId }: { patientId: string 
         setPatient((await response.json()) as PatientRow);
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) {
+        if (
+          shouldIgnorePatientRouteFetchResult({
+            aborted: controller.signal.aborted,
+            activeToken: activePatientIdRef.current,
+            responseToken: fetchPatientId,
+          })
+        ) {
           return;
         }
         setPatientError(true);
@@ -89,7 +104,13 @@ function UpperLimbLateralReachCaptureContent({ patientId }: { patientId: string 
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
+        if (
+          !shouldIgnorePatientRouteFetchResult({
+            aborted: controller.signal.aborted,
+            activeToken: activePatientIdRef.current,
+            responseToken: fetchPatientId,
+          })
+        ) {
           setLoadingPatient(false);
         }
       });

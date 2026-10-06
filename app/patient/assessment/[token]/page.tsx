@@ -14,6 +14,8 @@ import {
   normalizeRemoteUlmsAssessmentToken,
   REMOTE_ULMS_ASSESSMENT_LINK_INVALID_MESSAGE,
 } from "@/app/lib/upper-limb-motor-screen/remote-assessment-token";
+import { shouldIgnorePatientRouteFetchResult } from "@/app/lib/patient-portal/patient-route-fetch-guard";
+
 type RemoteAssessmentContext = {
   assignmentId: string;
   prescribedSide: BatteryPrescribedSide | null;
@@ -41,6 +43,8 @@ function PatientRemoteUlmsAssessmentContent({ token }: { token: string }) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [completedPayload, setCompletedPayload] = useState<RemoteUpperLimbBatteryPayload | null>(null);
   const submitStartedRef = useRef(false);
+  const activeTokenRef = useRef(token);
+  activeTokenRef.current = token;
 
   useEffect(() => {
     if (!token) {
@@ -55,7 +59,13 @@ function PatientRemoteUlmsAssessmentContent({ token }: { token: string }) {
       signal: controller.signal,
     })
       .then(async (response) => {
-        if (controller.signal.aborted) {
+        if (
+          shouldIgnorePatientRouteFetchResult({
+            aborted: controller.signal.aborted,
+            activeToken: activeTokenRef.current,
+            responseToken: fetchToken,
+          })
+        ) {
           return;
         }
         if (!response.ok) {
@@ -67,7 +77,13 @@ function PatientRemoteUlmsAssessmentContent({ token }: { token: string }) {
         setContext(data);
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) {
+        if (
+          shouldIgnorePatientRouteFetchResult({
+            aborted: controller.signal.aborted,
+            activeToken: activeTokenRef.current,
+            responseToken: fetchToken,
+          })
+        ) {
           return;
         }
         setLoadError("Could not load this assessment link. Check your connection and try again.");
@@ -76,7 +92,13 @@ function PatientRemoteUlmsAssessmentContent({ token }: { token: string }) {
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
+        if (
+          !shouldIgnorePatientRouteFetchResult({
+            aborted: controller.signal.aborted,
+            activeToken: activeTokenRef.current,
+            responseToken: fetchToken,
+          })
+        ) {
           setLoading(false);
         }
       });

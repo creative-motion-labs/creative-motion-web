@@ -15,7 +15,7 @@ export function Pr313FloatingNav({ variant }: { variant: "assessment" | "ulms" |
     !isPr313QaNavEnabled(
       process.env.NEXT_PUBLIC_PR313_QA_NAV,
       process.env.NODE_ENV,
-      process.env.NEXT_PUBLIC_VERCEL_ENV,
+      process.env.NEXT_PUBLIC_VERCEL_ENV ?? process.env.VERCEL_ENV,
     )
   ) {
     return null;

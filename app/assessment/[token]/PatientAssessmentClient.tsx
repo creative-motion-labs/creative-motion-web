@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useRasqVoiceConsentFromStorage } from "@/app/lib/patient-portal/voice-consent-storage";
+import { shouldIgnorePatientRouteFetchResult } from "@/app/lib/patient-portal/patient-route-fetch-guard";
 import {
   getRemoteAssessment,
   updateRemoteAssessmentDraft,
@@ -430,6 +431,8 @@ function PatientAssessmentClientForToken({ token }: { token: string }) {
   const [voiceReviewDismissed, setVoiceReviewDismissed] = useState<Record<string, boolean>>({});
   const [voiceTranscriptionFailed, setVoiceTranscriptionFailed] = useState<Record<string, boolean>>({});
   const [submitVoiceError, setSubmitVoiceError] = useState<string | null>(null);
+  const activeTokenRef = useRef(token);
+  activeTokenRef.current = token;
 
   useEffect(() => {
     if (!token) {
@@ -437,10 +440,20 @@ function PatientAssessmentClientForToken({ token }: { token: string }) {
     }
 
     let cancelled = false;
+    const requestToken = token;
 
     void (async () => {
-      const r = await getRemoteAssessment(token);
-      if (cancelled) return;
+      const r = await getRemoteAssessment(requestToken);
+      if (
+        cancelled ||
+        shouldIgnorePatientRouteFetchResult({
+          aborted: false,
+          activeToken: activeTokenRef.current,
+          responseToken: requestToken,
+        })
+      ) {
+        return;
+      }
       if (!r || isExpired(r) || r.status === "submitted") {
         setTokenState("invalid");
         return;
@@ -769,7 +782,7 @@ function PatientAssessmentClientForToken({ token }: { token: string }) {
               dir={formDir}
               lang={formLang}
             >
-              {showConsentBanner && (
+              {showConsentBanner && !voiceConsentGiven && (
                 <div className="mb-5">
                   <VoiceConsentBanner lang={lang} onAccept={handleVoiceConsentAccept} />
                 </div>
@@ -781,7 +794,11 @@ function PatientAssessmentClientForToken({ token }: { token: string }) {
                 lang={lang}
                 assessmentToken={token}
                 voiceConsentGiven={voiceConsentGiven}
-                onConsentNeeded={() => setShowConsentBanner(true)}
+                onConsentNeeded={() => {
+                  if (!voiceConsentGiven) {
+                    setShowConsentBanner(true);
+                  }
+                }}
                 onVoiceTranscript={(fieldKey, text) =>
                   handleVoiceTranscript(currentSection, fieldKey, text)
                 }
