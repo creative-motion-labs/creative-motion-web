@@ -11,23 +11,34 @@ import {
 } from "./provider-access-interest-validation";
 
 export type ProcessProviderAccessInterestSubmitResult =
-  | { ok: true; id: string; duplicate: boolean }
+  | { ok: true }
   | { ok: false; error: string };
+
+const STORAGE_UNAVAILABLE =
+  "Unable to submit your request right now. Please try again later.";
+
+function isDevelopmentLocalPersistenceAllowed(): boolean {
+  return process.env.NODE_ENV === "development";
+}
 
 async function persistInterest(
   admin: SupabaseClient | null,
   payload: ProviderAccessInterestPayload,
-): Promise<{ record: ProviderAccessInterestRecord; duplicate: boolean } | { error: string }> {
+): Promise<{ record: ProviderAccessInterestRecord } | { error: string }> {
   if (admin) {
     const inserted = await insertProviderAccessInterestInSupabase(admin, payload);
     if (!inserted.ok) {
       return { error: mapProviderAccessInterestPersistenceError(inserted.error) };
     }
-    return { record: inserted.record, duplicate: inserted.duplicate };
+    return { record: inserted.record };
+  }
+
+  if (!isDevelopmentLocalPersistenceAllowed()) {
+    return { error: STORAGE_UNAVAILABLE };
   }
 
   const record = await appendProviderAccessInterestRecordLocal(payload);
-  return { record, duplicate: false };
+  return { record };
 }
 
 export async function processProviderAccessInterestSubmit(
@@ -40,9 +51,5 @@ export async function processProviderAccessInterestSubmit(
     return { ok: false, error: persisted.error };
   }
 
-  return {
-    ok: true,
-    id: persisted.record.id,
-    duplicate: persisted.duplicate,
-  };
+  return { ok: true };
 }

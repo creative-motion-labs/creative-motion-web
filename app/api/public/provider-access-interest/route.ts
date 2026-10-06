@@ -44,10 +44,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 500 });
     }
 
-    return NextResponse.json({
-      ok: true,
-      duplicate: result.duplicate,
-    });
+    return NextResponse.json({ ok: true });
   } catch {
     return genericServerErrorResponse();
   }

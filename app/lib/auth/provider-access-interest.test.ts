@@ -2,6 +2,8 @@
  * Run: npx tsx --test app/lib/auth/provider-access-interest.test.ts
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   mapProviderAccessInterestPersistenceError,
@@ -52,5 +54,26 @@ describe("mapProviderAccessInterestPersistenceError", () => {
       'relation "public.provider_access_interest" does not exist',
     );
     assert.match(mapped, /Unable to submit/);
+  });
+});
+
+describe("provider access interest persistence guards", () => {
+  it("uses Supabase in non-development and refuses local JSONL fallback", () => {
+    const submitSource = readFileSync(
+      join(process.cwd(), "app/lib/auth/provider-access-interest-submit.ts"),
+      "utf8",
+    );
+    const persistenceSource = readFileSync(
+      join(process.cwd(), "app/lib/auth/provider-access-interest-persistence.ts"),
+      "utf8",
+    );
+    const routeSource = readFileSync(
+      join(process.cwd(), "app/api/public/provider-access-interest/route.ts"),
+      "utf8",
+    );
+
+    assert.match(submitSource, /NODE_ENV\s*===\s*["']development["']/);
+    assert.match(persistenceSource, /NODE_ENV\s*!==\s*["']development["']/);
+    assert.doesNotMatch(routeSource, /duplicate/);
   });
 });

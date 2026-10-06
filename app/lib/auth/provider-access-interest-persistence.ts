@@ -20,6 +20,10 @@ function interestFilePath(): string {
 export async function appendProviderAccessInterestRecordLocal(
   payload: ProviderAccessInterestPayload,
 ): Promise<ProviderAccessInterestRecord> {
+  if (process.env.NODE_ENV !== "development") {
+    throw new Error("Local provider access interest persistence is development-only.");
+  }
+
   const record: ProviderAccessInterestRecord = {
     ...payload,
     id: crypto.randomUUID(),
