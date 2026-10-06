@@ -6,6 +6,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { RasqDemoPlatformEntryCta } from "@/app/components/rasq-demo/RasqDemoPlatformEntryCta";
 import { TrustFooter } from "../components/trust/TrustFooter";
 import { loginClinician } from "../lib/api";
+import {
+  CLINICIAN_LOGIN_INVALID_CREDENTIALS_MESSAGE,
+  resolveClinicianLoginSupabaseError,
+} from "../lib/auth/clinician-login-errors";
 import { ensureProviderProfile } from "../lib/auth/ensure-provider-client";
 import { setupDevAuthSession } from "../lib/dev-auth";
 import { createClient as createSupabaseClient } from "../lib/supabase/browser";
@@ -92,18 +96,25 @@ function LoginForm() {
           return;
         }
 
-        // "Invalid login credentials" means either wrong password OR user doesn't
-        // exist in Supabase yet. Fall through to FastAPI for legacy accounts.
-        // All other Supabase errors (rate limit, service unavailable) surface directly.
-        if (sbError.message !== "Invalid login credentials") {
-          setError(sbError.message);
+        const decision = resolveClinicianLoginSupabaseError({
+          supabaseConfigured: true,
+          errorMessage: sbError.message,
+          errorCode: sbError.code,
+        });
+
+        if (decision.kind === "show_message") {
+          setError(decision.message);
+          return;
+        }
+
+        if (decision.kind === "invalid_credentials") {
+          setError(CLINICIAN_LOGIN_INVALID_CREDENTIALS_MESSAGE);
           return;
         }
       }
 
-      // ── Fallback: FastAPI JWT ────────────────────────────────────────────
-      // Handles accounts that pre-date Supabase migration.
-      // Sets cm_token cookie; proxy.ts accepts it during the transition period.
+      // ── Fallback: FastAPI JWT (local dev only when Supabase is not configured) ──
+      // Production clinician routes require a Supabase session; cm_token is not accepted by the proxy.
       await loginClinician(email.trim(), password);
       router.push(redirectDest);
       router.refresh();
