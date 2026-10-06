@@ -14,6 +14,7 @@ import { describe, it } from "node:test";
 import type { PoseLandmark } from "@/app/lib/cv/pose-landmark-overlay";
 import { MIN_PRESENT_VISIBILITY } from "@/app/lib/cv/motion-quality-confidence";
 import type { BodyFramingState } from "@/app/lib/cv/body-framing-evaluator";
+import { MOVEMENT_REP_CONFIRM_MIN_TICKS } from "@/app/lib/movement-rep-confirmation";
 import {
   ShoulderAbductionReachPoseDetector,
   type ShoulderAbductionReachMeasuredEvent,
@@ -193,13 +194,12 @@ describe("ShoulderAbductionReachPoseDetector", () => {
       "right",
     );
 
+    const rest = restingLandmarks();
+    const peak = peakAbductionLandmarks();
     driveFrames(detector, [
-      restingLandmarks(),
-      restingLandmarks(),
-      peakAbductionLandmarks(),
-      peakAbductionLandmarks(),
-      restingLandmarks(),
-      restingLandmarks(),
+      ...Array.from({ length: MOVEMENT_REP_CONFIRM_MIN_TICKS }, () => rest),
+      ...Array.from({ length: MOVEMENT_REP_CONFIRM_MIN_TICKS }, () => peak),
+      ...Array.from({ length: MOVEMENT_REP_CONFIRM_MIN_TICKS }, () => rest),
     ]);
 
     const snapshot = detector.getSnapshot();
