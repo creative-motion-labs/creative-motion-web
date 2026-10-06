@@ -55,17 +55,21 @@ describe("camera skip — the control is clickable without accepting consent", (
     const preConsent = core.slice(core.indexOf("{!consentAccepted ? ("));
     const consentBranch = preConsent.slice(0, preConsent.indexOf(") : ("));
     assert.ok(
-      consentBranch.includes("{ui.skipCamera}"),
+      consentBranch.includes("{consentCopy.skipCamera}"),
       "Skip camera must be offered on the consent screen itself, before consent is given",
     );
   });
 
   it("gives the Skip button a real click handler and never disables it", () => {
     const button = core.slice(
-      core.lastIndexOf("<button", core.indexOf("{ui.skipCamera}")),
-      core.indexOf("{ui.skipCamera}"),
+      core.lastIndexOf("<button", core.indexOf("{consentCopy.skipCamera}")),
+      core.indexOf("{consentCopy.skipCamera}"),
     );
-    assert.match(button, /onClick=\{onSkipped\}/, "the Skip button must have a click handler");
+    assert.match(
+      button,
+      /onClick=\{handleSkipCameraClick\}/,
+      "the Skip button must invoke the skip handler",
+    );
     assert.ok(
       !button.includes("disabled"),
       "Skip must never be gated on the consent checkbox — declining is the whole point",

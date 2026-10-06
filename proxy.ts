@@ -57,6 +57,8 @@ const PUBLIC_PATHS = new Set([
   "/api/health/supabase",
   // Public RASQ interactive movement demo (computer vision + optional lead form).
   "/demo",
+  // PR #313 lifecycle verification harness (synthetic fixtures only).
+  "/qa/pr313",
 ]);
 
 function isPublic(pathname: string): boolean {
