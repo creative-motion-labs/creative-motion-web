@@ -1,3 +1,4 @@
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -69,6 +70,8 @@ function rejectUnknownCatalogPostKeys(body: PostBody): string | null {
 export type CatalogPlanPostDependencies = {
   /** Resolves the authenticated caller, or null if unauthenticated. */
   getAuthenticatedUser: () => Promise<{ id: string } | null>;
+  /** When getAuthenticatedUser is null, return 401/403 response (e.g. pending provider). */
+  resolveAuthFailure?: () => Promise<NextResponse | null>;
   /** Service-role client passed to the RPC wrapper. */
   adminClient: SupabaseClient;
   checkWriteLimit: (providerId: string, route: string) => RateLimitResult;
@@ -88,7 +91,13 @@ export type CatalogPlanPostDependencies = {
 export function createCatalogPlanPostHandler(deps: CatalogPlanPostDependencies) {
   return async function handleCatalogPlanPost(req: NextRequest): Promise<NextResponse> {
     const user = await deps.getAuthenticatedUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    if (!user) {
+      const failure = deps.resolveAuthFailure
+        ? await deps.resolveAuthFailure()
+        : null;
+      if (failure) return failure;
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
 
     const limited = deps.checkWriteLimit(user.id, "plans:create");
     if (!limited.allowed) {
@@ -212,9 +221,14 @@ async function buildRealDependencies(): Promise<CatalogPlanPostDependencies | nu
 
   return {
     getAuthenticatedUser: async () => {
-      const { data: { user }, error } = await sessionClient.auth.getUser();
-      if (error || !user) return null;
-      return { id: user.id };
+      const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+      if (!auth.ok) return null;
+      return { id: auth.user.id };
+    },
+    resolveAuthFailure: async () => {
+      const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+      if (!auth.ok) return auth.response;
+      return null;
     },
     adminClient,
     checkWriteLimit: checkClinicianWriteLimit,

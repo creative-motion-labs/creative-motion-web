@@ -5,6 +5,7 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient as createAdminClient, type SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { guardApprovedProviderApiAccess } from "@/app/lib/api/require-approved-provider";
 import { validatePatientOwnership } from "@/app/lib/validate-patient-ownership";
 import {
   AI_ERROR_CODES,
@@ -72,6 +73,11 @@ export async function loadRemoteQuestionnaireAssessment(
   } = await sessionClient.auth.getUser();
   if (authErr ?? !user) {
     return { ok: false, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  }
+
+  const forbidden = await guardApprovedProviderApiAccess(adminClient, user.id);
+  if (forbidden) {
+    return { ok: false, response: forbidden };
   }
 
   const { data: assessment, error: queryErr } = await adminClient

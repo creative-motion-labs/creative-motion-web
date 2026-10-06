@@ -20,7 +20,7 @@ import {
   checkClinicianWriteLimit,
   rateLimitExceededResponse,
 } from "../../lib/rate-limit";
-import { guardApprovedProviderApiAccess } from "../../lib/api/require-approved-provider";
+import { requireAuthenticatedApprovedUser } from "../../lib/api/require-approved-provider";
 
 // ── Shared client factory ──────────────────────────────────────────────────────
 
@@ -109,17 +109,9 @@ export async function GET(_req: NextRequest) {
   const { sessionClient, adminClient } = clients!;
 
   // ── Auth ────────────────────────────────────────────────────────────────────
-  const {
-    data: { user },
-    error: authError,
-  } = await sessionClient.auth.getUser();
-
-  if (authError ?? !user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
-
-  const forbidden = await guardApprovedProviderApiAccess(adminClient, user.id);
-  if (forbidden) return forbidden;
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   // ── Query own patients directly by provider_id ───────────────────────────────
   const { data: patients, error: queryError } = await adminClient
@@ -178,17 +170,9 @@ export async function POST(req: NextRequest) {
   const { sessionClient, adminClient } = clients;
 
   // ── Auth ────────────────────────────────────────────────────────────────────
-  const {
-    data: { user },
-    error: authError,
-  } = await sessionClient.auth.getUser();
-
-  if (authError ?? !user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
-
-  const forbidden = await guardApprovedProviderApiAccess(adminClient, user.id);
-  if (forbidden) return forbidden;
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   const limited = checkClinicianWriteLimit(user.id, "patients:create");
   if (!limited.allowed) {
@@ -247,7 +231,7 @@ export async function POST(req: NextRequest) {
     status: body.status?.trim() || "new",
   };
 
-  let seq = nextPatientFileNumberSequence(existingNumbers.values);
+  const seq = nextPatientFileNumberSequence(existingNumbers.values);
   let patient: PatientRow | null = null;
   let lastError: { code?: string; message?: string } | null = null;
 

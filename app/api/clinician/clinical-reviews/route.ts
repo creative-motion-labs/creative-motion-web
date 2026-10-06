@@ -1,3 +1,4 @@
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 /**
  * POST /api/clinician/clinical-reviews
  *
@@ -69,13 +70,9 @@ export async function POST(req: NextRequest) {
   }
   const { sessionClient, adminClient } = clients;
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await sessionClient.auth.getUser();
-  if (authErr ?? !user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   let body: PostBody;
   try {

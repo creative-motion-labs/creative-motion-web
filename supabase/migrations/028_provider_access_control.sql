@@ -47,9 +47,10 @@ alter table public.providers
   add column if not exists approved_at timestamptz,
   add column if not exists approved_by uuid references auth.users (id) on delete set null;
 
+-- Legacy rows are NOT auto-approved: public signup previously created provider rows
+-- without founder review. Default unset rows to pending for manual founder approval.
 update public.providers
-set approval_status = coalesce(approval_status, 'approved'),
-    approved_at = coalesce(approved_at, created_at, now())
+set approval_status = coalesce(approval_status, 'pending')
 where approval_status is null;
 
 alter table public.providers

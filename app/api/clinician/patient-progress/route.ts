@@ -1,3 +1,4 @@
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 /**
  * GET /api/clinician/patient-progress?patientId=UUID&planId=UUID
  *
@@ -182,13 +183,9 @@ export async function GET(req: NextRequest) {
   }
   const { sessionClient, adminClient } = clients;
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await sessionClient.auth.getUser();
-  if (authErr ?? !user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   const patientId = new URL(req.url).searchParams.get("patientId")?.trim() ?? "";
   const planIdParam = new URL(req.url).searchParams.get("planId")?.trim() ?? "";

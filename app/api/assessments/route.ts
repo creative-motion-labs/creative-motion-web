@@ -1,3 +1,4 @@
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
@@ -88,8 +89,9 @@ export async function POST(req: NextRequest) {
   const { sessionClient, adminClient } = clients;
 
   // ── Auth ─────────────────────────────────────────────────────────────────────
-  const { data: { user }, error: authError } = await sessionClient.auth.getUser();
-  if (authError ?? !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   const limited = checkClinicianWriteLimit(user.id, "assessments:create");
   if (!limited.allowed) {
@@ -177,8 +179,9 @@ export async function GET(req: NextRequest) {
   const { sessionClient, adminClient } = clients;
 
   // ── Auth ─────────────────────────────────────────────────────────────────────
-  const { data: { user }, error: authError } = await sessionClient.auth.getUser();
-  if (authError ?? !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   // ── Params ───────────────────────────────────────────────────────────────────
   const { searchParams } = new URL(req.url);

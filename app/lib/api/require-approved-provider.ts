@@ -123,3 +123,33 @@ export async function guardApprovedProviderApiAccess(
     { status: detail.status },
   );
 }
+
+/**
+ * Standard clinician API auth: Supabase session + approved provider (fail closed).
+ */
+export async function requireAuthenticatedApprovedUser(
+  sessionClient: SupabaseClient,
+  adminClient: SupabaseClient,
+): Promise<
+  | { ok: true; user: User }
+  | { ok: false; response: NextResponse }
+> {
+  const {
+    data: { user },
+    error,
+  } = await sessionClient.auth.getUser();
+
+  if (error ?? !user) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Unauthorized." }, { status: 401 }),
+    };
+  }
+
+  const forbidden = await guardApprovedProviderApiAccess(adminClient, user.id);
+  if (forbidden) {
+    return { ok: false, response: forbidden };
+  }
+
+  return { ok: true, user };
+}

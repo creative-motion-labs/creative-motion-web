@@ -1,3 +1,4 @@
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
@@ -42,11 +43,22 @@ async function buildClients() {
 async function getAuthAndClients() {
   const clients = await buildClients();
   if (!clients) return { mode: "offline" as const };
-  const { data: { user }, error: authError } = await clients.sessionClient.auth.getUser();
-  if (authError ?? !user) {
-    return { mode: "unauthorized" as const, error: "Unauthorized.", status: 401 as const };
+  const auth = await requireAuthenticatedApprovedUser(
+    clients.sessionClient,
+    clients.adminClient,
+  );
+  if (!auth.ok) {
+    return {
+      mode: "unauthorized" as const,
+      response: auth.response,
+    };
   }
-  return { mode: "live" as const, sessionClient: clients.sessionClient, adminClient: clients.adminClient, user };
+  return {
+    mode: "live" as const,
+    sessionClient: clients.sessionClient,
+    adminClient: clients.adminClient,
+    user: auth.user,
+  };
 }
 
 // ── GET /api/patients/[id] ─────────────────────────────────────────────────────
@@ -67,7 +79,7 @@ export async function GET(
 
   const auth = await getAuthAndClients();
   if (auth.mode === "unauthorized") {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
+    return auth.response;
   }
   if (auth.mode === "offline") {
     const demoPatient = getDemoPatientById(patientId);
@@ -115,7 +127,7 @@ export async function PATCH(
 
   const auth = await getAuthAndClients();
   if (auth.mode === "unauthorized") {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
+    return auth.response;
   }
   if (auth.mode !== "live") return serviceUnavailableResponse();
   const { adminClient, user } = auth;
@@ -178,7 +190,7 @@ export async function DELETE(
 
   const auth = await getAuthAndClients();
   if (auth.mode === "unauthorized") {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
+    return auth.response;
   }
   if (auth.mode !== "live") return serviceUnavailableResponse();
   const { adminClient, user } = auth;

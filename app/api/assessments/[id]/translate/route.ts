@@ -1,3 +1,4 @@
+import { requireAuthenticatedApprovedUser } from "@/app/lib/api/require-approved-provider";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
@@ -80,13 +81,9 @@ export async function POST(
   }
   const { sessionClient, adminClient } = clients;
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await sessionClient.auth.getUser();
-  if (authErr ?? !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthenticatedApprovedUser(sessionClient, adminClient);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   let body: { fieldKey?: unknown; text?: unknown };
   try {
