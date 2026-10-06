@@ -72,13 +72,13 @@ test.describe("PR #313 lifecycle verification", () => {
 
   test("rest countdown ticks, resets phase, and disables timer", async ({ page }) => {
     await page.goto("/qa/pr313/rest-countdown");
-    await expect(page.getByText("5", { exact: true })).toBeVisible();
+    await expect(page.getByText("5 seconds")).toBeVisible();
     await page.waitForTimeout(1100);
-    await expect(page.getByText("4", { exact: true })).toBeVisible();
+    await expect(page.getByText("4 seconds")).toBeVisible();
     await page.getByTestId("rest-phase-b").click();
-    await expect(page.getByText("5", { exact: true })).toBeVisible();
+    await expect(page.getByText("5 seconds")).toBeVisible();
     await page.getByTestId("rest-duration-off").click();
-    await expect(page.getByText("5", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/\d+ seconds/)).toHaveCount(0);
   });
 
   test("ready countdown completes once (reduced motion path)", async ({ page }) => {
