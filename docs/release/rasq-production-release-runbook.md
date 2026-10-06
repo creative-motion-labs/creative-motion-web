@@ -55,7 +55,7 @@ npm ci
 | PR313 QA guard unit tests | included in `npm test` (`pr313-production-guard.test.ts`) | 3/3 |
 | Release-changed ESLint | `npm run release:lint-changed` | `error_count=0` |
 | Production build | `npm run build` | Exit 0 |
-| PR313 lifecycle E2E (optional, needs dev server) | `npm run test:e2e-pr313` | 7/7 (set `PLAYWRIGHT_BASE_URL`, `NEXT_PUBLIC_PR313_QA_NAV=1`) |
+| PR313 lifecycle E2E (optional, needs local `next dev`) | `npm run test:e2e-pr313` | 6/6 (set `PLAYWRIGHT_BASE_URL`, `NEXT_PUBLIC_PR313_QA_NAV=1`) |
 | QA blocked on prod runtime | See §4 | QA paths 404; `/demo` and `/assessment/*` reachable |
 
 Full gate script:
@@ -80,6 +80,8 @@ npm run release:lint-changed
 - **Server block:** `proxy.ts` returns **404** for `/qa/pr313` and nested paths when `NODE_ENV=production` **or** `VERCEL_ENV=production` (see `app/lib/qa/pr313-production-guard.ts`).
 - The guard runs **before** Supabase session refresh and auth routing.
 - **Important:** `next start` and Vercel production builds set `NODE_ENV=production`, so the harness is **not** reachable on production or on local `next start` smoke tests—even if `NEXT_PUBLIC_PR313_QA_NAV=1`.
+- **Floating QA nav** (mounted in `/assessment`, `/patient/assessment`, and clinician capture layouts) renders only when `NEXT_PUBLIC_PR313_QA_NAV=1` **and** the runtime is not production (`isPr313QaNavEnabled`). `NODE_ENV` is inlined at build time, so production and preview builds never render it.
+- The harness is a **local development tool** (`next dev`). Deployed dev/preview builds also run with `NODE_ENV=production`, so `/qa/pr313` returns 404 there.
 - Vercel **Preview** uses `VERCEL_ENV=preview` but still `NODE_ENV=production`; the harness remains blocked because `NODE_ENV=production` satisfies the guard.
 
 Local production smoke:

@@ -18,3 +18,12 @@ export function shouldBlockPr313QaInProduction(
 export function isPr313QaPublicInCurrentRuntime(nodeEnv?: string, vercelEnv?: string): boolean {
   return !isProductionRuntime(nodeEnv, vercelEnv);
 }
+
+/** Floating QA nav on patient/clinician routes: opt-in flag, and never in a production runtime. */
+export function isPr313QaNavEnabled(
+  navFlag?: string,
+  nodeEnv?: string,
+  vercelEnv?: string,
+): boolean {
+  return navFlag === "1" && !isProductionRuntime(nodeEnv, vercelEnv);
+}

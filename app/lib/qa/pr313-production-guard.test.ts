@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  isPr313QaNavEnabled,
   isPr313QaPath,
   isPr313QaPublicInCurrentRuntime,
   shouldBlockPr313QaInProduction,
@@ -34,6 +35,14 @@ describe("PR313 QA production guard", () => {
       shouldBlockPr313QaInProduction("/demo", "production", "production"),
       false,
     );
+  });
+
+  it("never enables the floating QA nav in production, even with the flag set", () => {
+    assert.equal(isPr313QaNavEnabled("1", "development", undefined), true);
+    assert.equal(isPr313QaNavEnabled(undefined, "development", undefined), false);
+    assert.equal(isPr313QaNavEnabled("1", "production", undefined), false);
+    assert.equal(isPr313QaNavEnabled("1", "production", "preview"), false);
+    assert.equal(isPr313QaNavEnabled("1", "development", "production"), false);
   });
 
   it("allows public access outside production", () => {

@@ -7,9 +7,17 @@ import {
   PR313_CAPTURE_PATIENT_A,
   PR313_CAPTURE_PATIENT_B,
 } from "@/app/qa/pr313/nav-capture/page";
+import { isPr313QaNavEnabled } from "@/app/lib/qa/pr313-production-guard";
 
 export function Pr313FloatingNav({ variant }: { variant: "assessment" | "ulms" | "capture" }) {
-  if (process.env.NEXT_PUBLIC_PR313_QA_NAV !== "1") {
+  // NODE_ENV is inlined at build time ("production" for next build / Vercel production and preview).
+  if (
+    !isPr313QaNavEnabled(
+      process.env.NEXT_PUBLIC_PR313_QA_NAV,
+      process.env.NODE_ENV,
+      process.env.NEXT_PUBLIC_VERCEL_ENV,
+    )
+  ) {
     return null;
   }
 
