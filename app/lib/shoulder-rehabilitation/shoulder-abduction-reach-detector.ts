@@ -84,6 +84,19 @@ function sideResult(
 }
 
 /**
+ * Advance both sides' phase/rep state for a frame with no pose landmarks at all.
+ * Uses the same unusable-frame handling as a frame whose angle cannot be computed,
+ * so confirmation streaks do not survive missing-landmark frames.
+ */
+export function advanceShoulderAbductionReachDetectorWithoutLandmarks(
+  state: ShoulderAbductionReachDetectorState,
+  thresholds: ShoulderAbductionReachThresholds = DEFAULT_SHOULDER_ABDUCTION_REACH_THRESHOLDS,
+): void {
+  tickShoulderAbductionReachPhase(state.left, null, thresholds);
+  tickShoulderAbductionReachPhase(state.right, null, thresholds);
+}
+
+/**
  * Process one frame's raw landmarks through the full pipeline and advance
  * both sides' phase/rep state in place. Returns a snapshot of the result for
  * this frame; state mutation is the source of truth for rep counts across

@@ -36,6 +36,7 @@ export {
 } from "./shoulder-abduction-reach-phase";
 
 export {
+  advanceShoulderAbductionReachDetectorWithoutLandmarks,
   createShoulderAbductionReachDetectorState,
   updateShoulderAbductionReachDetector,
   type ShoulderAbductionReachDetectorState,
