@@ -15,6 +15,7 @@ import type { PoseLandmark } from "@/app/lib/cv/pose-landmark-overlay";
 import { MIN_PRESENT_VISIBILITY } from "@/app/lib/cv/motion-quality-confidence";
 import type { BodyFramingState } from "@/app/lib/cv/body-framing-evaluator";
 import { MOVEMENT_REP_CONFIRM_MIN_TICKS } from "@/app/lib/movement-rep-confirmation";
+import { DEFAULT_SHOULDER_ABDUCTION_REACH_THRESHOLDS } from "@/app/lib/shoulder-rehabilitation/shoulder-abduction-reach-contract";
 import {
   ShoulderAbductionReachPoseDetector,
   type ShoulderAbductionReachMeasuredEvent,
@@ -728,5 +729,100 @@ describe("ShoulderAbductionReachPoseDetector", () => {
     } finally {
       raf.restore();
     }
+  });
+});
+
+describe("ShoulderAbductionReachPoseDetector — missing-landmark frames and rep confirmation", () => {
+  const CONFIRM = MOVEMENT_REP_CONFIRM_MIN_TICKS;
+  const POSE_LOST = DEFAULT_SHOULDER_ABDUCTION_REACH_THRESHOLDS.poseLostUnknownMinTicks;
+
+  function frames(count: number, landmarks: PoseLandmark[] | null): Array<PoseLandmark[] | null> {
+    return Array.from({ length: count }, () => landmarks);
+  }
+
+  function createDetector(): {
+    detector: ShoulderAbductionReachPoseDetector;
+    events: ShoulderAbductionReachMeasuredEvent[];
+  } {
+    const events: ShoulderAbductionReachMeasuredEvent[] = [];
+    const detector = new ShoulderAbductionReachPoseDetector(
+      { onSnapshot: () => {}, onMeasuredEvent: (e) => events.push(e) },
+      "right",
+    );
+    return { detector, events };
+  }
+
+  function repCompletedCount(events: ShoulderAbductionReachMeasuredEvent[]): number {
+    return events.filter((e) => e.type === "repCompleted").length;
+  }
+
+  it("does not confirm a peak whose consecutive frames are interrupted by a missing-landmark frame", () => {
+    const { detector, events } = createDetector();
+    driveFrames(detector, [
+      ...frames(CONFIRM, restingLandmarks()),
+      ...frames(CONFIRM - 1, peakAbductionLandmarks()),
+      null,
+      ...frames(1, peakAbductionLandmarks()),
+      ...frames(CONFIRM, restingLandmarks()),
+    ]);
+
+    assert.equal(detector.getSnapshot().primaryRepCount, 0);
+    assert.equal(repCompletedCount(events), 0);
+  });
+
+  it("still completes a rep when a brief dropout follows a fully confirmed peak", () => {
+    const { detector, events } = createDetector();
+    driveFrames(detector, [
+      ...frames(CONFIRM, restingLandmarks()),
+      ...frames(CONFIRM, peakAbductionLandmarks()),
+      ...frames(POSE_LOST - 1, null),
+      ...frames(CONFIRM, restingLandmarks()),
+    ]);
+
+    assert.equal(detector.getSnapshot().primaryRepCount, 1);
+    assert.equal(repCompletedCount(events), 1);
+  });
+
+  it("cancels an unfinished cycle on prolonged tracking loss without erasing completed reps", () => {
+    const { detector, events } = createDetector();
+    driveFrames(detector, [
+      ...frames(CONFIRM, restingLandmarks()),
+      ...frames(CONFIRM, peakAbductionLandmarks()),
+      ...frames(CONFIRM, restingLandmarks()),
+    ]);
+    assert.equal(detector.getSnapshot().primaryRepCount, 1);
+
+    // Second raise reaches a confirmed peak, then tracking is lost long enough to
+    // cancel the cycle (and to raise trackerLost) before the arm is seen at rest again.
+    driveFrames(detector, [
+      ...frames(CONFIRM, peakAbductionLandmarks()),
+      ...frames(Math.max(POSE_LOST, 30), null),
+      ...frames(CONFIRM, restingLandmarks()),
+    ]);
+
+    assert.equal(detector.getSnapshot().primaryRepCount, 1, "completed rep is kept; unfinished rep is not counted");
+    assert.equal(repCompletedCount(events), 1);
+    assert.equal(events.filter((e) => e.type === "trackerLost").length, 1);
+    assert.equal(events.filter((e) => e.type === "trackerRecovered").length, 1);
+
+    // The confirmed rest after recovery re-arms the cycle; a full new cycle counts normally.
+    driveFrames(detector, [
+      ...frames(CONFIRM, peakAbductionLandmarks()),
+      ...frames(CONFIRM, restingLandmarks()),
+    ]);
+    assert.equal(detector.getSnapshot().primaryRepCount, 2);
+    assert.equal(repCompletedCount(events), 2);
+  });
+
+  it("counts a valid uninterrupted cycle exactly once, even with a long rest afterwards", () => {
+    const { detector, events } = createDetector();
+    driveFrames(detector, [
+      ...frames(CONFIRM, restingLandmarks()),
+      ...frames(CONFIRM, peakAbductionLandmarks()),
+      ...frames(CONFIRM * 4, restingLandmarks()),
+    ]);
+
+    assert.equal(detector.getSnapshot().primaryRepCount, 1);
+    assert.equal(repCompletedCount(events), 1);
   });
 });

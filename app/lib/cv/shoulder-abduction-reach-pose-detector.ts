@@ -17,6 +17,7 @@
  */
 
 import {
+  advanceShoulderAbductionReachDetectorWithoutLandmarks,
   createShoulderAbductionReachDetectorState,
   updateShoulderAbductionReachDetector,
   extractShoulderAbductionReachArmGeometry,
@@ -449,6 +450,9 @@ export class ShoulderAbductionReachPoseDetector {
     this.framesTotal += 1;
 
     if (!landmarks) {
+      // A frame with no landmarks is an unusable frame for rep confirmation: it must
+      // break consecutive rest/peak streaks exactly like a frame whose angle is null.
+      advanceShoulderAbductionReachDetectorWithoutLandmarks(this.detectorState);
       this.consecutiveNoLandmarkFrames += 1;
       if (!this.trackerWasLost && this.consecutiveNoLandmarkFrames >= TRACKER_LOST_CONSECUTIVE_FRAMES) {
         this.trackerWasLost = true;
