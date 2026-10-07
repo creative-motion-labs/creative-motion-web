@@ -27,6 +27,7 @@ import {
   sessionExerciseUi,
   type PatientCvReadinessDisplayState,
 } from "@/app/lib/patient-portal-ui";
+import { buildCvReadinessScopeKey } from "@/app/lib/patient-portal/cv-readiness-scope";
 
 export type ExerciseCardStep = "preview" | "active" | "done";
 
@@ -51,6 +52,8 @@ type PatientExerciseSessionCardProps = {
   onRegisterCaptureConsent?: (getter: () => PatientCvCameraConsentRecord | null) => void;
   /** Guided session shell renders its own progress header */
   showTopProgress?: boolean;
+  /** Server-authored treatment side from GET /api/patient/plan — never from patient input. */
+  prescribedSide?: string | null;
 };
 
 function DoseTile({
@@ -72,8 +75,7 @@ function DoseTile({
         {label}
       </p>
       <p
-        className="mt-0.5 text-[15px] font-bold text-[#0A0F1A]"
-        style={{ fontFamily: "var(--font-ibm-plex-mono, monospace)" }}
+        className="font-data mt-0.5 text-[15px] font-bold text-[#0A0F1A]"
       >
         {value}
       </p>
@@ -101,6 +103,7 @@ export function PatientExerciseSessionCard({
   onRegisterStsPilotRecordFlush,
   onRegisterCaptureConsent,
   showTopProgress = true,
+  prescribedSide,
 }: PatientExerciseSessionCardProps) {
   const flowUi = sessionExerciseFlowUi(lang);
   const cardUi = sessionExerciseUi(lang);
@@ -115,12 +118,15 @@ export function PatientExerciseSessionCard({
     (isCvEnabledExercise(view.exerciseId) || isInteractiveShoulder) && step === "preview";
   const showCvReadinessBanner =
     (isPatientCvCaptureWired(view.exerciseId) || isInteractiveShoulder) && step === "active";
+  const cvReadinessScopeKey = buildCvReadinessScopeKey(view.exerciseId, step);
+  const [cvReadinessScopeKeyState, setCvReadinessScopeKeyState] = useState(cvReadinessScopeKey);
   const [cvReadinessState, setCvReadinessState] =
     useState<PatientCvReadinessDisplayState | null>(null);
 
-  useEffect(() => {
+  if (cvReadinessScopeKeyState !== cvReadinessScopeKey) {
+    setCvReadinessScopeKeyState(cvReadinessScopeKey);
     setCvReadinessState(null);
-  }, [view.exerciseId, step]);
+  }
 
   const handleCaptureReadinessChange = useCallback(
     (payload: {
@@ -215,6 +221,9 @@ export function PatientExerciseSessionCard({
           arClass={arClass}
           textDir={textDir}
           exerciseStep={step}
+          prescribedSide={prescribedSide}
+          clinicalPrescribedSideRequired={isInteractiveShoulder}
+          runtimeInstanceKey={`${view.exerciseId}:${prescribedSide ?? "none"}`}
           onCvMetricsUpdate={onCvMetricsUpdate}
           onCvSkipped={onCvSkipped}
           onRegisterCvMetricsFlush={onRegisterCvMetricsFlush}
@@ -226,12 +235,7 @@ export function PatientExerciseSessionCard({
 
         <div className="space-y-4 p-5">
           <div>
-            <h2
-              className={`text-[18px] font-bold text-[#0A0F1A] ${arClass}`}
-              style={{
-                fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)",
-              }}
-            >
+            <h2 className={`rasq-card-title text-[#0A0F1A] ${arClass}`}>
               {view.name}
             </h2>
             {bodyRegion && (
@@ -315,8 +319,7 @@ export function PatientExerciseSessionCard({
 
           {view.doseLabel && (
             <p
-              className={`text-[12px] font-semibold text-[#1D9E75] ${arClass}`}
-              style={{ fontFamily: "var(--font-ibm-plex-mono, monospace)" }}
+              className={`font-data text-[12px] font-semibold text-[#1D9E75] ${arClass}`}
             >
               {view.doseLabel}
             </p>

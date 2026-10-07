@@ -18,6 +18,14 @@ export {
   type ShoulderAbductionReachSideMetrics,
 } from "./shoulder-abduction-reach-metrics";
 
+export {
+  EMPTY_SHOULDER_ABDUCTION_REACH_ARM_GEOMETRY,
+  estimateShoulderAbductionReachArmLength,
+  extractShoulderAbductionReachArmGeometry,
+  type ShoulderAbductionReachArmGeometry,
+  type ShoulderAbductionReachNormalizedPoint,
+} from "./shoulder-abduction-reach-arm-geometry";
+
 export { validateShoulderAbductionReachFrames } from "./shoulder-abduction-reach-validation";
 
 export {
@@ -28,6 +36,7 @@ export {
 } from "./shoulder-abduction-reach-phase";
 
 export {
+  advanceShoulderAbductionReachDetectorWithoutLandmarks,
   createShoulderAbductionReachDetectorState,
   updateShoulderAbductionReachDetector,
   type ShoulderAbductionReachDetectorState,

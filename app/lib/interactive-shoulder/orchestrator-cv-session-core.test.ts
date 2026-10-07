@@ -109,4 +109,17 @@ describe("orchestrator cv session core wrapper contract", () => {
       /sessionStartedRef\.current = true;\s*\r?\n\s*sessionCompleteFiredRef\.current = false;/,
     );
   });
+
+  it("resolves therapeutic side via orchestrator resolver, not legacy fallback in clinical mode", () => {
+    const corePath = join(
+      process.cwd(),
+      "app/components/patient/interactive-shoulder/OrchestratorCvSessionCore.tsx",
+    );
+    const source = readFileSync(corePath, "utf8");
+    assert.match(source, /resolveOrchestratorTherapeuticSide\(/);
+    assert.match(source, /mountOrchestratorCvDetector/);
+    assert.match(source, /shouldStartOrchestratorCvCamera/);
+    assert.doesNotMatch(source, /resolveInteractiveShoulderSide\(/);
+    assert.doesNotMatch(source, /blockSide:\s*interactiveBlock\?\.side/);
+  });
 });

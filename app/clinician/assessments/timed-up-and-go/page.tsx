@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { AssessmentCaptureReviewLayout } from "@/app/components/clinician/assessments/AssessmentCaptureReviewLayout";
 import { AssessmentTimedCaptureSession } from "@/app/components/clinician/assessments/AssessmentTimedCaptureSession";
 import { TIMED_UP_AND_GO_SHELL } from "@/app/lib/clinician/assessment-module-shells";
+import { readOptionalPatientIdParam } from "@/app/lib/api/patient-id-utils";
 import { getCvReadyExercises } from "@/app/lib/cv/cv-ready-exercises";
 import { useCvSessionMetrics } from "@/app/hooks/useCvSessionMetrics";
 
@@ -16,7 +18,10 @@ const TUG_INSTRUCTIONS = [
   "Press stop when the patient is seated again.",
 ] as const;
 
-export default function TimedUpAndGoAssessmentPage() {
+function TimedUpAndGoAssessmentPage() {
+  const searchParams = useSearchParams();
+  const scopedPatientId = readOptionalPatientIdParam(searchParams);
+
   const exerciseNameById = useMemo(
     () => ({
       ...Object.fromEntries(
@@ -28,6 +33,7 @@ export default function TimedUpAndGoAssessmentPage() {
   );
 
   const { metrics, loading, error, refresh } = useCvSessionMetrics({
+    patientId: scopedPatientId,
     limit: FETCH_LIMIT,
     exerciseIds: [TUG_EXERCISE_ID],
     dedupePatientSessions: false,
@@ -43,6 +49,7 @@ export default function TimedUpAndGoAssessmentPage() {
       error={error}
       exerciseNameById={exerciseNameById}
       hasPatientLinkedSessions={hasPatientLinkedSessions}
+      scopedPatientId={scopedPatientId}
       captureSection={
         <AssessmentTimedCaptureSession
           title="Timed Up and Go"
@@ -55,5 +62,19 @@ export default function TimedUpAndGoAssessmentPage() {
         />
       }
     />
+  );
+}
+
+export default function TimedUpAndGoAssessmentPageRoute() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#0B1220] px-6 py-16 text-white">
+          <p className="text-center text-sm text-white/50">Loading Timed Up and Go…</p>
+        </main>
+      }
+    >
+      <TimedUpAndGoAssessmentPage />
+    </Suspense>
   );
 }

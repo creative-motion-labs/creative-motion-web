@@ -16,6 +16,7 @@ export type PlanSessionRow = {
   scheduled_at: string | null;
   completed_at: string | null;
   source_program_session_id: string | null;
+  prescribed_side: string | null;
 };
 
 type LegacyPlanSessionRow = Omit<PlanSessionRow, "source_program_session_id">;
@@ -38,7 +39,7 @@ export type FetchPlanSessionsFailure = {
 export type FetchPlanSessionsResult = FetchPlanSessionsSuccess | FetchPlanSessionsFailure;
 
 export const MODERN_PLAN_SESSION_SELECT =
-  "id, session_number, title, exercises, status, scheduled_at, completed_at, source_program_session_id";
+  "id, session_number, title, exercises, status, scheduled_at, completed_at, source_program_session_id, prescribed_side";
 
 export const LEGACY_PLAN_SESSION_SELECT =
   "id, session_number, title, exercises, status, scheduled_at, completed_at";
@@ -58,6 +59,18 @@ export function isMissingSourceProgramSessionIdColumn(
 
   const message = (error.message ?? "").toLowerCase();
   return message.includes("source_program_session_id");
+}
+
+export function isMissingPrescribedSideColumn(
+  error: PostgrestErrorLike | null | undefined,
+): boolean {
+  if (!error) return false;
+
+  const code = normalizePostgresErrorCode(error);
+  if (code !== "42703") return false;
+
+  const message = (error.message ?? "").toLowerCase();
+  return message.includes("prescribed_side");
 }
 
 export function normalizePostgresErrorCode(error: PostgrestErrorLike): string | null {
@@ -91,6 +104,15 @@ function mapLegacyRows(rows: readonly LegacyPlanSessionRow[]): PlanSessionRow[] 
   return rows.map((row) => ({
     ...row,
     source_program_session_id: null,
+    prescribed_side: null,
+  }));
+}
+
+function mapLegacyRowsWithSource(rows: readonly (LegacyPlanSessionRow & { source_program_session_id?: string | null })[]): PlanSessionRow[] {
+  return rows.map((row) => ({
+    ...row,
+    source_program_session_id: row.source_program_session_id ?? null,
+    prescribed_side: null,
   }));
 }
 
@@ -108,7 +130,32 @@ export async function fetchPlanSessionsForPatientPortal(
     };
   }
 
-  if (!isMissingSourceProgramSessionIdColumn(modernResult.error)) {
+  if (isMissingPrescribedSideColumn(modernResult.error)) {
+    const legacyWithSourceSelect =
+      "id, session_number, title, exercises, status, scheduled_at, completed_at, source_program_session_id";
+    const legacyWithSourceResult = await queryPlanSessions(admin, planId, legacyWithSourceSelect);
+
+    if (!legacyWithSourceResult.error) {
+      return {
+        ok: true,
+        sessions: mapLegacyRowsWithSource(
+          (legacyWithSourceResult.data ?? []) as (LegacyPlanSessionRow & {
+            source_program_session_id?: string | null;
+          })[],
+        ),
+        queryMode: "legacy",
+      };
+    }
+
+    if (!isMissingSourceProgramSessionIdColumn(legacyWithSourceResult.error)) {
+      return {
+        ok: false,
+        errorCode: normalizePostgresErrorCode(legacyWithSourceResult.error),
+        queryMode: "legacy",
+        reason: "legacy_retry_failed",
+      };
+    }
+  } else if (!isMissingSourceProgramSessionIdColumn(modernResult.error)) {
     return {
       ok: false,
       errorCode: normalizePostgresErrorCode(modernResult.error),

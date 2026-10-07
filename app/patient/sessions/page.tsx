@@ -221,7 +221,7 @@ function PatientSessionsPageContent() {
 
   if (!plan) {
     return (
-      <main className="min-h-screen bg-[#F4F6F5]" style={{ fontFamily: "var(--font-inter, ui-sans-serif, sans-serif)" }}>
+      <main className="font-ui-en min-h-screen bg-[#F4F6F5]">
         <div className="border-b border-[#e4ece8] bg-white px-6 py-5">
           <Link href="/patient" className="text-xs font-semibold text-[#6b9080] transition hover:text-[#1D9E75]">← Dashboard</Link>
           <h1 className="mt-1.5 text-xl font-bold text-[#0f2e22]">Sessions</h1>
@@ -250,7 +250,7 @@ function PatientSessionsPageContent() {
   const completed  = SESSIONS.filter((s) => s.status === "completed");
 
   return (
-    <main className="min-h-screen bg-[#F4F6F5]" style={{ fontFamily: "var(--font-inter, ui-sans-serif, sans-serif)" }}>
+    <main className="font-ui-en min-h-screen bg-[#F4F6F5]">
 
       {/* Legacy route notice */}
       <div className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-center">
@@ -271,7 +271,6 @@ function PatientSessionsPageContent() {
             <div>
               <h1
                 className="text-xl font-bold text-[#0f2e22]"
-                style={{ fontFamily: "var(--font-geist, var(--font-inter), sans-serif)" }}
               >
                 Sessions
               </h1>

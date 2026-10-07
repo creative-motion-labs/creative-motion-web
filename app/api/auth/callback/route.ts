@@ -6,6 +6,7 @@ import {
   buildProviderWriteClient,
   ensureProviderForUser,
 } from "../../../lib/auth/ensure-provider";
+import { resolveSafeAuthRedirectPath } from "../../../lib/auth/safe-redirect";
 
 /**
  * Supabase OAuth / Magic Link / PKCE callback handler.
@@ -16,7 +17,7 @@ import {
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/clinician/dashboard";
+  const next = resolveSafeAuthRedirectPath(searchParams.get("next"), "/clinician/dashboard");
 
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=missing_code`);

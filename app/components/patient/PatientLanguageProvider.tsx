@@ -9,7 +9,6 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
-import { IBM_Plex_Sans_Arabic } from "next/font/google";
 import type { PatientPlanData } from "@/app/api/patient/plan/route";
 import type { PatientExerciseLanguage } from "@/app/lib/exercise-resolve";
 import {
@@ -19,12 +18,7 @@ import {
 } from "@/app/lib/patient-language-preference";
 import { dispatchPatientPortalRefresh } from "@/app/lib/patient-portal-refresh";
 import { portalTextDir } from "@/app/lib/patient-portal-ui";
-
-const arabicFont = IBM_Plex_Sans_Arabic({
-  subsets: ["arabic"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
+import { patientPortalArabicSurfaceClass } from "@/app/lib/rasq-typography";
 
 type PatientPortalContextValue = {
   plan: PatientPlanData | null | undefined;
@@ -133,7 +127,7 @@ export function PatientLanguageProvider({
 
   const isArabic = language === "ar";
   const textDir = portalTextDir(language);
-  const arClass = isArabic ? arabicFont.className : "";
+  const arClass = patientPortalArabicSurfaceClass(isArabic);
   const isPlanLoading = plan === undefined;
 
   const value = useMemo(

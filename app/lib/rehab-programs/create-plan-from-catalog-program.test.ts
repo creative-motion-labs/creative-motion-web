@@ -14,7 +14,7 @@ import {
 // the exact function name and parameter object passed, so tests can
 // assert on both without depending on any real database.
 
-type RpcResult = { data: unknown; error: { message: string } | null };
+type RpcResult = { data: unknown; error: { message: string; code?: string } | null };
 
 function createMockClient(result: RpcResult) {
   const rpcCalls: { fn: string; params: unknown }[] = [];
@@ -85,6 +85,38 @@ describe("createPlanFromCatalogProgram", () => {
     assert.equal(params.p_program_id, VALID_INPUT.treatmentProgramId);
     assert.equal(params.p_assessment_id, VALID_INPUT.assessmentId);
     assert.equal(params.p_catalog_assignment_request_id, VALID_INPUT.catalogAssignmentRequestId);
+    assert.equal("p_session_prescribed_sides" in params, false);
+  });
+
+  it("8. includes the seventh RPC argument when session prescriptions are supplied", async () => {
+    const client = createMockClient({ data: SUCCESS_DATA, error: null });
+    await createPlanFromCatalogProgram(client, {
+      ...VALID_INPUT,
+      sessionPrescribedSides: [{ sessionNumber: 1, prescribedSide: "left" }],
+    });
+    const params = client.rpcCalls[0].params as Record<string, unknown>;
+    assert.deepEqual(params.p_session_prescribed_sides, [
+      { sessionNumber: 1, prescribedSide: "left" },
+    ]);
+  });
+
+  it("9. classifies missing seventh RPC argument as prescribed_side_unavailable", async () => {
+    const client = createMockClient({
+      data: null,
+      error: {
+        code: "PGRST202",
+        message:
+          "Searched for the function public.create_plan_from_catalog_program with parameters p_session_prescribed_sides",
+      },
+    });
+
+    await expectReason(
+      createPlanFromCatalogProgram(client, {
+        ...VALID_INPUT,
+        sessionPrescribedSides: [{ sessionNumber: 1, prescribedSide: "right" }],
+      }),
+      "prescribed_side_unavailable",
+    );
   });
 
   it("4. generates a non-empty server-side token and passes it as p_patient_token", async () => {

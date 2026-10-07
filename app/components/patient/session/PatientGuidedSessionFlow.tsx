@@ -9,6 +9,10 @@ import {
   guidedSessionUi,
   sessionExerciseFlowUi,
 } from "@/app/lib/patient-portal-ui";
+import {
+  buildGuidedRestCountdownScopeKey,
+  resolveGuidedRestCountdownOnScopeChange,
+} from "@/app/lib/patient-portal/guided-session-rest-countdown";
 import { PatientSessionProgressStrip } from "@/app/components/patient/PatientExerciseSessionCard";
 
 const CARD_SHADOW = "shadow-[0_8px_30px_rgba(10,15,26,0.06)]";
@@ -60,7 +64,6 @@ export function GuidedSessionShell({
       <div>
         <h1
           className="text-[20px] font-bold leading-snug text-[#0A0F1A]"
-          style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
         >
           {sessionTitle}
         </h1>
@@ -88,7 +91,6 @@ export function GuidedSessionStartScreen({
   lang,
   arClass,
   textDir,
-  sessionTitle,
   totalExercises,
   firstExerciseName,
   onBegin,
@@ -96,7 +98,6 @@ export function GuidedSessionStartScreen({
   lang: PatientExerciseLanguage;
   arClass: string;
   textDir: "ltr" | "rtl";
-  sessionTitle: string;
   totalExercises: number;
   firstExerciseName: string;
   onBegin: () => void;
@@ -112,13 +113,7 @@ export function GuidedSessionStartScreen({
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/70">
           {ui.startEyebrow}
         </p>
-        <h2
-          className="mt-3 text-[26px] font-bold leading-tight"
-          style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
-        >
-          {ui.startTitle(sessionTitle)}
-        </h2>
-        <p className="mt-3 text-[14px] leading-relaxed text-white/85">{ui.startSubtitle}</p>
+        <p className="mt-3 text-[15px] leading-relaxed text-white/90">{ui.startSubtitle}</p>
         <p className="mt-4 text-[13px] font-semibold text-[#B8F5DF]">
           {ui.exercisesReady(totalExercises)}
         </p>
@@ -189,7 +184,6 @@ export function GuidedSessionExerciseHero({
       <div>
         <h2
           className="text-[22px] font-bold leading-snug text-[#0A0F1A]"
-          style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
         >
           {view.name}
         </h2>
@@ -260,25 +254,35 @@ export function GuidedSessionRestScreen({
 }) {
   const ui = guidedSessionUi(lang);
   const hasCountdown = restSeconds != null && restSeconds > 0;
-  const [secondsLeft, setSecondsLeft] = useState(() =>
-    hasCountdown ? Math.max(0, Math.floor(restSeconds!)) : 0,
-  );
+  const countdownStart = hasCountdown ? Math.max(0, Math.floor(restSeconds!)) : 0;
+  const countdownScopeKey = buildGuidedRestCountdownScopeKey(restPhaseKey, countdownStart);
+  const [countdownScopeKeyState, setCountdownScopeKeyState] = useState(countdownScopeKey);
+  const [secondsLeft, setSecondsLeft] = useState(countdownStart);
+
+  const scopeReset = resolveGuidedRestCountdownOnScopeChange({
+    countdownScopeKey,
+    countdownScopeKeyState,
+    countdownStart,
+    secondsLeft,
+  });
+  if (scopeReset.countdownScopeKeyState !== countdownScopeKeyState) {
+    setCountdownScopeKeyState(scopeReset.countdownScopeKeyState);
+    setSecondsLeft(scopeReset.secondsLeft);
+  }
 
   useEffect(() => {
     if (!hasCountdown) {
-      setSecondsLeft(0);
       return;
     }
-
-    const start = Math.max(0, Math.floor(restSeconds!));
-    setSecondsLeft(start);
 
     const timer = window.setInterval(() => {
       setSecondsLeft((current) => (current <= 0 ? 0 : current - 1));
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [hasCountdown, restSeconds, restPhaseKey]);
+  }, [hasCountdown, countdownScopeKey]);
+
+  const displaySecondsLeft = hasCountdown ? secondsLeft : 0;
 
   return (
     <div className={`space-y-6 ${arClass}`} dir={textDir}>
@@ -293,7 +297,6 @@ export function GuidedSessionRestScreen({
         </div>
         <h2
           className="mt-4 text-[24px] font-bold text-[#0A0F1A]"
-          style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
         >
           {ui.restTitle}
         </h2>
@@ -301,12 +304,11 @@ export function GuidedSessionRestScreen({
 
         {hasCountdown ? (
           <div className="mt-5" aria-live="polite" aria-atomic="true">
-            {secondsLeft > 0 ? (
+            {displaySecondsLeft > 0 ? (
               <p
                 className="text-[40px] font-bold leading-tight text-[#1D9E75]"
-                style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
               >
-                {ui.restCountdownSeconds(secondsLeft)}
+                {ui.restCountdownSeconds(displaySecondsLeft)}
               </p>
             ) : (
               <p className="text-[18px] font-semibold text-[#1D9E75]">{ui.restReadyForNext}</p>
@@ -384,7 +386,6 @@ export function GuidedSessionCompleteScreen({
       <div className="max-w-sm">
         <h2
           className="text-[28px] font-bold text-[#0A0F1A]"
-          style={{ fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)" }}
         >
           {ui.sessionCompleteTitle}
         </h2>

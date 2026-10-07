@@ -24,6 +24,11 @@ export type ExerciseMediaAreaProps = {
   textDir?: "rtl" | "ltr";
   /** W-0 exercise card step — CV capture only when "active". */
   exerciseStep?: "preview" | "active" | "done";
+  /** Server-authored treatment side from GET /api/patient/plan. */
+  prescribedSide?: string | null;
+  clinicalPrescribedSideRequired?: boolean;
+  /** Forces runtime remount when session side identity changes. */
+  runtimeInstanceKey?: string;
   onCvMetricsUpdate?: (metrics: PatientCvDerivedMetrics) => void;
   onCvSkipped?: () => void;
   onRegisterCvMetricsFlush?: (flush: () => void) => void;
@@ -425,6 +430,9 @@ export function ExerciseMediaArea({
   arClass = "",
   textDir = "ltr",
   exerciseStep,
+  prescribedSide,
+  clinicalPrescribedSideRequired = false,
+  runtimeInstanceKey,
   onCvMetricsUpdate,
   onCvSkipped,
   onRegisterCvMetricsFlush,
@@ -452,9 +460,12 @@ export function ExerciseMediaArea({
     >
       {showInteractiveShoulder && (
         <InteractiveShoulderSession
+          key={runtimeInstanceKey}
           language={language}
           arClass={arClass}
           textDir={textDir}
+          prescribedSide={prescribedSide}
+          clinicalPrescribedSideRequired={clinicalPrescribedSideRequired}
           onSkipped={onCvSkipped}
           onRegisterMetricsFlush={onRegisterCvMetricsFlush}
           onRegisterCaptureConsent={onRegisterCaptureConsent}

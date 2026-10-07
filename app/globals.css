@@ -37,9 +37,12 @@
   --radius-3xl:  12px;   /* replaces 24px over-rounding */
 
   /* ── Typography ── */
-  --font-sans:  var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono:  var(--font-ibm-plex-mono), ui-monospace, monospace;
-  --font-display: var(--font-geist), var(--font-inter), ui-sans-serif, sans-serif;
+  --font-ui-en: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-ui-ar: var(--font-ibm-plex-sans-arabic), "IBM Plex Sans Arabic", ui-sans-serif, sans-serif;
+  --font-data: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  --font-sans: var(--font-ui-en);
+  --font-mono: var(--font-data);
+  --font-display: var(--font-ui-en);
 }
 
 /* ── Base resets ── */
@@ -61,6 +64,86 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+}
+
+/* ── RASQ typography utilities ── */
+.font-ui-en {
+  font-family: var(--font-ui-en);
+}
+
+.font-ui-ar {
+  font-family: var(--font-ui-ar);
+  letter-spacing: 0;
+}
+
+.font-data {
+  font-family: var(--font-data);
+}
+
+.rasq-wordmark {
+  font-family: var(--font-ui-en);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.rasq-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.rasq-page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+@media (min-width: 640px) {
+  .rasq-page-title {
+    font-size: 1.625rem;
+  }
+}
+
+.rasq-card-title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.rasq-section-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.rasq-body {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.rasq-meta {
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: #6b7280;
+}
+
+/* Patient portal — Arabic body readability */
+.patient-arabic-readable {
+  font-family: var(--font-ui-ar);
+  line-height: 1.78;
+  letter-spacing: 0;
+}
+
+.patient-arabic-readable p,
+.patient-arabic-readable li {
+  margin-bottom: 0.625rem;
+}
+
+.patient-arabic-readable p:last-child,
+.patient-arabic-readable li:last-child {
+  margin-bottom: 0;
 }
 
 /* ── Disable glassmorphism globally (RASQ: flat surfaces only) ── */
@@ -339,4 +422,19 @@ body {
 @keyframes reach-light-burst {
   0% { transform: translate(0, 0) scale(1); opacity: 0.95; }
   100% { transform: translate(var(--burst-x), var(--burst-y)) scale(0.2); opacity: 0; }
+}
+
+@keyframes ready-countdown-pop {
+  0% { transform: scale(0.82); opacity: 0.35; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes target-success-pop {
+  0% { transform: scale(0.9); opacity: 0.4; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes cooldown-breath {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.6; }
 }

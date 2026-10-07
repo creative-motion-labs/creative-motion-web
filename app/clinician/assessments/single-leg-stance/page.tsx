@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AssessmentCaptureReviewLayout } from "@/app/components/clinician/assessments/AssessmentCaptureReviewLayout";
 import {
   AssessmentCvCaptureSession,
@@ -9,6 +10,7 @@ import {
 } from "@/app/components/clinician/assessments/AssessmentCvCaptureSession";
 import { getCvReadyExercises } from "@/app/lib/cv/cv-ready-exercises";
 import { SINGLE_LEG_STANCE_SHELL } from "@/app/lib/clinician/assessment-module-shells";
+import { readOptionalPatientIdParam } from "@/app/lib/api/patient-id-utils";
 import type { StanceLeg } from "@/app/lib/cv/single-leg-stance-detector";
 import { useCvSessionMetrics } from "@/app/hooks/useCvSessionMetrics";
 
@@ -21,7 +23,9 @@ const SLS_INSTRUCTIONS = [
   "Stop when the hold ends or the patient puts the foot down.",
 ] as const;
 
-export default function SingleLegStanceAssessmentPage() {
+function SingleLegStanceAssessmentPage() {
+  const searchParams = useSearchParams();
+  const scopedPatientId = readOptionalPatientIdParam(searchParams);
   const [stanceLeg, setStanceLeg] = useState<StanceLeg>("left");
 
   const exerciseNameById = useMemo(
@@ -33,6 +37,7 @@ export default function SingleLegStanceAssessmentPage() {
   );
 
   const { metrics, loading, error, refresh } = useCvSessionMetrics({
+    patientId: scopedPatientId,
     limit: FETCH_LIMIT,
     exerciseIds: [SLS_EXERCISE_ID],
     dedupePatientSessions: false,
@@ -54,6 +59,7 @@ export default function SingleLegStanceAssessmentPage() {
       error={error}
       exerciseNameById={exerciseNameById}
       hasPatientLinkedSessions={hasPatientLinkedSessions}
+      scopedPatientId={scopedPatientId}
       captureSection={
         <AssessmentCvCaptureSession
           title="Single-leg stance capture"
@@ -89,5 +95,19 @@ export default function SingleLegStanceAssessmentPage() {
         />
       }
     />
+  );
+}
+
+export default function SingleLegStanceAssessmentPageRoute() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#0B1220] px-6 py-16 text-white">
+          <p className="text-center text-sm text-white/50">Loading Single-Leg Stance…</p>
+        </main>
+      }
+    >
+      <SingleLegStanceAssessmentPage />
+    </Suspense>
   );
 }

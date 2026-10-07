@@ -147,12 +147,29 @@ export async function waitForDecodedVideoFrames(
   throw new Error(PATIENT_CAMERA_NO_FRAMES_ERROR);
 }
 
+/**
+ * Release MediaStream and detach from video element.
+ *
+ * CRITICAL: Stops ALL tracks from BOTH the provided stream AND video.srcObject
+ * to prevent orphaned tracks from blocking subsequent getUserMedia calls.
+ *
+ * Idempotent and safe for repeated calls.
+ */
 export function releaseMediaStream(
   stream: MediaStream | null | undefined,
   video?: HTMLVideoElement | null,
 ): void {
+  // Stop tracks from video.srcObject FIRST (may differ from stream parameter)
+  if (video?.srcObject instanceof MediaStream) {
+    const videoStream = video.srcObject as MediaStream;
+    videoStream.getTracks().forEach((track) => track.stop());
+  }
+
+  // Stop tracks from provided stream parameter
   stream?.getTracks().forEach((track) => track.stop());
-  if (video && video.srcObject) {
+
+  // Detach video element
+  if (video) {
     video.srcObject = null;
   }
 }

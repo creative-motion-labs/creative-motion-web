@@ -118,6 +118,25 @@ export function computeReachExtent(landmarks: PoseLandmark[]): number | null {
   return Math.max(0, leading.wristX - leading.shoulderX);
 }
 
+export type ReachExtentSide = "left" | "right";
+
+const REACH_SIDE_INDICES: Record<ReachExtentSide, { shoulder: number; wrist: number }> = {
+  left: { shoulder: L_SHOULDER, wrist: L_WRIST },
+  right: { shoulder: R_SHOULDER, wrist: R_WRIST },
+};
+
+/** Forward reach extent for a single tested arm (battery side-view flow). */
+export function computeReachExtentForSide(
+  landmarks: PoseLandmark[],
+  side: ReachExtentSide,
+): number | null {
+  const indices = REACH_SIDE_INDICES[side];
+  const shoulder = landmarks[indices.shoulder];
+  const wrist = landmarks[indices.wrist];
+  if (!shoulder || !wrist) return null;
+  return Math.max(0, wrist.x - shoulder.x);
+}
+
 export function reachLandmarksMeetMinVisibility(
   landmarks: PoseLandmark[],
   config: Pick<FunctionalReachRepConfig, "minShoulderVisibility" | "minWristVisibility">,

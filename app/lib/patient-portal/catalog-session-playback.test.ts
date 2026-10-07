@@ -122,7 +122,7 @@ describe("patient session route integration contracts", () => {
     const source = readFileSync(playbackPath, "utf8");
     assert.match(source, /programSession=\{catalogSession\}/);
     assert.doesNotMatch(source, /PatientExerciseSessionCard/);
-    assert.doesNotMatch(source, /InteractiveShoulderSession/);
+    assert.doesNotMatch(source, /\bInteractiveShoulderSession\b/);
   });
 
   it("preserves InteractiveShoulderSession legacy wiring inside PatientExerciseSessionCard", () => {
@@ -360,5 +360,38 @@ describe("catalog session completion display contracts", () => {
     const source = readFileSync(pagePath, "utf8");
     assert.match(source, /exercisesCompleted=\{completionSummary\.exercisesCompleted\}/);
     assert.doesNotMatch(source, /hideExerciseCount/);
+  });
+});
+
+describe("session start title deduplication", () => {
+  it("keeps the session title only in GuidedSessionShell heading", () => {
+    const flowPath = join(
+      process.cwd(),
+      "app/components/patient/session/PatientGuidedSessionFlow.tsx",
+    );
+    const source = readFileSync(flowPath, "utf8");
+    const startBlock = source.slice(
+      source.indexOf("export function GuidedSessionStartScreen"),
+      source.indexOf("export function GuidedSessionExerciseHero"),
+    );
+
+    assert.match(source, /<h1[\s\S]*\{sessionTitle\}/);
+    assert.doesNotMatch(startBlock, /startTitle\(/);
+    assert.match(startBlock, /startSubtitle/);
+  });
+
+  it("shows only session context inside catalog start card", () => {
+    const playbackPath = join(
+      process.cwd(),
+      "app/components/patient/session/CatalogPatientSessionPlayback.tsx",
+    );
+    const source = readFileSync(playbackPath, "utf8");
+    const cardBlock = source.slice(
+      source.indexOf("{guidedUi.startEyebrow}"),
+      source.indexOf("{guidedUi.safetyReminder}"),
+    );
+
+    assert.doesNotMatch(cardBlock, /\{sessionDisplay\.title\}/);
+    assert.match(cardBlock, /sessionDisplay\.goal/);
   });
 });

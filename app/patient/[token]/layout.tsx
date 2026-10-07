@@ -7,6 +7,9 @@ import { PatientSafetyNotice } from "@/app/components/patient/PatientSafetyNotic
 import { TrustFooter } from "@/app/components/trust/TrustFooter";
 import { PatientWorkspaceNav } from "@/app/components/patient/workspace/PatientWorkspaceNav";
 import { tokenLayoutUi, trustFooterUi } from "@/app/lib/patient-portal-ui";
+import { patientPortalArabicClass } from "@/app/lib/rasq-typography";
+
+const PATIENT_TOKEN_SHELL_WIDTH = "mx-auto w-full max-w-[680px] lg:max-w-[880px]";
 
 export default function PatientTokenLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -20,36 +23,29 @@ export default function PatientTokenLayout({ children }: { children: React.React
 }
 
 function PatientTokenLayoutShell({ children }: { children: React.ReactNode }) {
-  const { language, assignedBy, textDir, arClass } = usePatientLanguage();
+  const { language, assignedBy, textDir, isArabic } = usePatientLanguage();
   const layoutUi = tokenLayoutUi(language);
+  const portalFontClass = patientPortalArabicClass(isArabic);
 
   return (
     <div
-      className={`min-h-screen bg-[#EEF2F0] ${arClass}`}
+      className={`min-h-screen bg-[#EEF2F0] ${portalFontClass}`}
       dir={textDir}
-      style={{ fontFamily: "var(--font-inter, ui-sans-serif, sans-serif)" }}
+      lang={language}
     >
       <nav className="sticky top-0 z-10 flex h-[52px] items-center justify-between border-b border-[#E2E8E5] bg-white px-5">
-        <span
-          className="text-[14px] font-bold text-[#0A0F1A]"
-          style={{
-            fontFamily: "var(--font-geist-sans, ui-sans-serif, sans-serif)",
-            letterSpacing: "2px",
-          }}
-        >
-          RASQ
-        </span>
+        <span className="rasq-wordmark text-[14px] text-[#0A0F1A]">RASQ</span>
         <div className="flex items-center gap-3">
           <PatientLanguageToggle />
           {assignedBy && (
-            <span className="text-[11px] text-[#9CA3AF]" dir="ltr">
+            <span className="text-[12px] text-[#6B7280]" dir="ltr">
               {layoutUi.assignedBy(assignedBy)}
             </span>
           )}
         </div>
       </nav>
 
-      <main className="mx-auto max-w-[680px] px-6 py-8 pb-28 md:px-8">
+      <main className={`${PATIENT_TOKEN_SHELL_WIDTH} px-6 py-8 pb-28 md:px-8`}>
         {children}
         <PatientSafetyNotice />
       </main>
@@ -59,7 +55,7 @@ function PatientTokenLayoutShell({ children }: { children: React.ReactNode }) {
       <TrustFooter
         variant="light"
         labels={trustFooterUi(language)}
-        className="mx-auto max-w-[680px] px-6 pb-28 md:px-8"
+        className={`${PATIENT_TOKEN_SHELL_WIDTH} px-6 pb-28 md:px-8`}
       />
     </div>
   );

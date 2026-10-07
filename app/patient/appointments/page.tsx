@@ -328,7 +328,7 @@ function PatientAppointmentsPageContent() {
     .sort((a, b) => b.isoDate.localeCompare(a.isoDate));
 
   return (
-    <main className="min-h-screen bg-[#F4F6F5]" style={{ fontFamily: "var(--font-inter, ui-sans-serif, sans-serif)" }}>
+    <main className="font-ui-en min-h-screen bg-[#F4F6F5]">
 
       <div className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-center">
         <p className="text-sm font-medium text-amber-900">
@@ -345,7 +345,6 @@ function PatientAppointmentsPageContent() {
             <div>
               <h1
                 className="text-xl font-bold text-[#0f2e22]"
-                style={{ fontFamily: "var(--font-geist, var(--font-inter), sans-serif)" }}
               >
                 Appointments
               </h1>

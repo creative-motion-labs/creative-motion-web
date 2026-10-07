@@ -2,15 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { registerClinician } from "../lib/api";
-import { ensureProviderProfile } from "../lib/auth/ensure-provider-client";
-import { createClient as createSupabaseClient } from "../lib/supabase/browser";
-
-const SUPABASE_CONFIGURED = Boolean(
-  process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-);
+import { submitProviderAccessInterest } from "../lib/auth/provider-access-interest-client";
 
 /* ─── Arc mark (self-contained, no external dependency) ─────────────────── */
 function ArcMark({ size = 18 }: { size?: number }) {
@@ -31,6 +23,7 @@ function Field({
   onChange,
   placeholder,
   autoComplete,
+  required,
 }: {
   label: string;
   type?: string;
@@ -38,11 +31,13 @@ function Field({
   onChange: (v: string) => void;
   placeholder: string;
   autoComplete?: string;
+  required?: boolean;
 }) {
   return (
     <div>
       <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-white/35">
         {label}
+        {required ? <span className="text-[#5DCAA5]/80"> *</span> : null}
       </label>
       <input
         type={type}
@@ -50,6 +45,7 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete={autoComplete}
+        required={required}
         className="w-full rounded-[7px] border border-[#1E2D42] bg-[#0B1220] px-3.5 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-[#1D9E75]/50 focus:bg-[#0d1c14] transition-colors"
       />
     </div>
@@ -58,81 +54,37 @@ function Field({
 
 /* ─── Page ───────────────────────────────────────────────────────────────── */
 export default function SignupPage() {
-  const router = useRouter();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [practice, setPractice] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
-  const [name,         setName]         = useState("");
-  const [email,        setEmail]        = useState("");
-  const [practice,     setPractice]     = useState("");
-  const [password,     setPassword]     = useState("");
-  const [confirm,      setConfirm]      = useState("");
-  const [error,        setError]        = useState("");
-  const [loading,      setLoading]      = useState(false);
-  const [confirmSent,  setConfirmSent]  = useState(false);
-
-  async function handleSignup() {
+  async function handleSubmit() {
     setError("");
 
-    if (!name.trim())         return setError("Full name is required.");
-    if (!email.trim())        return setError("Email is required.");
-    if (password.length < 6)  return setError("Password must be at least 6 characters.");
-    if (password !== confirm)  return setError("Passwords do not match.");
+    if (!email.trim()) {
+      setError("Email is required.");
+      return;
+    }
 
     setLoading(true);
     try {
-      if (SUPABASE_CONFIGURED) {
-        // ── Supabase Auth signup ─────────────────────────────────────────
-        const supabase = createSupabaseClient();
-        const { data, error: sbError } = await supabase.auth.signUp({
-          email: email.trim().toLowerCase(),
-          password,
-          options: {
-            // Store display metadata in user_metadata (visible to the provider)
-            data: {
-              full_name: name.trim(),
-              clinic_name: practice.trim() || null,
-            },
-          },
-        });
+      const result = await submitProviderAccessInterest({
+        email,
+        fullName: name,
+        clinicName: practice,
+      });
 
-        if (sbError) {
-          setError(sbError.message);
-          return;
-        }
-
-        if (data.session) {
-          // Session active — providers row required before clinician entry
-          await ensureProviderProfile({
-            name: name.trim(),
-            clinic_name: practice.trim() || null,
-            email: email.trim().toLowerCase(),
-          });
-
-          if (practice.trim()) {
-            localStorage.setItem("cm_practice_name", practice.trim());
-          }
-
-          router.push("/clinician/dashboard");
-          router.refresh();
-        } else {
-          // Email confirmation required — no session yet; check-email UI only
-          setConfirmSent(true);
-        }
-      } else {
-        // ── FastAPI fallback (pre-Supabase accounts) ─────────────────────
-        await registerClinician({
-          full_name: name.trim(),
-          email:     email.trim().toLowerCase(),
-          password,
-        });
-
-        if (practice.trim()) {
-          localStorage.setItem("cm_practice_name", practice.trim());
-        }
-
-        router.push("/login?registered=1");
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed. Please try again.");
+
+      setSubmitted(true);
+    } catch {
+      setError("Unable to submit your request right now. Please try again later.");
     } finally {
       setLoading(false);
     }
@@ -140,7 +92,6 @@ export default function SignupPage() {
 
   return (
     <main className="relative flex min-h-screen items-center justify-center bg-[#080E14] px-6 py-16 text-white">
-      {/* Subtle teal ambient */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -150,8 +101,6 @@ export default function SignupPage() {
       />
 
       <div className="relative w-full max-w-sm">
-
-        {/* Top bar */}
         <div className="mb-8 flex items-center justify-between">
           <Link
             href="/"
@@ -169,114 +118,104 @@ export default function SignupPage() {
             </span>
           </Link>
           <span className="rounded-[5px] border border-[#1E2D42] bg-[#0F1825] px-2.5 py-1 text-[11px] font-semibold text-white/35">
-            Provider signup
+            Provider access
           </span>
         </div>
 
-        {/* Card */}
         <div className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-7">
-
-          {/* Header */}
-          <div className="mb-7">
-            <h1
-              className="text-xl font-bold text-white"
-              style={{ fontFamily: "var(--rasq-font-display, sans-serif)" }}
-            >
-              Create your workspace
-            </h1>
-            <p className="mt-1.5 text-sm leading-6 text-white/40">
-              Start managing patients, assessments, and rehabilitation plans.
-            </p>
-          </div>
-
-          {/* Email confirmation screen */}
-          {confirmSent ? (
+          {submitted ? (
             <div className="space-y-4">
               <div className="rounded-[7px] border border-[#1D9E75]/25 bg-[#1D9E75]/8 px-4 py-4">
-                <p className="text-sm font-semibold text-[#5DCAA5]">Check your email</p>
-                <p className="mt-1 text-sm leading-6 text-white/50">
-                  We sent a confirmation link to{" "}
-                  <span className="font-semibold text-white/70">{email}</span>.
-                  Click it to activate your account, then{" "}
-                  <Link href="/login" className="font-semibold text-[#5DCAA5] underline underline-offset-2">
-                    sign in
+                <h1
+                  className="text-lg font-bold text-[#5DCAA5]"
+                  style={{ fontFamily: "var(--rasq-font-display, sans-serif)" }}
+                >
+                  Thank you for your interest in RASQ.
+                </h1>
+                <p className="mt-2 text-sm leading-6 text-white/50">
+                  We&apos;ve received your request and will contact you regarding provider access.
+                </p>
+                <p className="mt-4 text-sm">
+                  <Link
+                    href="/login"
+                    className="font-semibold text-[#5DCAA5] underline underline-offset-2"
+                  >
+                    Already have access? Sign in
                   </Link>
-                  .
                 </p>
               </div>
             </div>
-          ) : null}
-
-          {/* Fields */}
-          {!confirmSent && (
-          <div
-            className="space-y-4"
-            onKeyDown={(e) => { if (e.key === "Enter") void handleSignup(); }}
-          >
-            <Field
-              label="Full name"
-              value={name}
-              onChange={setName}
-              placeholder="Dr. Sarah Ahmed"
-              autoComplete="name"
-            />
-            <Field
-              label="Email"
-              type="email"
-              value={email}
-              onChange={setEmail}
-              placeholder="you@clinic.com"
-              autoComplete="email"
-            />
-            <Field
-              label="Practice / clinic name"
-              value={practice}
-              onChange={setPractice}
-              placeholder="City Rehabilitation Centre"
-              autoComplete="organization"
-            />
-            <Field
-              label="Password"
-              type="password"
-              value={password}
-              onChange={setPassword}
-              placeholder="At least 6 characters"
-              autoComplete="new-password"
-            />
-            <Field
-              label="Confirm password"
-              type="password"
-              value={confirm}
-              onChange={setConfirm}
-              placeholder="Repeat password"
-              autoComplete="new-password"
-            />
-
-            {error && (
-              <div className="rounded-[7px] border border-rose-400/20 bg-rose-400/8 px-3.5 py-3 text-sm text-rose-300">
-                {error}
+          ) : (
+            <>
+              <div className="mb-7">
+                <h1
+                  className="text-xl font-bold text-white"
+                  style={{ fontFamily: "var(--rasq-font-display, sans-serif)" }}
+                >
+                  Request Provider Access
+                </h1>
+                <p className="mt-1.5 text-sm leading-6 text-white/40">
+                  Interested in using RASQ? Share your details and we&apos;ll review your request for
+                  provider access.
+                </p>
               </div>
-            )}
 
-            <button
-              type="button"
-              onClick={() => void handleSignup()}
-              disabled={loading}
-              className="w-full rounded-[7px] bg-[#1D9E75] py-3.5 text-sm font-bold text-white transition hover:bg-[#179165] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? "Creating workspace…" : "Create workspace"}
-            </button>
-
-            <p className="pt-1 text-center text-sm text-white/30">
-              Already have an account?{" "}
-              <Link
-                href="/login"
-                className="font-semibold text-white/55 transition hover:text-white"
+              <div
+                className="space-y-4"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleSubmit();
+                }}
               >
-                Sign in
-              </Link>
-            </p>
-          </div>
+                <Field
+                  label="Email"
+                  type="email"
+                  value={email}
+                  onChange={setEmail}
+                  placeholder="you@clinic.com"
+                  autoComplete="email"
+                  required
+                />
+                <Field
+                  label="Full name"
+                  value={name}
+                  onChange={setName}
+                  placeholder="Dr. Sarah Ahmed"
+                  autoComplete="name"
+                />
+                <Field
+                  label="Practice / Clinic"
+                  value={practice}
+                  onChange={setPractice}
+                  placeholder="City Rehabilitation Centre"
+                  autoComplete="organization"
+                />
+
+                {error ? (
+                  <div className="rounded-[7px] border border-rose-400/20 bg-rose-400/8 px-3.5 py-3 text-sm text-rose-300">
+                    {error}
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => void handleSubmit()}
+                  disabled={loading}
+                  className="w-full rounded-[7px] bg-[#1D9E75] py-3.5 text-sm font-bold text-white transition hover:bg-[#179165] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loading ? "Submitting…" : "Request Access"}
+                </button>
+
+                <p className="pt-1 text-center text-sm text-white/30">
+                  Already have access?{" "}
+                  <Link
+                    href="/login"
+                    className="font-semibold text-white/55 transition hover:text-white"
+                  >
+                    Sign in
+                  </Link>
+                </p>
+              </div>
+            </>
           )}
         </div>
 

@@ -2,6 +2,11 @@ import type {
   PatientAssessmentDraft,
   PatientSectionId,
 } from "./api/remote-assessments";
+import { getAssessmentLanguage } from "./assessment-payload";
+import {
+  isTranslatablePatientFieldKey,
+  readStoredClinicalTranslation,
+} from "./reports/patient-clinical-translation";
 
 const SECTION_IDS: PatientSectionId[] = [
   "pain",
@@ -14,14 +19,36 @@ const SECTION_IDS: PatientSectionId[] = [
 
 const RED_FLAG_KEY_RE = /red\s*flags?|warning|safety/i;
 
+export type RemoteQuestionnaireSummaryRow = {
+  label: string;
+  /** Clinician-facing value — prefers stored clinical English when available. */
+  value: string;
+  /** Original patient response (preserved verbatim). */
+  originalValue?: string;
+  fieldKey?: string;
+  clinicalEnglish?: string;
+  translationMissing?: boolean;
+};
+
+export type RemoteQuestionnaireSummaryMetric = {
+  label: string;
+  value: string;
+  originalValue?: string;
+  fieldKey?: string;
+  clinicalEnglish?: string;
+  translationMissing?: boolean;
+};
+
 export type RemoteQuestionnaireSummary = {
   title: string;
   submittedAt: string;
-  metrics: { label: string; value: string }[];
-  rows: { label: string; value: string }[];
+  metrics: RemoteQuestionnaireSummaryMetric[];
+  rows: RemoteQuestionnaireSummaryRow[];
   hasRedFlag: boolean;
   patientDraft: PatientAssessmentDraft;
   includedSections: PatientSectionId[];
+  clinicalTranslationWarning?: string;
+  patientAnsweredInArabic: boolean;
 };
 
 function asTrimmedString(value: unknown): string | null {
@@ -67,6 +94,30 @@ function readField(data: Record<string, unknown>, ...keys: string[]): string | n
   return null;
 }
 
+function buildBilingualSummaryValue(
+  root: Record<string, unknown>,
+  fieldKey: string | undefined,
+  original: string,
+): Pick<
+  RemoteQuestionnaireSummaryRow,
+  "value" | "originalValue" | "fieldKey" | "clinicalEnglish" | "translationMissing"
+> {
+  const answeredInArabic = getAssessmentLanguage(root) === "ar";
+  if (!answeredInArabic || !fieldKey || !isTranslatablePatientFieldKey(fieldKey)) {
+    return { value: original, fieldKey };
+  }
+
+  const clinicalEnglish = readStoredClinicalTranslation(root, fieldKey);
+  const translationMissing = clinicalEnglish.length === 0;
+  return {
+    value: clinicalEnglish || original,
+    originalValue: original,
+    fieldKey,
+    clinicalEnglish: clinicalEnglish || undefined,
+    translationMissing,
+  };
+}
+
 export function detectRedFlag(structuredData: unknown): boolean {
   function walk(value: unknown, depth: number): boolean {
     if (depth > 8 || value === null || value === undefined) return false;
@@ -103,28 +154,50 @@ export function buildRemoteQuestionnaireSummary(
       ? (structuredData as Record<string, unknown>)
       : {};
 
-  const metrics: { label: string; value: string }[] = [];
+  const metrics: RemoteQuestionnaireSummaryMetric[] = [];
   const painAtRest =
     readField(root, "painAtRest") ??
     (pain?.painScore ? `${pain.painScore}/10` : null);
   const painOnMovement = readField(root, "painOnMovement");
-  const bodyRegion =
+  const bodyRegionOriginal =
     readField(root, "bodyRegion") ?? asTrimmedString(pain?.painLocation);
 
   if (painAtRest) metrics.push({ label: "Pain at rest", value: painAtRest });
   if (painOnMovement) metrics.push({ label: "Pain on movement", value: painOnMovement });
-  if (bodyRegion) metrics.push({ label: "Body region", value: bodyRegion });
+  if (bodyRegionOriginal) {
+    metrics.push({
+      label: "Body region",
+      ...buildBilingualSummaryValue(root, "painLocation", bodyRegionOriginal),
+    });
+  }
 
-  const rows: { label: string; value: string }[] = [];
+  const rows: RemoteQuestionnaireSummaryRow[] = [];
   const mainComplaint = asTrimmedString(pain?.chiefComplaint);
   const aggravating = asTrimmedString(pain?.aggravating);
   const functionalGoal = asTrimmedString(pain?.goals);
   const rehabPhase = readField(root, "rehabilitationPhase", "rehabPhase");
 
-  if (mainComplaint) rows.push({ label: "Main complaint", value: mainComplaint });
-  if (aggravating) rows.push({ label: "Aggravating factors", value: aggravating });
-  if (functionalGoal) rows.push({ label: "Functional goal", value: functionalGoal });
+  if (mainComplaint) {
+    rows.push({
+      label: "Main complaint",
+      ...buildBilingualSummaryValue(root, "chiefComplaint", mainComplaint),
+    });
+  }
+  if (aggravating) {
+    rows.push({
+      label: "Aggravating factors",
+      ...buildBilingualSummaryValue(root, "aggravating", aggravating),
+    });
+  }
+  if (functionalGoal) {
+    rows.push({
+      label: "Functional goal",
+      ...buildBilingualSummaryValue(root, "goals", functionalGoal),
+    });
+  }
   if (rehabPhase) rows.push({ label: "Rehab phase", value: rehabPhase });
+
+  const clinicalTranslationWarning = asTrimmedString(root.clinical_translation_warning);
 
   return {
     title: "Remote Questionnaire Assessment",
@@ -134,5 +207,7 @@ export function buildRemoteQuestionnaireSummary(
     hasRedFlag: detectRedFlag(structuredData),
     patientDraft: draft,
     includedSections: inferIncludedSections(draft),
+    clinicalTranslationWarning: clinicalTranslationWarning ?? undefined,
+    patientAnsweredInArabic: getAssessmentLanguage(root) === "ar",
   };
 }

@@ -3,9 +3,17 @@
 import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { RasqDemoPlatformEntryCta } from "@/app/components/rasq-demo/RasqDemoPlatformEntryCta";
 import { TrustFooter } from "../components/trust/TrustFooter";
 import { loginClinician } from "../lib/api";
+import {
+  CLINICIAN_LOGIN_INVALID_CREDENTIALS_MESSAGE,
+  isLegacyClinicianFastApiLoginAllowed,
+  resolveClinicianLoginBackend,
+  resolveClinicianLoginSupabaseError,
+} from "../lib/auth/clinician-login-errors";
 import { ensureProviderProfile } from "../lib/auth/ensure-provider-client";
+import { resolveSafeAuthRedirectPath } from "../lib/auth/safe-redirect";
 import { setupDevAuthSession } from "../lib/dev-auth";
 import { createClient as createSupabaseClient } from "../lib/supabase/browser";
 
@@ -52,7 +60,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
 
   const urlRole  = resolveRole(searchParams.get("role"));
-  const returnTo = searchParams.get("returnTo") ?? "";
+  const returnTo = searchParams.get("returnTo");
 
   const [role, setRole]         = useState<Role>(urlRole);
   const [email, setEmail]       = useState("");
@@ -61,7 +69,8 @@ function LoginForm() {
   const [loading, setLoading]   = useState(false);
 
   const cfg = ROLE_CONFIG[role];
-  const redirectDest = returnTo || cfg.defaultRedirect;
+  // Internal paths only — external/protocol-relative/script URLs fall back to the role default.
+  const redirectDest = resolveSafeAuthRedirectPath(returnTo, cfg.defaultRedirect);
 
   async function handleLogin() {
     if (!email.trim() || !password) {
@@ -72,9 +81,19 @@ function LoginForm() {
     setLoading(true);
 
     try {
+      const loginBackend = resolveClinicianLoginBackend({
+        supabaseConfigured: SUPABASE_CONFIGURED,
+        nodeEnv: process.env.NODE_ENV,
+      });
+
+      if (loginBackend.kind === "fail_closed") {
+        setError(loginBackend.message);
+        return;
+      }
+
       // ── Primary: Supabase Auth ───────────────────────────────────────────
       // Used for all new accounts created via /signup.
-      if (SUPABASE_CONFIGURED) {
+      if (loginBackend.kind === "use_supabase") {
         const supabase = createSupabaseClient();
         const { error: sbError } = await supabase.auth.signInWithPassword({
           email: email.trim().toLowerCase(),
@@ -91,18 +110,42 @@ function LoginForm() {
           return;
         }
 
-        // "Invalid login credentials" means either wrong password OR user doesn't
-        // exist in Supabase yet. Fall through to FastAPI for legacy accounts.
-        // All other Supabase errors (rate limit, service unavailable) surface directly.
-        if (sbError.message !== "Invalid login credentials") {
-          setError(sbError.message);
+        const decision = resolveClinicianLoginSupabaseError({
+          supabaseConfigured: true,
+          errorMessage: sbError.message,
+          errorCode: sbError.code,
+          nodeEnv: process.env.NODE_ENV,
+        });
+
+        if (decision.kind === "show_message") {
+          setError(decision.message);
           return;
         }
+
+        if (decision.kind === "invalid_credentials") {
+          setError(CLINICIAN_LOGIN_INVALID_CREDENTIALS_MESSAGE);
+          return;
+        }
+
+        if (
+          decision.kind === "legacy_fastapi_fallback" &&
+          isLegacyClinicianFastApiLoginAllowed({
+            supabaseConfigured: true,
+            nodeEnv: process.env.NODE_ENV,
+          })
+        ) {
+          await loginClinician(email.trim(), password);
+          router.push(redirectDest);
+          router.refresh();
+          return;
+        }
+
+        setError(CLINICIAN_LOGIN_INVALID_CREDENTIALS_MESSAGE);
+        return;
       }
 
-      // ── Fallback: FastAPI JWT ────────────────────────────────────────────
-      // Handles accounts that pre-date Supabase migration.
-      // Sets cm_token cookie; proxy.ts accepts it during the transition period.
+      // ── Fallback: FastAPI JWT (local dev only when Supabase is not configured) ──
+      // Production clinician routes require a Supabase session; cm_token is not accepted by the proxy.
       await loginClinician(email.trim(), password);
       router.push(redirectDest);
       router.refresh();
@@ -255,6 +298,8 @@ function LoginForm() {
             )}
           </div>
         </div>
+
+        <RasqDemoPlatformEntryCta variant="login" />
 
         <p className="mt-4 text-center text-xs text-white/15">
           RASQ by Creative Motion Lab · Secure · Built for clinical workflows

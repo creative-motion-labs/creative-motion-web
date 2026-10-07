@@ -11,6 +11,8 @@ import {
 import type { SavedAssessment } from "../../../lib/mock-clinical-data";
 import type { AssessmentListRow, AssessmentRow } from "../../../api/assessments/route";
 import { pickPreferredAssessment } from "../../../lib/assessment-snapshot";
+import { RemoteUpperLimbBatteryResultsCard } from "../../../components/clinician/RemoteUpperLimbBatteryResultsCard";
+import { buildRemoteUpperLimbBatteryClinicianSummaryFromStructuredData } from "../../../lib/remote-upper-limb-battery/battery-clinician-summary";
 import {
   FOCUS_AREA_LABEL,
   FOCUS_CATEGORY_LABEL,
@@ -83,18 +85,30 @@ import type { PatientProgressSummary, PatientTimelineBundle } from "../../../api
 import { buildPatientTimeline } from "../../../lib/clinician/patient-timeline";
 import {
   buildRemoteQuestionnaireSummary,
+  type RemoteQuestionnaireSummary,
 } from "../../../lib/remote-questionnaire-summary";
+import { PatientClinicalTranslationDisplay } from "@/app/components/reports/PatientClinicalTranslationDisplay";
+import { isStrokeClinicianData } from "@/app/components/clinician/StrokeQuestionnaireClinicianPanel";
 import { displayPatientFileHeader } from "../../../lib/patient-file-number";
 import { resolveCurrentAndPreviousPlans } from "../../../lib/clinician/resolve-current-plan";
 import { PreviousPlansSummary } from "../../../components/clinician/PreviousPlansSummary";
+import { PatientObjectiveResultsSection } from "@/app/components/clinician/progress/PatientObjectiveResultsSection";
 import { DemoOfflineBanner } from "@/app/components/clinician/DemoOfflineBanner";
 import { extractDemoMeta } from "@/app/lib/api/demo-fallback-client";
-import { parseNumericDemoPatientId } from "@/app/lib/api/patient-id-utils";
+import {
+  parseNumericDemoPatientId,
+} from "@/app/lib/api/patient-id-utils";
+import { usePatientProfileSection } from "@/app/hooks/usePatientProfileSection";
+import { PatientProfileSectionNav } from "@/app/components/clinician/patient-profile/PatientProfileSectionNav";
+import { PatientProfileSectionSlot } from "@/app/components/clinician/patient-profile/PatientProfileSectionSlot";
+import { ClinicianSectionDetailsToggle } from "@/app/components/clinician/patient-profile/ClinicianSectionDetailsToggle";
 
 export default function PatientProfilePage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { section: profileSection, setSection: setProfileSection } =
+    usePatientProfileSection();
   const id = String(params.id || "");
   // Pure numeric route ids only — UUID Supabase patients skip legacy FastAPI assessment fetch.
   const legacyNumericPatientId = parseNumericDemoPatientId(id);
@@ -139,6 +153,7 @@ export default function PatientProfilePage() {
   const [rasqAssessments, setRasqAssessments] = useState<SavedAssessment[]>([]);
   const [supabaseAssessmentRows, setSupabaseAssessmentRows] = useState<AssessmentListRow[]>([]);
   const [clinicalSummaryDetail, setClinicalSummaryDetail] = useState<AssessmentRow | null>(null);
+  const [ulmsBatteryDetail, setUlmsBatteryDetail] = useState<AssessmentRow | null>(null);
 
   // Assessment-saved banner (shown when redirected from /clinician/assessment/new)
   const [showAssessmentBanner, setShowAssessmentBanner] = useState(
@@ -368,7 +383,9 @@ export default function PatientProfilePage() {
             ? "Remote Questionnaire Assessment"
             : r.type === "general_msk"
               ? "General MSK Assessment"
-              : r.type,
+              : r.type === "upper_limb_motor_screen"
+                ? "Remote Upper-Limb Battery"
+                : r.type,
         date: r.created_at.split("T")[0] ?? "",
         pain: 0,
         rom: 0,
@@ -384,15 +401,34 @@ export default function PatientProfilePage() {
       const preferred = pickPreferredAssessment(rows);
       if (!preferred) {
         setClinicalSummaryDetail(null);
+        setUlmsBatteryDetail(null);
         return;
       }
 
+      let preferredDetail: AssessmentRow | null = null;
       const detailRes = await fetch(`/api/assessments/${encodeURIComponent(preferred.id)}`);
-      if (!detailRes.ok) {
+      if (detailRes.ok) {
+        preferredDetail = (await detailRes.json()) as AssessmentRow;
+        setClinicalSummaryDetail(preferredDetail);
+      } else {
         setClinicalSummaryDetail(null);
+      }
+
+      const ulmsRow = rows.find((row) => row.type === "upper_limb_motor_screen");
+      if (!ulmsRow) {
+        setUlmsBatteryDetail(null);
         return;
       }
-      setClinicalSummaryDetail((await detailRes.json()) as AssessmentRow);
+      if (preferred.id === ulmsRow.id) {
+        setUlmsBatteryDetail(preferredDetail);
+        return;
+      }
+      const ulmsDetailRes = await fetch(`/api/assessments/${encodeURIComponent(ulmsRow.id)}`);
+      if (!ulmsDetailRes.ok) {
+        setUlmsBatteryDetail(null);
+        return;
+      }
+      setUlmsBatteryDetail((await ulmsDetailRes.json()) as AssessmentRow);
     } catch {
       /* silently ignore — empty state shown */
     }
@@ -459,6 +495,34 @@ export default function PatientProfilePage() {
   const clinicalSummary = useMemo(() => {
     if (!clinicalSummaryRow) return null;
     if (clinicalSummaryRow.type === "remote_questionnaire") {
+      const strokePayload = clinicalSummaryRow.structured_data as unknown;
+      if (isStrokeClinicianData(strokePayload)) {
+        const source = strokePayload.responses.sc_information_source;
+        return {
+          title: "Remote Neurorehabilitation Intake",
+          submittedAt: clinicalSummaryRow.created_at,
+          metrics: [
+            { label: "Safety gate", value: strokePayload.safetyState },
+            {
+              label: "Clinical English",
+              value: strokePayload.strokeWorkflow.translation.status,
+            },
+          ],
+          rows: [
+            ...(source
+              ? [
+                  {
+                    label: "Information source",
+                    value: Array.isArray(source.rawValue)
+                      ? source.rawValue.join(", ")
+                      : source.rawValue,
+                  },
+                ]
+              : []),
+          ],
+          hasRedFlag: strokePayload.safetyState !== "PASS",
+        };
+      }
       return buildRemoteQuestionnaireSummary(
         clinicalSummaryRow.structured_data,
         clinicalSummaryRow.created_at,
@@ -515,8 +579,26 @@ export default function PatientProfilePage() {
     return null;
   }, [clinicalSummaryRow]);
 
+  const ulmsBatterySummary = useMemo(
+    () =>
+      buildRemoteUpperLimbBatteryClinicianSummaryFromStructuredData(
+        ulmsBatteryDetail?.structured_data,
+        ulmsBatteryDetail?.created_at,
+      ),
+    [ulmsBatteryDetail],
+  );
+
+  const remoteQuestionnaireSummary: RemoteQuestionnaireSummary | null =
+    clinicalSummaryRow?.type === "remote_questionnaire" &&
+    !isStrokeClinicianData(clinicalSummaryRow.structured_data as unknown) &&
+    clinicalSummary
+      ? (clinicalSummary as RemoteQuestionnaireSummary)
+      : null;
+
   const clinicalFocusLabels = useMemo(() => {
     if (!clinicalSummaryRow) return null;
+    if (clinicalSummaryRow.type === "upper_limb_motor_screen") return null;
+    if (isStrokeClinicianData(clinicalSummaryRow.structured_data as unknown)) return null;
     return deriveClinicalFocusLabels(
       clinicalSummaryRow.type,
       clinicalSummaryRow.structured_data,
@@ -711,13 +793,18 @@ export default function PatientProfilePage() {
 
   const submittedRemote = remoteAssessments.filter((r) => r.status === "submitted");
   const pendingRemote   = remoteAssessments.filter((r) => r.status === "pending" || r.status === "in_progress");
-  const clinicalSummaryAssessmentId = clinicalSummaryRow?.id ?? null;
+  const clinicalSummaryAssessmentId =
+    clinicalSummaryRow && clinicalSummaryRow.type !== "upper_limb_motor_screen"
+      ? clinicalSummaryRow.id
+      : null;
   const primaryReportHref = clinicalSummaryAssessmentId
     ? `/clinician/assessment/report?patientId=${patient.id}&assessmentId=${clinicalSummaryAssessmentId}`
     : `/clinician/assessment/report?patientId=${patient.id}`;
   const overviewLatestAssessment = clinicalSummary
     ? `${clinicalSummary.title} · ${new Date(clinicalSummary.submittedAt).toLocaleDateString()}`
-    : "—";
+    : ulmsBatterySummary
+      ? `${ulmsBatterySummary.title} · ${new Date(ulmsBatterySummary.submittedAt).toLocaleDateString()}`
+      : "—";
   const overviewCurrentPlan = treatmentPlan?.programName ?? "—";
   const overviewProgressSnapshot = planProgress
     ? `${planProgress.sessionsCompleted}/${planProgress.totalSessions} sessions · ${planProgress.progressPct}%`
@@ -799,26 +886,11 @@ export default function PatientProfilePage() {
                 {patient.status}
               </span>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <a href="#clinical-assessment-summary" className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Assessment
-              </a>
-              <a href="#rehabilitation-plan" className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Treatment plan
-              </a>
-              <a href="#progress-snapshot" className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Progress
-              </a>
-              <Link href={`/clinician/patients/${patient.id}/outcomes`} className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Outcomes
-              </Link>
-              <a href="#movement-tracking-sessions" className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Movement tracking
-              </a>
-              <Link href="/clinician/results" className="rounded-[5px] border border-[#1E2D42] bg-[#0B1220] px-2.5 py-1 font-semibold text-white/45 transition hover:border-[#1D9E75]/25 hover:text-[#5DCAA5]">
-                Results
-              </Link>
-            </div>
+            <PatientProfileSectionNav
+              activeSection={profileSection}
+              onSelectSection={setProfileSection}
+              patientId={patient.id}
+            />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link
@@ -947,12 +1019,16 @@ export default function PatientProfilePage() {
           </section>
         )}
 
-        <section className="grid gap-6 xl:grid-cols-[1.35fr_0.85fr]">
-          <div className="space-y-6">
-            {/* Clinical Overview */}
+            <PatientProfileSectionSlot
+              sectionId="overview"
+              activeSection={profileSection}
+              className=""
+            >
+            <div className="grid gap-6 xl:grid-cols-[1.35fr_0.85fr]">
+            <div className="min-w-0 space-y-6">
             <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-6">
-              <h2 className="text-lg font-bold text-white">Clinical Overview</h2>
-              <p className="mt-1 mb-5 text-xs text-white/35">Quick read on where this patient is in rehab.</p>
+              <h2 className="text-lg font-bold text-white">Overview</h2>
+              <p className="mt-1 mb-5 text-xs text-white/35">Concise summary — open a section below for full records.</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <InfoCard label="Clinical Status" value={patient.status} />
                 <InfoCard label="Latest Assessment" value={overviewLatestAssessment} />
@@ -969,6 +1045,28 @@ export default function PatientProfilePage() {
                   <p className="mt-2 text-[10px] italic text-white/30">{OPERATIONAL_STATUS_ONLY}</p>
                 </div>
               )}
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <ProfileDomainNavCard
+                  title="Assessment results"
+                  description="Submitted clinical and remote assessments"
+                  onOpen={() => setProfileSection("assessments")}
+                />
+                <ProfileDomainNavCard
+                  title="Progress over time"
+                  description="Plan adherence and objective assessment trends"
+                  onOpen={() => setProfileSection("progress")}
+                />
+                <ProfileDomainNavCard
+                  title="Interactive session outcomes"
+                  description="Structured interactive sessions (separate from CV movement reports)"
+                  href={`/clinician/patients/${patient.id}/outcomes`}
+                />
+                <ProfileDomainNavCard
+                  title="CV movement reports"
+                  description="Prototype movement tracking sessions for therapist review"
+                  onOpen={() => setProfileSection("movement")}
+                />
+              </div>
             </section>
 
             {/* Quick actions */}
@@ -1056,6 +1154,146 @@ export default function PatientProfilePage() {
                 </button>
               </div>
             )}
+            </div>
+
+          <aside className="space-y-6">
+            <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-base font-bold text-white">Remote assessments</h2>
+                  <p className="mt-0.5 text-xs text-white/35">Links sent to this patient.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSendModalOpen(true)}
+                  className="flex items-center gap-1.5 rounded-[7px] border border-[#1D9E75]/20 bg-[#1D9E75]/8 px-3 py-1.5 text-xs font-semibold text-[#5DCAA5] transition hover:bg-[#1D9E75]/15"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  Send New
+                </button>
+              </div>
+
+              {remoteAssessments.length === 0 ? (
+                <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] px-4 py-5 text-center">
+                  <p className="text-xs text-[#6B7280]">No remote assessments sent yet.</p>
+                  <button
+                    type="button"
+                    onClick={() => setSendModalOpen(true)}
+                    className="mt-2 text-xs font-semibold text-[#5DCAA5] transition hover:text-[#1D9E75]"
+                  >
+                    Send first assessment →
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {remoteAssessments.slice(0, 5).map((ra) => {
+                    const isSubmitted = ra.status === "submitted";
+                    const isPending   = ra.status === "pending";
+                    const link = `${typeof window !== "undefined" ? window.location.origin : ""}/assessment/${ra.id}`;
+                    return (
+                      <div
+                        key={ra.id}
+                        className={`overflow-hidden rounded-[8px] border ${
+                          isSubmitted ? "border-[#1D9E75]/20 bg-[#1D9E75]/[0.04]" :
+                          isPending   ? "border-[#1E2D42] bg-[#0B1220]" :
+                          "border-amber-400/15 bg-amber-400/[0.03]"
+                        }`}
+                      >
+                        <div className="px-4 py-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="truncate text-xs font-semibold text-white/80">
+                                {ASSESSMENT_TYPE_LABELS[ra.assessmentType]}
+                              </p>
+                              <p className="mt-0.5 text-[11px] text-white/40">
+                                {new Date(ra.createdAt).toLocaleDateString()} ·{" "}
+                                {ra.includedSections.length} sections
+                              </p>
+                            </div>
+                            <span className={`shrink-0 rounded-[4px] border px-2 py-0.5 text-[10px] font-bold ${
+                              isSubmitted ? "border-[#1D9E75]/30 bg-[#1D9E75]/10 text-[#5DCAA5]" :
+                              isPending   ? "border-[#1E2D42] bg-[#0B1220] text-white/40" :
+                              "border-amber-400/25 bg-amber-400/10 text-amber-300"
+                            }`}>
+                              {isSubmitted ? "Submitted" : isPending ? "Awaiting Completion" : "In Progress"}
+                            </span>
+                          </div>
+
+                          {!isSubmitted && (
+                            <p className="mt-1 text-[11px] text-white/30">
+                              Expires in {daysUntilExpiry(ra)} days
+                            </p>
+                          )}
+                          {isSubmitted && (
+                            <p className="mt-2 text-[11px] text-[#5DCAA5]/80">Ready for review in Clinical Assessment Summary.</p>
+                          )}
+                        </div>
+
+                        <div className="flex gap-px border-t border-[#1E2D42]">
+                          {!isSubmitted && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try { await navigator.clipboard.writeText(link); } catch { /* ignore */ }
+                              }}
+                              className="flex-1 px-3 py-2.5 text-center text-[11px] font-semibold text-white/40 transition hover:bg-[#0B1220] hover:text-white/70"
+                            >
+                              Copy Link
+                            </button>
+                          )}
+                          {isSubmitted && ra.assessmentId ? (
+                            <Link
+                              href={`/clinician/assessment/report?patientId=${encodeURIComponent(patient.id)}&assessmentId=${encodeURIComponent(ra.assessmentId)}`}
+                              className="flex-1 px-3 py-2.5 text-center text-[11px] font-semibold text-[#5DCAA5] transition hover:bg-[#0B1220]"
+                            >
+                              Review submission
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {recentAssessments.length > 0 && (
+              <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
+                <h2 className="text-base font-bold text-white">Recent sessions</h2>
+                <div className="mt-4 space-y-3">
+                  {recentAssessments.map((item) => (
+                    <div key={`${item.id}-recent`} className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4">
+                      <p className="text-xs text-white/50">{new Date(item.createdAt).toLocaleDateString()}</p>
+                      <p className="mt-1 text-sm font-semibold text-white">
+                        {item.mode === "remote" ? "Remote" : "In-clinic"} session
+                      </p>
+                      <Link
+                        href={`/results?patientId=${patient.id}&assessmentId=${item.id}`}
+                        className="mt-3 inline-flex text-[11px] font-semibold text-[#5DCAA5] hover:text-[#1D9E75]"
+                      >
+                        Open session record →
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </aside>
+            </div>
+            </PatientProfileSectionSlot>
+
+            <PatientProfileSectionSlot
+              sectionId="assessments"
+              activeSection={profileSection}
+            >
+            {ulmsBatterySummary && ulmsBatteryDetail ? (
+              <RemoteUpperLimbBatteryResultsCard
+                summary={ulmsBatterySummary}
+                reportHref={`/clinician/assessment/report?patientId=${encodeURIComponent(patient.id)}&assessmentId=${encodeURIComponent(ulmsBatteryDetail.id)}`}
+              />
+            ) : null}
 
             {/* Clinical Assessment Summary */}
             <section id="clinical-assessment-summary" className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-6 scroll-mt-6">
@@ -1102,6 +1340,49 @@ export default function PatientProfilePage() {
                       </div>
                     )}
 
+                    {remoteQuestionnaireSummary?.clinicalTranslationWarning ? (
+                      <div className="mt-4 rounded-[7px] border border-amber-300/25 bg-amber-400/10 px-3 py-2.5">
+                        <p className="text-xs leading-relaxed text-amber-100/90">
+                          {remoteQuestionnaireSummary.clinicalTranslationWarning}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {(clinicalSummary.metrics.length > 0 ||
+                      clinicalSummary.rows.length > 0 ||
+                      clinicalFocusLabels) && (
+                      <p className="mt-4 text-xs text-white/45">
+                        {clinicalSummary.metrics.length > 0
+                          ? `${clinicalSummary.metrics.length} recorded metric${clinicalSummary.metrics.length === 1 ? "" : "s"}`
+                          : null}
+                        {clinicalSummary.metrics.length > 0 && clinicalSummary.rows.length > 0
+                          ? " · "
+                          : null}
+                        {clinicalSummary.rows.length > 0
+                          ? `${clinicalSummary.rows.length} response field${clinicalSummary.rows.length === 1 ? "" : "s"}`
+                          : null}
+                        {clinicalFocusLabels &&
+                        clinicalSummary.metrics.length === 0 &&
+                        clinicalSummary.rows.length === 0
+                          ? "Clinical focus and program routing recorded"
+                          : null}
+                        {" "}— open details for full summary.
+                      </p>
+                    )}
+
+                    {clinicalSummaryAssessmentId && (
+                      <Link
+                        href={primaryReportHref}
+                        className="mt-4 inline-flex rounded-[7px] border border-[#1D9E75]/25 bg-[#1D9E75]/10 px-4 py-2.5 text-xs font-semibold text-[#5DCAA5] transition hover:bg-[#1D9E75]/15"
+                      >
+                        Review assessment report →
+                      </Link>
+                    )}
+
+                    {(clinicalFocusLabels ||
+                      clinicalSummary.metrics.length > 0 ||
+                      clinicalSummary.rows.length > 0) && (
+                    <ClinicianSectionDetailsToggle summaryLabel="View details">
                     {clinicalFocusLabels && (
                       <div className="mt-4 rounded-[8px] border border-cyan-400/20 bg-cyan-400/5 px-4 py-4">
                         <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-300/80">
@@ -1185,7 +1466,12 @@ export default function PatientProfilePage() {
 
                     {clinicalSummary.metrics.length > 0 && (
                       <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                        {clinicalSummary.metrics.map((metric) => (
+                        {clinicalSummary.metrics.map((metric) => {
+                          const bilingualMetric =
+                            remoteQuestionnaireSummary?.metrics.find(
+                              (candidate) => candidate.label === metric.label,
+                            ) ?? null;
+                          return (
                           <div
                             key={metric.label}
                             className="rounded-[7px] border border-[#1E2D42] bg-[#0F1825] px-3 py-2.5"
@@ -1193,46 +1479,86 @@ export default function PatientProfilePage() {
                             <p className="text-[10px] font-bold uppercase tracking-wider text-white/35">
                               {metric.label}
                             </p>
-                            <p
-                              dir={valueTextDirection(metric.value)}
-                              className="mt-1 text-sm font-semibold text-white"
-                            >
-                              {metric.value}
-                            </p>
+                            {bilingualMetric?.originalValue &&
+                            bilingualMetric.originalValue !== bilingualMetric.value ? (
+                              <div className="mt-1">
+                                <PatientClinicalTranslationDisplay
+                                  originalText={bilingualMetric.originalValue}
+                                  clinicalEnglish={
+                                    bilingualMetric.clinicalEnglish ?? bilingualMetric.value
+                                  }
+                                  variant="screen"
+                                />
+                              </div>
+                            ) : (
+                              <p
+                                dir={valueTextDirection(metric.value)}
+                                className="mt-1 text-sm font-semibold text-white"
+                              >
+                                {metric.value}
+                              </p>
+                            )}
+                            {bilingualMetric?.translationMissing ? (
+                              <p className="mt-2 text-[10px] italic text-amber-200/90">
+                                Clinical English translation unavailable — therapist review required.
+                              </p>
+                            ) : null}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
 
                     {clinicalSummary.rows.length > 0 && (
                       <dl className="mt-4 divide-y divide-[#1E2D42] rounded-[7px] border border-[#1E2D42]">
-                        {clinicalSummary.rows.map((row) => (
+                        {clinicalSummary.rows.map((row) => {
+                          const bilingualRow =
+                            remoteQuestionnaireSummary?.rows.find(
+                              (candidate) => candidate.label === row.label,
+                            ) ?? null;
+                          return (
                           <div key={row.label} className="px-3 py-2.5">
                             <dt className="text-[10px] font-semibold uppercase tracking-wider text-white/40">
                               {row.label}
                             </dt>
-                            <dd
-                              dir={valueTextDirection(row.value)}
-                              className="mt-0.5 text-sm leading-relaxed text-white/80 whitespace-pre-wrap"
-                            >
-                              {row.value}
+                            <dd className="mt-0.5">
+                              {bilingualRow?.originalValue &&
+                              bilingualRow.originalValue !== bilingualRow.value ? (
+                                <PatientClinicalTranslationDisplay
+                                  originalText={bilingualRow.originalValue}
+                                  clinicalEnglish={bilingualRow.clinicalEnglish ?? bilingualRow.value}
+                                  variant="screen"
+                                />
+                              ) : (
+                                <p
+                                  dir={valueTextDirection(row.value)}
+                                  className="text-sm leading-relaxed text-white/80 whitespace-pre-wrap"
+                                >
+                                  {row.value}
+                                </p>
+                              )}
+                              {bilingualRow?.translationMissing ? (
+                                <p className="mt-2 text-[10px] italic text-amber-200/90">
+                                  Clinical English translation unavailable — therapist review required.
+                                </p>
+                              ) : null}
                             </dd>
                           </div>
-                        ))}
+                          );
+                        })}
                       </dl>
+                    )}
+                    </ClinicianSectionDetailsToggle>
                     )}
 
                   </div>
 
-                  {clinicalSummaryAssessmentId && (
-                    <Link
-                      href={primaryReportHref}
-                      className="inline-flex rounded-[7px] border border-[#1D9E75]/25 bg-[#1D9E75]/10 px-4 py-2.5 text-xs font-semibold text-[#5DCAA5] transition hover:bg-[#1D9E75]/15"
-                    >
-                      Review assessment report →
-                    </Link>
-                  )}
-
+                </div>
+              ) : ulmsBatterySummary ? (
+                <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] px-4 py-4">
+                  <p className="text-sm leading-relaxed text-white/50">
+                    Remote Upper-Limb Battery results are shown above. Other clinical assessments will appear here when submitted.
+                  </p>
                 </div>
               ) : (
                 <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] px-4 py-4">
@@ -1258,93 +1584,6 @@ export default function PatientProfilePage() {
               )}
             </section>
 
-            {/* Rehabilitation Plan */}
-            <TreatmentPlanSection
-              patientId={patient.id}
-              plan={treatmentPlan}
-              loading={planLoading}
-            />
-
-            <PreviousPlansSummary plans={previousPlanRows} />
-
-            {/* Progress Snapshot */}
-            <ProgressSnapshotSection
-              patientId={patient.id}
-              plan={treatmentPlan}
-              planProgress={planProgress}
-              adherence={adherence}
-              onReviewAcknowledged={(reviewedAt) => {
-                setPlanProgress((prev) =>
-                  prev
-                    ? { ...prev, reviewAcknowledged: true, reviewedAt }
-                    : prev,
-                );
-              }}
-            />
-
-            <AiClinicianSummaryCard
-              patientId={patient.id}
-              planId={planProgress?.planId ?? treatmentPlan?.id ?? null}
-            />
-
-            <XrSessionRecommendationsCard
-              patientId={patient.id}
-              diagnosis={patient.diagnosis}
-            />
-
-            <CvPatientCvMetricsSection patientId={patient.id} />
-
-            {(planProgress || adherence) && treatmentPlan ? (
-              <PatientAdherenceSummary
-                sessionsCompleted={
-                  planProgress?.sessionsCompleted ?? adherence?.sessionsCompleted ?? 0
-                }
-                totalSessions={planProgress?.totalSessions ?? adherence?.totalSessions ?? 0}
-                lastActivityAt={
-                  planProgress?.lastCompletedAt ?? adherence?.lastActiveAt ?? null
-                }
-              />
-            ) : null}
-
-            <PatientJourneyTimeline
-              events={rehabilitationTimelineEvents}
-              patientName={patient.full_name}
-            />
-
-            {/* Patient access link */}
-            {treatmentPlan?.patientToken && (
-              <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280]">
-                  Patient access
-                </p>
-                <div className="mt-3 flex items-center gap-3 rounded-[7px] border border-[#1E2D42] bg-[#0B1220] px-4 py-3">
-                  <p
-                    className="flex-1 truncate text-[13px] text-[#5DCAA5]"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono, monospace)" }}
-                  >
-                    {typeof window !== "undefined" ? window.location.origin : ""}/patient/{treatmentPlan.patientToken}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const url = `${window.location.origin}/patient/${treatmentPlan.patientToken}`;
-                      navigator.clipboard.writeText(url).then(() => {
-                        setCopyFeedback("success");
-                        setTimeout(() => setCopyFeedback("idle"), 2000);
-                      }).catch(() => setCopyFeedback("error"));
-                    }}
-                    className="shrink-0 rounded-[6px] border border-[#1E2D42] bg-[#0F1825] px-3 py-1.5 text-[11px] font-semibold text-white/50 transition hover:border-[#1D9E75]/30 hover:text-white"
-                  >
-                    {copyFeedback === "success" ? "Copied!" : "Copy"}
-                  </button>
-                </div>
-                <p className="mt-2 text-[11px] text-white/25">
-                  Share this link with the patient. No login required.
-                </p>
-              </section>
-            )}
-
-            {/* Clinical Documentation */}
             <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-6">
               <h2 className="text-lg font-bold text-white">Clinical Documentation</h2>
               <p className="mt-1 mb-6 text-xs text-white/35">SOAP notes and assessment archive.</p>
@@ -1427,6 +1666,129 @@ export default function PatientProfilePage() {
               )}
             </section>
 
+            </PatientProfileSectionSlot>
+
+            <PatientProfileSectionSlot
+              sectionId="plan"
+              activeSection={profileSection}
+            >
+            <TreatmentPlanSection
+              patientId={patient.id}
+              plan={treatmentPlan}
+              loading={planLoading}
+            />
+
+            <PreviousPlansSummary plans={previousPlanRows} />
+
+            <AiClinicianSummaryCard
+              patientId={patient.id}
+              planId={planProgress?.planId ?? treatmentPlan?.id ?? null}
+            />
+
+            <XrSessionRecommendationsCard
+              patientId={patient.id}
+              diagnosis={patient.diagnosis}
+            />
+
+            {treatmentPlan?.patientToken && (
+              <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280]">
+                  Patient access
+                </p>
+                <div className="mt-3 flex items-center gap-3 rounded-[7px] border border-[#1E2D42] bg-[#0B1220] px-4 py-3">
+                  <p
+                    className="flex-1 truncate text-[13px] text-[#5DCAA5]"
+                    style={{ fontFamily: "var(--font-ibm-plex-mono, monospace)" }}
+                  >
+                    {typeof window !== "undefined" ? window.location.origin : ""}/patient/{treatmentPlan.patientToken}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = `${window.location.origin}/patient/${treatmentPlan.patientToken}`;
+                      navigator.clipboard.writeText(url).then(() => {
+                        setCopyFeedback("success");
+                        setTimeout(() => setCopyFeedback("idle"), 2000);
+                      }).catch(() => setCopyFeedback("error"));
+                    }}
+                    className="shrink-0 rounded-[6px] border border-[#1E2D42] bg-[#0F1825] px-3 py-1.5 text-[11px] font-semibold text-white/50 transition hover:border-[#1D9E75]/30 hover:text-white"
+                  >
+                    {copyFeedback === "success" ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+                <p className="mt-2 text-[11px] text-white/25">
+                  Share this link with the patient. No login required.
+                </p>
+              </section>
+            )}
+
+            </PatientProfileSectionSlot>
+
+            <PatientProfileSectionSlot
+              sectionId="progress"
+              activeSection={profileSection}
+            >
+            <ProgressSnapshotSection
+              patientId={patient.id}
+              plan={treatmentPlan}
+              planProgress={planProgress}
+              adherence={adherence}
+              onReviewAcknowledged={(reviewedAt) => {
+                setPlanProgress((prev) =>
+                  prev
+                    ? { ...prev, reviewAcknowledged: true, reviewedAt }
+                    : prev,
+                );
+              }}
+            />
+
+            <PatientObjectiveResultsSection patientId={patient.id} />
+
+            {(planProgress || adherence) && treatmentPlan ? (
+              <PatientAdherenceSummary
+                sessionsCompleted={
+                  planProgress?.sessionsCompleted ?? adherence?.sessionsCompleted ?? 0
+                }
+                totalSessions={planProgress?.totalSessions ?? adherence?.totalSessions ?? 0}
+                lastActivityAt={
+                  planProgress?.lastCompletedAt ?? adherence?.lastActiveAt ?? null
+                }
+              />
+            ) : null}
+
+            <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-white/25">
+                Interactive session outcomes
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-white/45">
+                Structured interactive sessions are reviewed on the Outcomes hub (separate from CV movement reports and assessment summaries on this profile).
+              </p>
+              <Link
+                href={`/clinician/patients/${patient.id}/outcomes`}
+                className="mt-3 inline-flex rounded-[7px] border border-[#1D9E75]/25 bg-[#1D9E75]/8 px-3.5 py-2 text-xs font-semibold text-[#5DCAA5] transition hover:bg-[#1D9E75]/14"
+              >
+                Open Outcomes hub →
+              </Link>
+            </section>
+
+            </PatientProfileSectionSlot>
+
+            <PatientProfileSectionSlot
+              sectionId="movement"
+              activeSection={profileSection}
+            >
+            <CvPatientCvMetricsSection patientId={patient.id} />
+            </PatientProfileSectionSlot>
+
+            <PatientProfileSectionSlot
+              sectionId="activity"
+              activeSection={profileSection}
+            >
+            <PatientJourneyTimeline
+              events={rehabilitationTimelineEvents}
+              patientName={patient.full_name}
+            />
+
             <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-6">
               <h2 className="text-lg font-bold text-white">Therapy Session Results</h2>
                 <p className="mt-1 text-sm text-white/50">
@@ -1440,6 +1802,7 @@ export default function PatientProfilePage() {
                 <TherapyProgressFlow nextActionLine={flowNextAction} />
               </div>
 
+              <ClinicianSectionDetailsToggle summaryLabel="View details">
               <div className="mt-6">
                 <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/25">
                   Therapy trends
@@ -1499,131 +1862,9 @@ export default function PatientProfilePage() {
                   </div>
                 ) : null}
               </div>
+              </ClinicianSectionDetailsToggle>
             </section>
-          </div>
-
-          {/* Sidebar */}
-          <aside className="space-y-6">
-            {/* ── Remote Assessments panel ── */}
-            <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
-              <div className="mb-4 flex items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-base font-bold text-white">Remote assessments</h2>
-                  <p className="mt-0.5 text-xs text-white/35">Links sent to this patient.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSendModalOpen(true)}
-                  className="flex items-center gap-1.5 rounded-[7px] border border-[#1D9E75]/20 bg-[#1D9E75]/8 px-3 py-1.5 text-xs font-semibold text-[#5DCAA5] transition hover:bg-[#1D9E75]/15"
-                >
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                  </svg>
-                  Send New
-                </button>
-              </div>
-
-              {remoteAssessments.length === 0 ? (
-                <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] px-4 py-5 text-center">
-                  <p className="text-xs text-[#6B7280]">No remote assessments sent yet.</p>
-                  <button
-                    type="button"
-                    onClick={() => setSendModalOpen(true)}
-                    className="mt-2 text-xs font-semibold text-[#5DCAA5] transition hover:text-[#1D9E75]"
-                  >
-                    Send first assessment →
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {remoteAssessments.slice(0, 5).map((ra) => {
-                    const isSubmitted = ra.status === "submitted";
-                    const isPending   = ra.status === "pending";
-                    const link = `${typeof window !== "undefined" ? window.location.origin : ""}/assessment/${ra.id}`;
-                    return (
-                      <div
-                        key={ra.id}
-                        className={`overflow-hidden rounded-[8px] border ${
-                          isSubmitted ? "border-[#1D9E75]/20 bg-[#1D9E75]/[0.04]" :
-                          isPending   ? "border-[#1E2D42] bg-[#0B1220]" :
-                          "border-amber-400/15 bg-amber-400/[0.03]"
-                        }`}
-                      >
-                        <div className="px-4 py-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="truncate text-xs font-semibold text-white/80">
-                                {ASSESSMENT_TYPE_LABELS[ra.assessmentType]}
-                              </p>
-                              <p className="mt-0.5 text-[11px] text-white/40">
-                                {new Date(ra.createdAt).toLocaleDateString()} ·{" "}
-                                {ra.includedSections.length} sections
-                              </p>
-                            </div>
-                            <span className={`shrink-0 rounded-[4px] border px-2 py-0.5 text-[10px] font-bold ${
-                              isSubmitted ? "border-[#1D9E75]/30 bg-[#1D9E75]/10 text-[#5DCAA5]" :
-                              isPending   ? "border-[#1E2D42] bg-[#0B1220] text-white/40" :
-                              "border-amber-400/25 bg-amber-400/10 text-amber-300"
-                            }`}>
-                              {isSubmitted ? "Submitted" : isPending ? "Awaiting Completion" : "In Progress"}
-                            </span>
-                          </div>
-
-                          {!isSubmitted && (
-                            <p className="mt-1 text-[11px] text-white/30">
-                              Expires in {daysUntilExpiry(ra)} days
-                            </p>
-                          )}
-                          {isSubmitted && (
-                            <p className="mt-2 text-[11px] text-[#5DCAA5]/80">Ready for review in Clinical Assessment Summary.</p>
-                          )}
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex gap-px border-t border-[#1E2D42]">
-                          {!isSubmitted && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try { await navigator.clipboard.writeText(link); } catch { /* ignore */ }
-                              }}
-                              className="flex-1 px-3 py-2.5 text-center text-[11px] font-semibold text-white/40 transition hover:bg-[#0B1220] hover:text-white/70"
-                            >
-                              Copy Link
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            {/* Recent Results (local) */}
-            {recentAssessments.length > 0 && (
-              <section className="rounded-[10px] border border-[#1E2D42] bg-[#0F1825] p-5">
-                <h2 className="text-base font-bold text-white">Recent sessions</h2>
-                <div className="mt-4 space-y-3">
-                  {recentAssessments.map((item) => (
-                    <div key={`${item.id}-recent`} className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4">
-                      <p className="text-xs text-white/50">{new Date(item.createdAt).toLocaleDateString()}</p>
-                      <p className="mt-1 text-sm font-semibold text-white">
-                        {item.mode === "remote" ? "Remote" : "In-clinic"} session
-                      </p>
-                      <Link
-                        href={`/results?patientId=${patient.id}&assessmentId=${item.id}`}
-                        className="mt-3 inline-flex text-[11px] font-semibold text-[#5DCAA5] hover:text-[#1D9E75]"
-                      >
-                        Open session record →
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-          </aside>
-        </section>
+            </PatientProfileSectionSlot>
       </div>
     </main>
     </>
@@ -1895,7 +2136,7 @@ function ProgressSnapshotSection({
             <ClinicalActionCard
               action={planProgress.clinicalAction}
               patientNote={planProgress.latestPatientNote}
-              planSessionsHref={`#rehabilitation-plan`}
+              planSessionsHref={`/clinician/patients/${patientId}?section=plan#rehabilitation-plan`}
               review={
                 planProgress.needsReview
                   ? {
@@ -1933,7 +2174,8 @@ function ProgressSnapshotSection({
         )}
 
         {adherence && plan && sessionsDone > 0 && (
-          <div className="mt-4 rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4">
+          <ClinicianSectionDetailsToggle summaryLabel="View details">
+          <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4">
             <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/25">
               Session adherence
             </p>
@@ -1954,6 +2196,7 @@ function ProgressSnapshotSection({
               })}
             </div>
           </div>
+          </ClinicianSectionDetailsToggle>
         )}
 
         <Link
@@ -2053,6 +2296,7 @@ function TreatmentPlanSection({
             </div>
           )}
 
+          <ClinicianSectionDetailsToggle summaryLabel="View details">
           <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4">
             <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/25">
               Session schedule ({plan.sessions.filter((s) => s.status !== "completed").length} remaining)
@@ -2077,6 +2321,7 @@ function TreatmentPlanSection({
               clinically validated · reps are assistive only.
             </p>
           </div>
+          </ClinicianSectionDetailsToggle>
         </div>
       )}
     </section>
@@ -2137,5 +2382,41 @@ function InfoCard({ label, value }: { label: string; value: string }) {
         {value}
       </p>
     </div>
+  );
+}
+
+function ProfileDomainNavCard({
+  title,
+  description,
+  onOpen,
+  href,
+}: {
+  title: string;
+  description: string;
+  onOpen?: () => void;
+  href?: string;
+}) {
+  const className =
+    "rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4 text-left transition hover:border-[#1D9E75]/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1D9E75]/50";
+  const inner = (
+    <>
+      <p className="text-sm font-semibold text-white">{title}</p>
+      <p className="mt-1 text-[11px] leading-relaxed text-white/40">{description}</p>
+      <span className="mt-2 inline-block text-[11px] font-semibold text-[#5DCAA5]">
+        Open →
+      </span>
+    </>
+  );
+  if (href) {
+    return (
+      <Link href={href} className={className}>
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" className={`${className} w-full`} onClick={onOpen}>
+      {inner}
+    </button>
   );
 }

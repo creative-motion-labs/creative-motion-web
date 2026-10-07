@@ -19,6 +19,8 @@ import {
   buildProgressOutcomesBundle,
   type ProgressOutcomesBundle,
 } from "@/app/lib/progress/progress-outcomes-bundle";
+import { fetchInteractiveShoulderOutcomesForPatient } from "@/app/lib/interactive-shoulder/movement-outcome-persistence";
+import { filterInteractiveShoulderOutcomeRowsToPlan } from "@/app/lib/progress/interactive-shoulder-patient-progress";
 
 export type { ProgressOutcomesBundle };
 
@@ -251,6 +253,63 @@ export async function GET(req: NextRequest) {
     return genericServerErrorResponse();
   }
 
+  // Longitudinal Interactive Shoulder charts use all outcomes for this
+  // patient/provider. Current-plan session cards keep their own scope.
+  const outcomesResult = await fetchInteractiveShoulderOutcomesForPatient(adminClient, {
+    providerId: user.id,
+    patientId,
+    planId: null,
+  });
+  if (!outcomesResult.ok) {
+    console.error("[GET /api/clinician/progress-outcomes] interactive shoulder outcomes query failed");
+    return genericServerErrorResponse();
+  }
+
+  const interactiveShoulderOutcomeRows = filterInteractiveShoulderOutcomeRowsToPlan(
+    outcomesResult.rows,
+    planId,
+  );
+  const interactiveShoulderChartOutcomeRows = outcomesResult.rows;
+
+  const chartPlanSessionIds = [
+    ...new Set(
+      interactiveShoulderChartOutcomeRows
+        .map((row) => row.plan_session_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+
+  let interactiveShoulderChartSessionLogs: LogRow[] = [];
+  const interactiveShoulderChartSessionNumberById = new Map<string, number>();
+
+  if (chartPlanSessionIds.length > 0) {
+    const { data: chartLogs, error: chartLogsErr } = await adminClient
+      .from("session_logs")
+      .select("id, plan_session_id, effort_score, pain_score, notes, completed_at")
+      .eq("patient_id", patientId)
+      .eq("provider_id", user.id)
+      .in("plan_session_id", chartPlanSessionIds)
+      .order("completed_at", { ascending: true })
+      .returns<LogRow[]>();
+
+    if (chartLogsErr) {
+      console.error("[GET /api/clinician/progress-outcomes] chart session logs query failed");
+      return genericServerErrorResponse();
+    }
+
+    interactiveShoulderChartSessionLogs = chartLogs ?? [];
+
+    const { data: chartSessionRows } = await adminClient
+      .from("plan_sessions")
+      .select("id, session_number")
+      .in("id", chartPlanSessionIds)
+      .returns<{ id: string; session_number: number }[]>();
+
+    (chartSessionRows ?? []).forEach((row) => {
+      interactiveShoulderChartSessionNumberById.set(row.id, row.session_number);
+    });
+  }
+
   const bundle = buildProgressOutcomesBundle({
     patientId,
     patientName: patient.full_name,
@@ -262,6 +321,10 @@ export async function GET(req: NextRequest) {
     sessionNumberById,
     assessmentRows: assessmentRows ?? [],
     cvMetricRows: cvRows ?? [],
+    interactiveShoulderOutcomeRows,
+    interactiveShoulderChartOutcomeRows,
+    interactiveShoulderChartSessionLogs,
+    interactiveShoulderChartSessionNumberById,
   });
 
   return NextResponse.json(bundle);

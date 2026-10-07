@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ClinicianSectionDetailsToggle } from "@/app/components/clinician/patient-profile/ClinicianSectionDetailsToggle";
 import { AssessmentMovementSummaryPanel } from "@/app/components/clinician/cv/AssessmentMovementSummaryPanel";
 import { GaitInterpretationSection } from "@/app/components/clinician/cv/GaitInterpretationSection";
 import { MotionAnalysisReportPanel } from "@/app/components/clinician/cv/MotionAnalysisReportPanel";
@@ -29,6 +30,11 @@ import {
 import { buildAssessmentMovementSummary } from "@/app/lib/cv/assessment-movement-summary";
 import { buildGaitAssistiveInterpretation } from "@/app/lib/cv/gait-interpretation";
 import { isGaitAssessmentExerciseId } from "@/app/lib/cv/gait-assessment-exercise-ids";
+import {
+  CV_MOVEMENT_TRACKING_EMPTY_MESSAGE,
+  CV_MOVEMENT_TRACKING_ERROR_MESSAGE,
+  CV_MOVEMENT_TRACKING_LOADING_MESSAGE,
+} from "@/app/lib/cv/cv-patient-profile-movement-view";
 
 type CvReviewVariant = "lab" | "patient-profile";
 
@@ -277,10 +283,14 @@ function PatientProfileCvReview({
   metrics,
   exerciseNameById,
   maxSessions,
+  loading,
+  error,
 }: {
   metrics: CvSessionMetricPublic[];
   exerciseNameById: Record<string, string>;
   maxSessions: number;
+  loading: boolean;
+  error: boolean;
 }) {
   const sorted = sortCvMetricsForPatientProfile(dedupeCvMetricsByPlanSessionExercise(metrics));
   const patientSessionRows = sorted.filter((r) => r.source === "patient_session");
@@ -298,46 +308,60 @@ function PatientProfileCvReview({
         {CV_CAMERA_VISIBILITY_HELPER}
       </p>
 
-      <PatientProfileSummaryCard metrics={metrics} />
-
-      {hasPatientSessions ? (
-        <p className="mb-3 text-[11px] font-medium text-[#5DCAA5]">
-          {patientSessionRows.length} patient portal session
-          {patientSessionRows.length === 1 ? "" : "s"} listed first for review.
+      {loading ? (
+        <p className="mt-5 text-sm text-white/40">{CV_MOVEMENT_TRACKING_LOADING_MESSAGE}</p>
+      ) : error ? (
+        <p className="mt-5 text-sm text-rose-300">{CV_MOVEMENT_TRACKING_ERROR_MESSAGE}</p>
+      ) : displayMetrics.length === 0 ? (
+        <p className="mt-5 rounded-[8px] border border-[#1E2D42] bg-[#0B1220] px-4 py-6 text-center text-sm text-[#6B7280]">
+          {CV_MOVEMENT_TRACKING_EMPTY_MESSAGE}
         </p>
-      ) : null}
+      ) : (
+        <>
+          <PatientProfileSummaryCard metrics={metrics} />
 
-      <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/25">
-        Recent sessions
-      </p>
+          {hasPatientSessions ? (
+            <p className="mb-3 text-[11px] font-medium text-[#5DCAA5]">
+              {patientSessionRows.length} patient portal session
+              {patientSessionRows.length === 1 ? "" : "s"} listed first for review.
+            </p>
+          ) : null}
 
-      <div className="space-y-3">
-        {displayMetrics.map((row, index) => (
-          <div key={row.id}>
-            {index === 0 ? (
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#1D9E75]">
-                Latest in list
+          <ClinicianSectionDetailsToggle summaryLabel="View details">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-white/25">
+              Recent sessions
+            </p>
+            <div className="space-y-3">
+              {displayMetrics.map((row, index) => (
+                <div key={row.id}>
+                  {index === 0 ? (
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#1D9E75]">
+                      Latest in list
+                    </p>
+                  ) : null}
+                  <SessionReviewCard
+                    row={row}
+                    exerciseName={exerciseNameById[row.exerciseId] ?? row.exerciseId}
+                    showPatientLink={false}
+                    profileMode
+                  />
+                </div>
+              ))}
+            </div>
+            {metrics.length > maxSessions ? (
+              <p className="text-[11px] text-[#6B7280]">
+                Showing {maxSessions} of {metrics.length} saved sessions for this patient.
               </p>
             ) : null}
-            <SessionReviewCard
-              row={row}
-              exerciseName={exerciseNameById[row.exerciseId] ?? row.exerciseId}
-              showPatientLink={false}
-              profileMode
-            />
-          </div>
-        ))}
-      </div>
+          </ClinicianSectionDetailsToggle>
+        </>
+      )}
 
-      {metrics.length > maxSessions ? (
-        <p className="mt-3 text-[11px] text-[#6B7280]">
-          Showing {maxSessions} of {metrics.length} saved sessions for this patient.
+      {!loading && !error ? (
+        <p className="mt-4 border-t border-[#1E2D42] pt-3 text-[11px] leading-relaxed text-[#6B7280]">
+          {CV_REP_COUNT_FOOTER}
         </p>
       ) : null}
-
-      <p className="mt-4 border-t border-[#1E2D42] pt-3 text-[11px] leading-relaxed text-[#6B7280]">
-        {CV_REP_COUNT_FOOTER}
-      </p>
     </section>
   );
 }
@@ -352,14 +376,13 @@ export function CvReviewSummary({
   variant = "lab",
 }: CvReviewSummaryProps) {
   if (variant === "patient-profile") {
-    if (loading || error || metrics.length === 0) {
-      return null;
-    }
     return (
       <PatientProfileCvReview
         metrics={metrics}
         exerciseNameById={exerciseNameById}
-        maxSessions={maxSessions}
+        maxSessions={maxSessions ?? 10}
+        loading={loading ?? false}
+        error={error ?? false}
       />
     );
   }

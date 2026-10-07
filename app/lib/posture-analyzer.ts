@@ -6,6 +6,12 @@
  * Landmark indices:
  *   0  = nose            11,12 = L/R shoulder
  *   23,24 = L/R hip      25,26 = L/R knee
+ *
+ * Clinical boundary:
+ * - Numeric tilts/offsets are measured observations.
+ * - `score` / `label` are legacy composite fields retained for persistence
+ *   compatibility; they are not clinical diagnoses.
+ * - `dataSufficiency` distinguishes usable capture from insufficient frames.
  */
 import type { NormLandmark } from "./body-axis-acl-squat";
 
@@ -13,6 +19,9 @@ export type PostureLabel =
   | "Good alignment"
   | "Mild asymmetry detected"
   | "Postural deviation observed";
+
+/** Whether enough frames were available for measured aggregation. */
+export type PostureDataSufficiency = "sufficient" | "insufficient";
 
 function scoreToPostureLabel(score: number): PostureLabel {
   return score >= 80
@@ -31,10 +40,27 @@ export type PostureCheckResult = {
   trunkOffset: number;
   /** Hip tilt — angle of hip line from horizontal (degrees). */
   hipTilt: number;
-  /** Composite score 0–100. */
+  /**
+   * Legacy composite score 0–100 retained for existing persistence/UI contracts.
+   * Not a clinical severity score; interpret only with therapist review.
+   */
   score: number;
+  /** Legacy classification string derived from score thresholds (not a diagnosis). */
   label: PostureLabel;
   details: string;
+};
+
+export type PostureAggregateResult = {
+  /** Legacy composite score — unchanged semantics for persistence. */
+  score: number;
+  /** Legacy label — unchanged semantics for persistence. */
+  label: PostureLabel;
+  summary: string;
+  /**
+   * Explicit capture quality. When `"insufficient"`, score/label are persistence
+   * placeholders only and must not be presented as measured clinical findings.
+   */
+  dataSufficiency: PostureDataSufficiency;
 };
 
 /**
@@ -72,7 +98,7 @@ export function analysePostureFrame(
   const hipMidX = (lHip.x + rHip.x) / 2;
   const trunkOffset = Math.abs(hipMidX - shoulderMidX);
 
-  // Score deductions
+  // Score deductions (legacy composite — not a clinical diagnosis)
   let score = 100;
   if (shoulderTilt > 8) score -= 25;
   else if (shoulderTilt > 4) score -= 12;
@@ -106,18 +132,21 @@ export function analysePostureFrame(
 
 /**
  * Aggregate per-frame posture results into a final score and report summary.
+ *
+ * Empty capture keeps legacy score `75` and label `"Mild asymmetry detected"`
+ * for persistence compatibility, and sets `dataSufficiency: "insufficient"`
+ * so UI can avoid presenting those fields as measured findings.
  */
-export function aggregatePostureResults(frames: PostureCheckResult[]): {
-  score: number;
-  label: PostureLabel;
-  summary: string;
-} {
+export function aggregatePostureResults(
+  frames: PostureCheckResult[]
+): PostureAggregateResult {
   if (frames.length === 0) {
     return {
       score: 75,
       label: "Mild asymmetry detected",
       summary:
-        "Postural Assessment completed. Insufficient frames for full analysis — ensure full body is visible next time.",
+        "Postural Assessment completed with insufficient frames for measured analysis. Composite score/label are persistence placeholders only — for therapist review; ensure full body is visible next time.",
+      dataSufficiency: "insufficient",
     };
   }
 
@@ -128,7 +157,7 @@ export function aggregatePostureResults(frames: PostureCheckResult[]): {
   const label = scoreToPostureLabel(score);
 
   const last = frames[frames.length - 1];
-  const summary = `Postural Assessment completed. ${label}. Overall postural score: ${score}%. ${last?.details ?? ""}`;
+  const summary = `Postural Assessment completed. ${label}. Overall postural score: ${score}%. ${last?.details ?? ""} For therapist review.`;
 
-  return { score, label, summary };
+  return { score, label, summary, dataSufficiency: "sufficient" };
 }

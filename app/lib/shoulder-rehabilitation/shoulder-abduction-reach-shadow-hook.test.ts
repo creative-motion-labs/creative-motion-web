@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PoseLandmark } from "@/app/lib/cv/pose-landmark-overlay";
+import { MOVEMENT_REP_CONFIRM_MIN_TICKS } from "@/app/lib/movement-rep-confirmation";
 import {
   createShoulderAbductionReachShadowState,
   runShoulderAbductionReachShadowFrame,
@@ -61,7 +62,11 @@ describe("runShoulderAbductionReachShadowFrame — enabled", () => {
   it("advances detector state across multiple calls, enabling rep detection over a session", () => {
     const state = createShoulderAbductionReachShadowState();
 
-    const frames: PoseLandmark[][] = [0, 90, 180, 180, 90, 0, 0].map((elbowAngle) => {
+    const frames: PoseLandmark[][] = [
+      ...Array.from({ length: MOVEMENT_REP_CONFIRM_MIN_TICKS }, () => 0 as const),
+      ...Array.from({ length: MOVEMENT_REP_CONFIRM_MIN_TICKS }, () => 180 as const),
+      ...Array.from({ length: MOVEMENT_REP_CONFIRM_MIN_TICKS }, () => 0 as const),
+    ].map((elbowAngle) => {
       const lm = landmarks();
       if (elbowAngle === 0) lm[13] = { x: 0.5, y: 0.68, visibility: 0.9 };
       else if (elbowAngle === 90) lm[13] = { x: 0.7, y: 0.5, visibility: 0.9 };
@@ -81,6 +86,6 @@ describe("runShoulderAbductionReachShadowFrame — enabled", () => {
 
     assert.equal(state.detectorState.left.repCount, 1);
     assert.equal(state.log.repCompletedCount.left, 1);
-    assert.equal(state.log.frameCount, 7);
+    assert.equal(state.log.frameCount, frames.length);
   });
 });

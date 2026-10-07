@@ -108,8 +108,20 @@ describe("interactive shoulder — target lifecycle", () => {
       random: deterministicRandom,
     });
     assert.ok(hit.hitEvent);
-    assert.notEqual(hit.state.currentTarget?.id, firstId);
-    assert.equal(hit.state.interaction.targetsShown, 2);
+    // CHANGE-008: the hit tick retires the contacted target; the successor is built on the
+    // next tick, which is the window the caller uses to adapt difficulty first.
+    assert.equal(hit.state.currentTarget, null);
+
+    const successor = tickTargetLifecycle(hit.state, {
+      wrist: null,
+      nowMs: T0 + 1_016,
+      side: "right",
+      bounds: DEFAULT_SAFE_TARGET_BOUNDS,
+      random: deterministicRandom,
+    });
+    assert.ok(successor.state.currentTarget);
+    assert.notEqual(successor.state.currentTarget.id, firstId);
+    assert.equal(successor.state.interaction.targetsShown, 2);
   });
 
   it("4. keeps generated targets inside configured safe bounds", () => {
@@ -212,11 +224,15 @@ describe("interactive shoulder — result category separation", () => {
     assert.equal(live.sessionState, "active");
     assert.equal(live.accumulatedBlockResults[0]?.measured.validRepetitions, 1);
     assert.equal(live.accumulatedBlockResults[0]?.interaction.targetsContacted, 1);
+    assert.deepEqual(live.accumulatedBlockResults[0]?.measured.rangeValuesDegrees, [82]);
+    assert.deepEqual(live.accumulatedBlockResults[0]?.interaction.timingSamplesMs, [900]);
 
     o.tick(T0 + 91_000);
     const summary = o.getSessionPerformanceSummary(T0 + 91_000).blockResults[0];
     assert.equal(summary.measured.validRepetitions, 1);
     assert.equal(summary.interaction.targetsContacted, 1);
+    assert.deepEqual(summary.measured.rangeValuesDegrees, [82]);
+    assert.deepEqual(summary.interaction.timingSamplesMs, [900]);
     assert.equal("targetsContacted" in summary.measured, false);
     assert.equal("validRepetitions" in summary.interaction, false);
   });

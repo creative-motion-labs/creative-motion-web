@@ -13,7 +13,6 @@ import {
   clonePilotTemplate,
   filterPilotTemplates,
   visibleRehabilitationAreas,
-  type PilotProgramSession,
   type PilotProgramTemplate,
   type RehabilitationArea,
 } from "@/app/lib/program-templates";
@@ -24,12 +23,20 @@ import {
 import { IntelligentPlanSuggestionPanel } from "@/app/components/clinician/IntelligentPlanSuggestionPanel";
 import type { PrescribedExerciseV1 } from "@/app/lib/exercise-resolve";
 import { isPrescribedExerciseV1, getExerciseDisplayName } from "@/app/lib/exercise-prescription";
+import type { ClinicalPrescribedSide } from "@/app/lib/clinical/clinical-prescribed-side";
+import {
+  buildGuidedPlanSessionsPayload,
+  isApplicableGuidedSession,
+  mapPlanAssignHttpError,
+  reconcileGuidedSessionPrescribedSide,
+  validateGuidedPrescribedSideDraftForSubmit,
+  type GuidedPlanSessionDraftInput,
+} from "@/app/lib/clinical/clinical-prescribed-side-plan-draft";
+import { PrescribedSideSelector } from "@/app/components/clinician/PrescribedSideSelector";
+import { PlanPrescribedSideReview } from "@/app/components/clinician/PlanPrescribedSideReview";
+import { CatalogProgramAssignPanel } from "@/app/components/clinician/CatalogProgramAssignPanel";
 
-type PlanSessionDraft = {
-  sessionNumber: number;
-  title: string;
-  exercises: (string | PrescribedExerciseV1)[];
-};
+type PlanSessionDraft = GuidedPlanSessionDraftInput;
 
 /* ─── Phase row ──────────────────────────────────────────────────────────── */
 
@@ -330,7 +337,12 @@ function EditableSessionCard({
     .join("\n");
 
   function addExercise(exercise: PrescribedExerciseV1) {
-    onChange({ ...session, exercises: [...session.exercises, exercise] });
+    onChange(
+      reconcileGuidedSessionPrescribedSide({
+        ...session,
+        exercises: [...session.exercises, exercise],
+      }),
+    );
   }
 
   function updateStructured(index: number, updated: PrescribedExerciseV1) {
@@ -345,7 +357,7 @@ function EditableSessionCard({
         si++;
       }
     }
-    onChange({ ...session, exercises: next });
+    onChange(reconcileGuidedSessionPrescribedSide({ ...session, exercises: next }));
   }
 
   function removeStructured(index: number) {
@@ -360,8 +372,10 @@ function EditableSessionCard({
         si++;
       }
     }
-    onChange({ ...session, exercises: next });
+    onChange(reconcileGuidedSessionPrescribedSide({ ...session, exercises: next }));
   }
+
+  const requiresPrescribedSide = isApplicableGuidedSession(session);
 
   return (
     <div className="rounded-[8px] border border-[#1E2D42] bg-[#0B1220] p-4 space-y-3">
@@ -410,7 +424,12 @@ function EditableSessionCard({
               .split("\n")
               .map((line) => line.trim())
               .filter(Boolean);
-            onChange({ ...session, exercises: [...structured, ...customLines] });
+            onChange(
+              reconcileGuidedSessionPrescribedSide({
+                ...session,
+                exercises: [...structured, ...customLines],
+              }),
+            );
           }}
           placeholder="One exercise per line — used when not in library"
           className="w-full resize-y rounded-[6px] border border-[#1E2D42] bg-[#0F1825] px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/20 focus:border-[#1D9E75]/40"
@@ -419,6 +438,17 @@ function EditableSessionCard({
           Library exercises above are saved with structured dose. Custom lines remain as text.
         </p>
       </div>
+
+      {requiresPrescribedSide && (
+        <PrescribedSideSelector
+          groupIdPrefix="guided"
+          sessionLabel={`Session ${session.sessionNumber}`}
+          value={session.prescribedSide}
+          onChange={(side: ClinicalPrescribedSide) =>
+            onChange({ ...session, prescribedSide: side })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -535,11 +565,22 @@ function NewPlanInner() {
   }
 
   function updatePlanSession(index: number, updated: PlanSessionDraft) {
-    setPlanSessions((prev) => prev.map((s, i) => (i === index ? updated : s)));
+    setPlanSessions((prev) =>
+      prev.map((s, i) => (i === index ? reconcileGuidedSessionPrescribedSide(updated) : s)),
+    );
   }
 
   async function handleAssign() {
     if (!selectedPatient) return;
+
+    if (selectedTemplateId && planSessions.length > 0) {
+      const sideValidation = validateGuidedPrescribedSideDraftForSubmit(planSessions);
+      if (!sideValidation.ok) {
+        setSaveError(sideValidation.error);
+        return;
+      }
+    }
+
     setSaving(true);
     setSaveError("");
 
@@ -571,11 +612,14 @@ function NewPlanInner() {
           expectedResponse: activeTemplate?.expectedResponse,
           reviewCriteria: activeTemplate?.reviewCriteria,
           safetyNotes: activeTemplate?.safetyNotes ?? (notes.trim() || undefined),
-          sessions:       planSessions.map((s) => ({
-            sessionNumber: s.sessionNumber,
-            title:         s.title.trim() || `Session ${s.sessionNumber}`,
-            exercises:     s.exercises.length > 0 ? s.exercises : ["As prescribed by your therapist"],
-          })),
+          sessions: buildGuidedPlanSessionsPayload(
+            planSessions.map((s) => ({
+              ...s,
+              title: s.title.trim() || `Session ${s.sessionNumber}`,
+              exercises:
+                s.exercises.length > 0 ? s.exercises : ["As prescribed by your therapist"],
+            })),
+          ),
         };
       } else if (matchedProg) {
         const firstPhase = matchedProg.phases[0];
@@ -645,7 +689,7 @@ function NewPlanInner() {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error ?? `Failed to create plan (${res.status})`);
+        throw new Error(mapPlanAssignHttpError(res.status, body));
       }
 
       const planRow = (await res.json()) as PlanRow;
@@ -961,7 +1005,23 @@ function NewPlanInner() {
                     />
                   ))}
                 </div>
+
+                <PlanPrescribedSideReview sessions={planSessions} />
               </div>
+            )}
+
+            {selectedPatient && (
+              <CatalogProgramAssignPanel
+                patientId={selectedPatient.id}
+                assessmentId={baselineId || null}
+                onAssigned={() => {
+                  setSaved(true);
+                  setTimeout(
+                    () => router.push(`/clinician/patients/${selectedPatient.id}?planAssigned=1`),
+                    1000,
+                  );
+                }}
+              />
             )}
 
             {/* Rehab protocol (legacy programs) */}

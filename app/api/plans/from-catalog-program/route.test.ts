@@ -48,7 +48,36 @@ type FakeDepsOptions = {
   rateLimited?: boolean;
   createPlanResult?: CreatePlanFromCatalogProgramResult;
   createPlanError?: Error;
+  capabilityAvailable?: boolean;
+  capabilityProbeOk?: boolean;
 };
+
+function buildCapabilityAdmin(available: boolean, ok = true) {
+  return {
+    from() {
+      return {
+        select() {
+          return {
+            limit: async () => {
+              if (!ok) {
+                return { error: { code: "42501", message: "permission denied" } };
+              }
+              if (available) {
+                return { error: null };
+              }
+              return {
+                error: {
+                  code: "42703",
+                  message: 'column "prescribed_side" does not exist',
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+}
 
 function buildFakeDeps(options: FakeDepsOptions = {}) {
   const createPlanCalls: { client: unknown; input: CreatePlanFromCatalogProgramInput }[] = [];
@@ -62,7 +91,9 @@ function buildFakeDeps(options: FakeDepsOptions = {}) {
     return options.createPlanResult ?? SUCCESS_RESULT;
   };
 
-  const adminClientSentinel = { __fake: "admin-client" };
+  const capabilityAvailable = options.capabilityAvailable ?? true;
+  const capabilityProbeOk = options.capabilityProbeOk ?? true;
+  const adminClientSentinel = buildCapabilityAdmin(capabilityAvailable, capabilityProbeOk);
 
   const deps: CatalogPlanPostDependencies = {
     getAuthenticatedUser: async () =>
@@ -111,7 +142,8 @@ describe("POST /api/plans/from-catalog-program", () => {
   it("3. missing required field (patientId) -> 400, wrapper never called", async () => {
     const { deps, createPlanCalls } = buildFakeDeps();
     const handler = createCatalogPlanPostHandler(deps);
-    const { patientId: _drop, ...rest } = VALID_BODY;
+    const rest = { ...VALID_BODY };
+    delete (rest as Partial<typeof VALID_BODY>).patientId;
     const res = await handler(fakeRequest(rest));
     assert.equal(res.status, 400);
     assert.deepEqual(createPlanCalls, []);
@@ -152,7 +184,8 @@ describe("POST /api/plans/from-catalog-program", () => {
   it("8. omitted/null assessmentId reaches the wrapper as null", async () => {
     const { deps, createPlanCalls } = buildFakeDeps();
     const handler = createCatalogPlanPostHandler(deps);
-    const { assessmentId: _drop, ...rest } = VALID_BODY;
+    const rest = { ...VALID_BODY };
+    delete (rest as Partial<typeof VALID_BODY>).assessmentId;
     const res = await handler(fakeRequest(rest));
     assert.equal(res.status, 201);
     assert.equal(createPlanCalls[0].input.assessmentId, null);
@@ -165,54 +198,44 @@ describe("POST /api/plans/from-catalog-program", () => {
     assert.equal(createPlanCalls[0].input.providerId, PROVIDER_ID);
   });
 
-  it("10. attacker-supplied providerId in the body is ignored", async () => {
+  it("10. attacker-supplied providerId in the body is rejected", async () => {
     const { deps, createPlanCalls } = buildFakeDeps();
     const handler = createCatalogPlanPostHandler(deps);
-    await handler(
+    const res = await handler(
       fakeRequest({ ...VALID_BODY, providerId: "99999999-9999-9999-9999-999999999999" }),
     );
-    assert.equal(createPlanCalls[0].input.providerId, PROVIDER_ID);
+    assert.equal(res.status, 400);
+    assert.deepEqual(createPlanCalls, []);
   });
 
-  it("11. attacker-supplied token/patientToken fields are ignored -- exact wrapper input asserted", async () => {
+  it("11. attacker-supplied token/patientToken fields are rejected", async () => {
     const { deps, createPlanCalls } = buildFakeDeps();
     const handler = createCatalogPlanPostHandler(deps);
-    await handler(
+    const res = await handler(
       fakeRequest({
         ...VALID_BODY,
         token: "attacker-token",
         patientToken: "attacker-patient-token",
       }),
     );
-    assert.deepEqual(createPlanCalls[0].input, {
-      providerId: PROVIDER_ID,
-      patientId: PATIENT_ID,
-      treatmentProgramId: PROGRAM_ID,
-      assessmentId: ASSESSMENT_ID,
-      catalogAssignmentRequestId: REQUEST_ID,
-    });
+    assert.equal(res.status, 400);
+    assert.deepEqual(createPlanCalls, []);
   });
 
-  it("12. sessions/exercises/blocks/provenance fields are not forwarded -- exact wrapper input asserted", async () => {
+  it("12. exercises/blocks/provenance fields are rejected as unknown request fields", async () => {
     const { deps, createPlanCalls } = buildFakeDeps();
     const handler = createCatalogPlanPostHandler(deps);
-    await handler(
+    const res = await handler(
       fakeRequest({
         ...VALID_BODY,
-        sessions: [{ id: "x" }],
         exercises: ["fake-exercise"],
         blocks: [{ blockKey: "x" }],
         sourceTreatmentProgramId: "88888888-8888-8888-8888-888888888888",
         sourceProgramSessionId: "99999999-9999-9999-9999-999999999999",
       }),
     );
-    assert.deepEqual(createPlanCalls[0].input, {
-      providerId: PROVIDER_ID,
-      patientId: PATIENT_ID,
-      treatmentProgramId: PROGRAM_ID,
-      assessmentId: ASSESSMENT_ID,
-      catalogAssignmentRequestId: REQUEST_ID,
-    });
+    assert.equal(res.status, 400);
+    assert.deepEqual(createPlanCalls, []);
   });
 
   it("13. created:true -> 201", async () => {
@@ -306,6 +329,7 @@ describe("POST /api/plans/from-catalog-program", () => {
       "program_not_eligible",
       "idempotency_conflict",
       "integrity_failed",
+      "prescribed_side_unavailable",
       "rpc_failed",
     ] as const;
     for (const reason of reasons) {
@@ -327,6 +351,69 @@ describe("POST /api/plans/from-catalog-program", () => {
     const handler = createCatalogPlanPostHandler(deps);
     const res = await handler(fakeRequest(VALID_BODY));
     assert.equal(res.status, 429);
+    assert.deepEqual(createPlanCalls, []);
+  });
+
+  it("6. catalog creation without side forwards an empty prescription list", async () => {
+    const { deps, createPlanCalls } = buildFakeDeps();
+    const handler = createCatalogPlanPostHandler(deps);
+    const res = await handler(fakeRequest(VALID_BODY));
+    assert.equal(res.status, 201);
+    assert.deepEqual(createPlanCalls[0]?.input.sessionPrescribedSides, []);
+  });
+
+  it("7. catalog creation without side succeeds when migration capability is unavailable", async () => {
+    const { deps, createPlanCalls } = buildFakeDeps({ capabilityAvailable: false });
+    const handler = createCatalogPlanPostHandler(deps);
+    const res = await handler(fakeRequest(VALID_BODY));
+    assert.equal(res.status, 201);
+    assert.equal(createPlanCalls.length, 1);
+  });
+
+  it("9. side-aware catalog creation returns 503 before wrapper call when capability is unavailable", async () => {
+    const { deps, createPlanCalls } = buildFakeDeps({ capabilityAvailable: false });
+    const handler = createCatalogPlanPostHandler(deps);
+    const res = await handler(
+      fakeRequest({
+        ...VALID_BODY,
+        sessions: [{ sessionNumber: 1, prescribedSide: "left" }],
+      }),
+    );
+    assert.equal(res.status, 503);
+    assert.deepEqual(createPlanCalls, []);
+    const json = await res.json();
+    assert.equal(json.error, "Service temporarily unavailable.");
+  });
+
+  it("9b. side-aware RPC unavailable maps to sanitized 503 response", async () => {
+    const { deps } = buildFakeDeps({
+      createPlanError: new CreatePlanFromCatalogProgramError(
+        "prescribed_side_unavailable",
+        "Could not create the treatment plan.",
+      ),
+    });
+    const handler = createCatalogPlanPostHandler(deps);
+    const res = await handler(
+      fakeRequest({
+        ...VALID_BODY,
+        sessions: [{ sessionNumber: 1, prescribedSide: "right" }],
+      }),
+    );
+    assert.equal(res.status, 503);
+    const json = await res.json();
+    assert.equal(json.error, "Service temporarily unavailable.");
+  });
+
+  it("10. unrelated capability probe failures return 500 without calling wrapper", async () => {
+    const { deps, createPlanCalls } = buildFakeDeps({ capabilityProbeOk: false });
+    const handler = createCatalogPlanPostHandler(deps);
+    const res = await handler(
+      fakeRequest({
+        ...VALID_BODY,
+        sessions: [{ sessionNumber: 1, prescribedSide: "left" }],
+      }),
+    );
+    assert.equal(res.status, 500);
     assert.deepEqual(createPlanCalls, []);
   });
 });

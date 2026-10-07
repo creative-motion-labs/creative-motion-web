@@ -35,10 +35,10 @@
   --rasq-ease:     cubic-bezier(0.16, 1, 0.3, 1);
   --rasq-ease-out: cubic-bezier(0.0, 0.0, 0.2, 1);
 
-  /* ── Typography pointers (actual vars loaded by layout.tsx) ── */
-  --rasq-font-display: var(--font-geist, var(--font-inter), ui-sans-serif, sans-serif);
-  --rasq-font-body:    var(--font-inter), ui-sans-serif, sans-serif;
-  --rasq-font-mono:    var(--font-ibm-plex-mono), ui-monospace, monospace;
+  /* ── Typography pointers (loaded by app/fonts.ts + layout.tsx) ── */
+  --rasq-font-display: var(--font-ui-en);
+  --rasq-font-body:    var(--font-ui-en);
+  --rasq-font-mono:    var(--font-data);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -121,4 +121,271 @@
 
 .rasq-connector.is-revealed {
   transform: scaleX(1);
+}
+
+/* Homepage — restrained ambient depth */
+.rasq-hero-ambient {
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at 35% 45%,
+    color-mix(in srgb, var(--rasq-teal) 8%, transparent) 0%,
+    transparent 68%
+  );
+}
+
+.rasq-preview-stack {
+  transform: perspective(1200px) rotateY(-4deg) rotateX(2deg);
+  transition: transform 0.8s var(--rasq-ease);
+}
+
+@media (min-width: 1024px) {
+  .rasq-preview-stack:hover {
+    transform: perspective(1200px) rotateY(-2deg) rotateX(1deg);
+  }
+}
+
+.rasq-progress-sweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.rasq-progress-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--rasq-mint) 35%, transparent) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: rasq-bar-sweep 4.5s var(--rasq-ease) 1.2s 1 forwards;
+}
+
+@keyframes rasq-bar-sweep {
+  to { transform: translateX(100%); }
+}
+
+/* Photo frame — graded placeholder for real RASQ rehabilitation photography.
+   No stock/decorative photo is embedded; this is the crop/grade/motion
+   treatment the real asset will drop into unchanged. */
+.rasq-photo-frame {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 32% 22%, color-mix(in srgb, var(--rasq-teal) 16%, transparent) 0%, transparent 56%),
+    linear-gradient(160deg, #0d1b17 0%, #0a1512 45%, #060b09 100%);
+}
+
+/* Maximum ~2.5% scale over a long, slow duration — must never read as a
+   deliberate "moving photo" design effect. */
+.rasq-photo-drift {
+  animation: rasq-photo-drift 24s var(--rasq-ease) infinite alternate;
+}
+
+@keyframes rasq-photo-drift {
+  from { transform: scale(1); }
+  to { transform: scale(1.025); }
+}
+
+/* Page ambient — thin flowing lines across the full homepage */
+.rasq-page-ambient {
+  pointer-events: none;
+  position: absolute;
+  top: 52px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black 88%,
+    transparent 100%
+  );
+}
+
+.rasq-page-ambient__svg {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+}
+
+.rasq-ambient-line {
+  fill: none;
+  stroke: var(--rasq-teal, #1D9E75);
+  stroke-width: 1;
+  stroke-linecap: round;
+  opacity: 0.055;
+  vector-effect: non-scaling-stroke;
+}
+
+.rasq-ambient-line--mint {
+  stroke: var(--rasq-mint, #5DCAA5);
+  opacity: 0.045;
+}
+
+.rasq-ambient-zone--quiet .rasq-ambient-line {
+  opacity: 0.028;
+}
+
+.rasq-ambient-zone--quiet .rasq-ambient-line--mint {
+  opacity: 0.022;
+}
+
+.rasq-ambient-zone--medium .rasq-ambient-line {
+  opacity: 0.042;
+}
+
+.rasq-ambient-zone--medium .rasq-ambient-line--mint {
+  opacity: 0.035;
+}
+
+.rasq-ambient-flow {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.rasq-ambient-flow--a {
+  animation: rasq-ambient-drift-a 42s ease-in-out infinite;
+}
+
+.rasq-ambient-flow--b {
+  animation: rasq-ambient-drift-b 52s ease-in-out infinite;
+}
+
+.rasq-ambient-flow--c {
+  animation: rasq-ambient-drift-c 48s ease-in-out infinite;
+}
+
+.rasq-ambient-flow--d {
+  animation: rasq-ambient-drift-d 56s ease-in-out infinite;
+}
+
+.rasq-ambient-flow--e {
+  animation: rasq-ambient-drift-e 44s ease-in-out infinite;
+}
+
+.rasq-ambient-flow--f {
+  animation: rasq-ambient-drift-f 50s ease-in-out infinite;
+}
+
+.rasq-ambient-flow--g {
+  animation: rasq-ambient-drift-g 58s ease-in-out infinite;
+}
+
+@keyframes rasq-ambient-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-18px, 28px, 0); }
+}
+
+@keyframes rasq-ambient-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(22px, -24px, 0); }
+}
+
+@keyframes rasq-ambient-drift-c {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-10px, 16px, 0); }
+}
+
+@keyframes rasq-ambient-drift-d {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(16px, -20px, 0); }
+}
+
+@keyframes rasq-ambient-drift-e {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-14px, 12px, 0); }
+}
+
+@keyframes rasq-ambient-drift-f {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(20px, 18px, 0); }
+}
+
+@keyframes rasq-ambient-drift-g {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-8px, -14px, 0); }
+}
+
+.rasq-ambient-node {
+  opacity: 0;
+  filter: url(#rasq-ambient-node-soft);
+}
+
+.rasq-ambient-node--teal {
+  fill: var(--rasq-teal, #1D9E75);
+}
+
+.rasq-ambient-node--mint {
+  fill: var(--rasq-mint, #5DCAA5);
+}
+
+.rasq-ambient-node--static {
+  opacity: 0.11;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rasq-stagger-item,
+  .rasq-reveal,
+  .rasq-reveal-children > *,
+  .rasq-arc-outer,
+  .rasq-arc-inner,
+  .rasq-arc-dot,
+  .rasq-connector,
+  .rasq-preview-stack,
+  .rasq-progress-sweep::after,
+  .rasq-photo-drift,
+  .rasq-ambient-flow,
+  .rasq-ambient-flow--a,
+  .rasq-ambient-flow--b,
+  .rasq-ambient-flow--c,
+  .rasq-ambient-flow--d,
+  .rasq-ambient-flow--e,
+  .rasq-ambient-flow--f,
+  .rasq-ambient-flow--g {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .rasq-ambient-line {
+    opacity: 0.05 !important;
+  }
+
+  .rasq-ambient-line--mint {
+    opacity: 0.04 !important;
+  }
+
+  .rasq-ambient-zone--quiet .rasq-ambient-line {
+    opacity: 0.022 !important;
+  }
+
+  .rasq-ambient-zone--quiet .rasq-ambient-line--mint {
+    opacity: 0.018 !important;
+  }
+
+  .rasq-ambient-zone--medium .rasq-ambient-line {
+    opacity: 0.035 !important;
+  }
+
+  .rasq-ambient-zone--medium .rasq-ambient-line--mint {
+    opacity: 0.03 !important;
+  }
+
+  .rasq-ambient-node:not(.rasq-ambient-node--static) {
+    display: none;
+  }
+
+  .rasq-ambient-node--static {
+    opacity: 0.09 !important;
+  }
+
+  .rasq-progress-sweep::after {
+    display: none;
+  }
 }

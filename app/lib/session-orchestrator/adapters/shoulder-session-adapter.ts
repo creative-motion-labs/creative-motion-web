@@ -2,6 +2,7 @@ import type { ShoulderAbductionReachMeasuredEvent } from "@/app/lib/cv/shoulder-
 import type { SessionInputEvent } from "@/app/lib/session-orchestrator/types";
 import type { TargetHitEvent } from "@/app/lib/interactive-shoulder/types";
 import type { PatternCompletionEvent } from "@/app/lib/interactive-shoulder/motion-patterns/pattern-lifecycle";
+import { extractReactionTimeSampleMs } from "@/app/lib/session-orchestrator/measured-sample-extraction";
 
 /**
  * Translates shoulder detector measured events into generic SessionInputEvent
@@ -37,7 +38,12 @@ export function mapShoulderMeasuredEventToSessionInput(
 }
 
 export function mapTargetHitToSessionInput(hit: TargetHitEvent): SessionInputEvent {
-  return { type: "targetContact", capturedAtMs: hit.capturedAtMs };
+  const reactionTimeMs = extractReactionTimeSampleMs(hit.reactionTimeMs);
+  return {
+    type: "targetContact",
+    capturedAtMs: hit.capturedAtMs,
+    ...(reactionTimeMs !== null ? { reactionTimeMs } : {}),
+  };
 }
 
 /** Pattern completion is a dedicated interaction event — not a target contact. */

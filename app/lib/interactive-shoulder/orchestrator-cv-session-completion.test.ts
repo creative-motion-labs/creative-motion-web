@@ -58,15 +58,21 @@ describe("orchestrator-cv-session-completion", () => {
     assert.equal(shouldFireSessionCompleteCallback(snap.sessionState, true), false);
   });
 
-  it("OrchestratorCvSessionCore wires onSessionComplete once per completed session", () => {
+  it("OrchestratorCvSessionCore wires onSessionComplete once per completed session, forwarding the real final snapshot (O2)", () => {
     const corePath = join(
       process.cwd(),
       "app/components/patient/interactive-shoulder/OrchestratorCvSessionCore.tsx",
     );
     const source = readFileSync(corePath, "utf8");
-    assert.match(source, /onSessionComplete\?\.\(\)/);
     assert.match(source, /sessionCompleteFiredRef/);
     assert.match(source, /shouldFireSessionCompleteCallback/);
     assert.match(source, /snap\.sessionState === "completed"/);
+    // O2: the callback forwards the same local `snap` this tick already
+    // computed — sessionState/sessionElapsedSeconds/accumulatedBlockResults,
+    // never a fabricated or recomputed value.
+    assert.match(source, /onSessionComplete\?\.\(\{/);
+    assert.match(source, /sessionState:\s*snap\.sessionState/);
+    assert.match(source, /sessionElapsedSeconds:\s*snap\.sessionElapsedSeconds/);
+    assert.match(source, /accumulatedBlockResults:\s*snap\.accumulatedBlockResults/);
   });
 });

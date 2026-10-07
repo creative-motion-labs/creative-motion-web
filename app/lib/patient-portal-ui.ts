@@ -954,6 +954,19 @@ export type WorkspaceUi = {
   sessionsLeft: (remaining: number) => string;
   recentEmptyFriendly: string;
   providerCardSubtitle: string;
+  homeProgressTitle: string;
+  homeProgressSubtitle: string;
+  homeProgressViewLink: string;
+  homeProgressSingleSessionNote: string;
+  statSessions: string;
+  statActiveDays: string;
+  statCompletion: string;
+  statEffort: string;
+  nextSessionDuration: string;
+  nextSessionTherapistContext: string;
+  nextSessionStatusReady: string;
+  nextSessionStatusDoneToday: string;
+  exerciseCountLabel: (count: number) => string;
 };
 
 const WORKSPACE: Record<PatientPortalLanguage, WorkspaceUi> = {
@@ -1025,6 +1038,21 @@ const WORKSPACE: Record<PatientPortalLanguage, WorkspaceUi> = {
       `${remaining} session${remaining === 1 ? "" : "s"} to go`,
     recentEmptyFriendly: "Your completed sessions will appear here.",
     providerCardSubtitle: "Supporting your program",
+    homeProgressTitle: "Your progress",
+    homeProgressSubtitle: "Progress across your recorded sessions",
+    homeProgressViewLink: "View progress",
+    homeProgressSingleSessionNote:
+      "Progress charts will appear after more recorded sessions.",
+    statSessions: "Sessions",
+    statActiveDays: "Active days",
+    statCompletion: "Completion",
+    statEffort: "Effort",
+    nextSessionDuration: "Estimated duration",
+    nextSessionTherapistContext: "Assigned by your therapist",
+    nextSessionStatusReady: "Ready to begin",
+    nextSessionStatusDoneToday: "Completed for today",
+    exerciseCountLabel: (count) =>
+      `${count} exercise${count === 1 ? "" : "s"}`,
   },
   ar: {
     navHome: "الرئيسية",
@@ -1087,11 +1115,25 @@ const WORKSPACE: Record<PatientPortalLanguage, WorkspaceUi> = {
     nextSessionReady: "أنت جاهز — واصل الزخم.",
     nextSessionDoneToday: "عمل رائع اليوم. استرح وعد عندما تكون مستعدًا.",
     programProgressLabel: "تقدّم البرنامج",
-    startSessionCta: "بدء الجلسة",
+    startSessionCta: "ابدأ الجلسة",
     sessionsLeft: (remaining) =>
       remaining === 1 ? "جلسة واحدة متبقية" : `${remaining} جلسات متبقية`,
     recentEmptyFriendly: "ستظهر جلساتك المكتملة هنا.",
     providerCardSubtitle: "يدعم برنامجك",
+    homeProgressTitle: "تقدمك",
+    homeProgressSubtitle: "تطورك عبر الجلسات المسجلة",
+    homeProgressViewLink: "عرض التقدم",
+    homeProgressSingleSessionNote: "ستظهر مخططات التقدم بعد تسجيل المزيد من الجلسات.",
+    statSessions: "الجلسات",
+    statActiveDays: "أيام نشطة",
+    statCompletion: "الإكمال",
+    statEffort: "الجهد",
+    nextSessionDuration: "المدة التقديرية",
+    nextSessionTherapistContext: "مخصصة من معالجك",
+    nextSessionStatusReady: "جاهزة للبدء",
+    nextSessionStatusDoneToday: "اكتملت لليوم",
+    exerciseCountLabel: (count) =>
+      count === 1 ? "تمرين واحد" : `${count} تمارين`,
   },
 };
 
@@ -1290,6 +1332,9 @@ export type GuidedSessionUi = {
   restCountdownSeconds: (seconds: number) => string;
   restReadyForNext: string;
   manualExerciseNoCv: string;
+  cameraRequiredTitle: string;
+  cameraRequiredBody: string;
+  cameraRequiredRetry: string;
 };
 
 const GUIDED_SESSION: Record<PatientPortalLanguage, GuidedSessionUi> = {
@@ -1326,6 +1371,10 @@ const GUIDED_SESSION: Record<PatientPortalLanguage, GuidedSessionUi> = {
     restReadyForNext: "Ready for the next exercise",
     manualExerciseNoCv:
       "Camera tracking is not available for this exercise yet. Follow the instructions and complete it manually.",
+    cameraRequiredTitle: "Camera access is required",
+    cameraRequiredBody:
+      "This session uses your camera to guide the movement. Please continue and allow camera access to begin.",
+    cameraRequiredRetry: "Try again",
   },
   ar: {
     startEyebrow: "جاهز عندما تكون أنت",
@@ -1360,6 +1409,10 @@ const GUIDED_SESSION: Record<PatientPortalLanguage, GuidedSessionUi> = {
     restReadyForNext: "جاهز للتمرين التالي",
     manualExerciseNoCv:
       "التتبع بالكاميرا غير متاح لهذا التمرين حاليًا. اتبع التعليمات وأكمل التمرين يدويًا.",
+    cameraRequiredTitle: "الوصول إلى الكاميرا مطلوب",
+    cameraRequiredBody:
+      "تستخدم هذه الجلسة الكاميرا لتوجيه الحركة. يرجى المتابعة والسماح بالوصول إلى الكاميرا للبدء.",
+    cameraRequiredRetry: "حاول مرة أخرى",
   },
 };
 
@@ -1660,6 +1713,21 @@ export function formatPortalDate(
     return new Date(iso).toLocaleString(lang === "ar" ? "ar-SA" : undefined, {
       dateStyle: "medium",
       timeStyle: "short",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+/** Compact session date for progress chart axes (no time). */
+export function formatPortalChartDate(
+  iso: string,
+  lang: PatientPortalLanguage,
+): string {
+  try {
+    return new Date(iso).toLocaleString(lang === "ar" ? "ar-SA" : "en-US", {
+      month: "short",
+      day: "numeric",
     });
   } catch {
     return iso;

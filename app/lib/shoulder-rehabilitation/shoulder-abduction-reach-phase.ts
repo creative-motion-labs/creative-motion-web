@@ -12,8 +12,17 @@
  * Phase transitions are driven entirely by the angle value already computed
  * in `shoulder-abduction-reach-metrics.ts` — this module has no knowledge
  * of joints, frames, or confidence.
+ *
+ * Reps require confirmed rest, then confirmed peak, then confirmed return.
+ * Angle thresholds are unchanged; confirmation is consecutive valid frames only.
  */
 
+import {
+  createMovementRepConfirmationState,
+  noteUnusableConfirmationFrame,
+  noteUsableRestPeakFrame,
+  resetMovementRepConfirmation,
+} from "@/app/lib/movement-rep-confirmation";
 import type {
   ShoulderAbductionReachPhase,
   ShoulderAbductionReachThresholds,
@@ -31,6 +40,9 @@ export type ShoulderAbductionReachPhaseState = {
   peakAngleDegrees: number | null;
   hasReachedPeakThisRep: boolean;
   consecutiveUnusableFrames: number;
+  restStreak: number;
+  peakStreak: number;
+  cycleArmed: boolean;
 };
 
 export function createShoulderAbductionReachPhaseState(): ShoulderAbductionReachPhaseState {
@@ -40,6 +52,7 @@ export function createShoulderAbductionReachPhaseState(): ShoulderAbductionReach
     peakAngleDegrees: null,
     hasReachedPeakThisRep: false,
     consecutiveUnusableFrames: 0,
+    ...createMovementRepConfirmationState(),
   };
 }
 
@@ -49,8 +62,7 @@ export function resetShoulderAbductionReachPhaseState(
   state.phase = "resting";
   state.repCount = 0;
   state.peakAngleDegrees = null;
-  state.hasReachedPeakThisRep = false;
-  state.consecutiveUnusableFrames = 0;
+  resetMovementRepConfirmation(state);
 }
 
 function updatePeak(state: ShoulderAbductionReachPhaseState, angleDegrees: number): void {
@@ -82,66 +94,44 @@ export function tickShoulderAbductionReachPhase(
   thresholds: ShoulderAbductionReachThresholds,
 ): void {
   if (angleDegrees === null) {
-    state.consecutiveUnusableFrames += 1;
-    if (state.consecutiveUnusableFrames >= thresholds.poseLostUnknownMinTicks) {
+    if (noteUnusableConfirmationFrame(state, thresholds.poseLostUnknownMinTicks)) {
       state.phase = "unknown";
     }
     return;
   }
 
-  state.consecutiveUnusableFrames = 0;
+  const inRest = angleDegrees <= thresholds.restingMaxAngleDegrees;
+  const inPeak = angleDegrees >= thresholds.peakMinAngleDegrees;
+  if (!inRest) {
+    if (state.phase === "resting" || state.phase === "unknown") {
+      state.peakAngleDegrees = angleDegrees;
+    } else {
+      updatePeak(state, angleDegrees);
+    }
+  }
 
-  const peakLowerThreshold = thresholds.peakMinAngleDegrees - thresholds.peakLowerHysteresisDegrees;
+  const { peakConfirmed, shouldCountRep } = noteUsableRestPeakFrame(state, {
+    inRest,
+    inPeak,
+  });
 
-  switch (state.phase) {
-    case "resting":
-    case "unknown": {
-      if (angleDegrees > thresholds.restingMaxAngleDegrees) {
-        // Starting a new raise — reset peak tracking for this attempt.
-        state.phase = "raising";
-        state.peakAngleDegrees = angleDegrees;
-        state.hasReachedPeakThisRep = false;
-      } else {
-        // Remaining at rest — peakAngleDegrees intentionally untouched here;
-        // it retains the most recently finished attempt's peak (or null if
-        // no attempt has happened yet) until the next raise begins.
-        state.phase = "resting";
-      }
-      break;
-    }
-    case "raising": {
-      updatePeak(state, angleDegrees);
-      if (angleDegrees >= thresholds.peakMinAngleDegrees) {
-        state.phase = "peak_abduction";
-        state.hasReachedPeakThisRep = true;
-      } else if (angleDegrees <= thresholds.restingMaxAngleDegrees) {
-        // Arm returned to rest without reaching the peak band — no rep
-        // counted, but peakAngleDegrees is left as this attempt's peak so
-        // it's still observable, consistent with the field's semantics.
-        state.phase = "resting";
-      }
-      break;
-    }
-    case "peak_abduction": {
-      updatePeak(state, angleDegrees);
-      if (angleDegrees < peakLowerThreshold) {
-        state.phase = "lowering";
-      }
-      break;
-    }
-    case "lowering": {
-      updatePeak(state, angleDegrees);
-      if (angleDegrees >= thresholds.peakMinAngleDegrees) {
-        // Re-raised past the peak band before returning to rest.
-        state.phase = "peak_abduction";
-      } else if (angleDegrees <= thresholds.restingMaxAngleDegrees) {
-        state.phase = "resting";
-        if (state.hasReachedPeakThisRep) {
-          state.repCount += 1;
-        }
-        state.hasReachedPeakThisRep = false;
-      }
-      break;
-    }
+  if (shouldCountRep) {
+    state.repCount += 1;
+  }
+
+  if (inRest) {
+    state.phase = "resting";
+    return;
+  }
+  if (peakConfirmed) {
+    state.phase = "peak_abduction";
+    return;
+  }
+  if (state.hasReachedPeakThisRep) {
+    state.phase = "lowering";
+    return;
+  }
+  if (!inRest) {
+    state.phase = "raising";
   }
 }

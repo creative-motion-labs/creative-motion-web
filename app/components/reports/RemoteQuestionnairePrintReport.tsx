@@ -20,30 +20,86 @@ import {
 } from "@/app/lib/reports/patient-clinical-translation";
 import { ReportPrintLayout, ReportPrintSection } from "./ReportPrintLayout";
 
-function PrintFieldRows({ rows }: { rows: { label: string; value: string }[] }) {
+function PrintFieldRows({
+  rows,
+}: {
+  rows: {
+    label: string;
+    value: string;
+    originalValue?: string;
+    clinicalEnglish?: string;
+    translationMissing?: boolean;
+  }[];
+}) {
   if (rows.length === 0) return null;
   return (
     <dl className="divide-y divide-gray-200 border border-gray-200">
-      {rows.map((row) => (
-        <div key={row.label} className="px-3 py-2.5">
-          <dt className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{row.label}</dt>
-          <dd className="mt-0.5 text-sm leading-relaxed text-gray-900 whitespace-pre-wrap">{row.value}</dd>
-        </div>
-      ))}
+      {rows.map((row) => {
+        const showBilingual = Boolean(row.originalValue && row.originalValue !== row.value);
+        return (
+          <div key={row.label} className="px-3 py-2.5">
+            <dt className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{row.label}</dt>
+            <dd className="mt-0.5">
+              {showBilingual ? (
+                <PatientClinicalTranslationDisplay
+                  originalText={row.originalValue!}
+                  clinicalEnglish={row.clinicalEnglish ?? row.value}
+                  variant="print"
+                />
+              ) : (
+                <p className="text-sm leading-relaxed text-gray-900 whitespace-pre-wrap">{row.value}</p>
+              )}
+              {row.translationMissing ? (
+                <p className="mt-2 text-[10px] italic text-amber-800">
+                  Clinical English translation unavailable — therapist review required.
+                </p>
+              ) : null}
+            </dd>
+          </div>
+        );
+      })}
     </dl>
   );
 }
 
-function PrintMetricGrid({ metrics }: { metrics: { label: string; value: string }[] }) {
+function PrintMetricGrid({
+  metrics,
+}: {
+  metrics: {
+    label: string;
+    value: string;
+    originalValue?: string;
+    clinicalEnglish?: string;
+    translationMissing?: boolean;
+  }[];
+}) {
   if (metrics.length === 0) return null;
   return (
     <div className="grid gap-3 sm:grid-cols-3">
-      {metrics.map((metric) => (
-        <div key={metric.label} className="border border-gray-200 bg-gray-50 px-3 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{metric.label}</p>
-          <p className="mt-1 text-sm font-semibold text-gray-900">{metric.value}</p>
-        </div>
-      ))}
+      {metrics.map((metric) => {
+        const showBilingual = Boolean(metric.originalValue && metric.originalValue !== metric.value);
+        return (
+          <div key={metric.label} className="border border-gray-200 bg-gray-50 px-3 py-2.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{metric.label}</p>
+            {showBilingual ? (
+              <div className="mt-1">
+                <PatientClinicalTranslationDisplay
+                  originalText={metric.originalValue!}
+                  clinicalEnglish={metric.clinicalEnglish ?? metric.value}
+                  variant="print"
+                />
+              </div>
+            ) : (
+              <p className="mt-1 text-sm font-semibold text-gray-900">{metric.value}</p>
+            )}
+            {metric.translationMissing ? (
+              <p className="mt-1 text-[10px] italic text-amber-800">
+                Clinical English translation unavailable — therapist review required.
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -144,6 +200,11 @@ export function RemoteQuestionnairePrintReport({
       }}
     >
       <ReportPrintSection title={SECTION_OVERVIEW}>
+        {summary.clinicalTranslationWarning ? (
+          <p className="mb-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+            {summary.clinicalTranslationWarning}
+          </p>
+        ) : null}
         <PrintMetricGrid metrics={summary.metrics} />
         {hasSummaryContent ? <PrintFieldRows rows={summary.rows} /> : null}
       </ReportPrintSection>

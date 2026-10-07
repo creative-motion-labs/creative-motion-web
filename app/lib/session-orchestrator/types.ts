@@ -126,7 +126,7 @@ export type SessionInputEvent =
   | { type: "calibrationCompleted"; capturedAtMs: number }
   | { type: "validRepetition"; capturedAtMs: number; metrics?: Record<string, unknown> }
   | { type: "invalidRepetition"; capturedAtMs: number; reason?: string }
-  | { type: "targetContact"; capturedAtMs: number }
+  | { type: "targetContact"; capturedAtMs: number; reactionTimeMs?: number }
   | { type: "patternCompleted"; patternId: string; capturedAtMs: number }
   | { type: "holdStarted"; capturedAtMs: number }
   | { type: "holdCompleted"; capturedAtMs: number; durationSeconds: number }
@@ -183,6 +183,16 @@ export type MovementBlockResult = {
   interaction: InteractionPerformance;
   measured: MeasuredMovementPerformance;
   interpreted: InterpretedObservations;
+  /**
+   * Echoed from the originating MovementBlock's own `blockType`/`title` —
+   * not a new measurement, not derived, not inferred. Optional so a row
+   * persisted before this field existed still deserializes safely; a
+   * reader must treat its absence as "unknown," never guess a category
+   * from other fields. Exists so a report can tell a target block from a
+   * pattern block from an instructional block without parsing blockId.
+   */
+  blockType?: SessionBlockType;
+  title?: string;
 };
 
 export function createEmptyMovementBlockResult(block: MovementBlock, startedAtMs: number): MovementBlockResult {
@@ -192,6 +202,8 @@ export function createEmptyMovementBlockResult(block: MovementBlock, startedAtMs
     startedAtMs,
     completedAtMs: null,
     completionReason: null,
+    blockType: block.blockType,
+    title: block.title,
     interaction: {
       targetsContacted: 0,
       patternsCompleted: 0,

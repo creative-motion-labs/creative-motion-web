@@ -89,6 +89,7 @@ const FLAG_LABELS: Partial<Record<ClinicalActionStatus, string>> = {
 function assessmentTypeLabel(type: string | undefined): string {
   if (type === "remote_questionnaire") return "Remote questionnaire";
   if (type === "general_msk") return "Clinical assessment";
+  if (type === "upper_limb_motor_screen") return "Remote Upper-Limb Battery";
   return "Clinical assessment";
 }
 

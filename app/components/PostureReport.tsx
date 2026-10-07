@@ -1,6 +1,14 @@
 "use client";
 
-import type { PostureCheckResult, PostureLabel } from "../lib/posture-analyzer";
+import type {
+  PostureCheckResult,
+  PostureDataSufficiency,
+  PostureLabel,
+} from "../lib/posture-analyzer";
+import {
+  labelFromPostureScore,
+  resolvePostureReportPresentation,
+} from "../lib/posture-report-presentation";
 
 /* ─────────────────────────────────────────────
    Types
@@ -12,6 +20,11 @@ export interface PostureReportProps {
   patientName: string;
   lastFrame: PostureCheckResult | null;
   reportSummary: string;
+  /**
+   * When `"insufficient"`, do not present legacy score/label as clinical findings.
+   * Defaults via presentation helper when omitted.
+   */
+  dataSufficiency?: PostureDataSufficiency;
 }
 
 /* ─────────────────────────────────────────────
@@ -20,17 +33,37 @@ export interface PostureReportProps {
 ───────────────────────────────────────────── */
 interface Finding {
   area: string;
-  status: "normal" | "mild" | "marked";
+  status: "normal" | "mild" | "marked" | "insufficient";
+  /** Measured numeric note and cautious review wording. */
   text: string;
 }
 
-function buildFindings(frame: PostureCheckResult | null): Finding[] {
-  if (!frame) {
+function buildFindings(
+  frame: PostureCheckResult | null,
+  isInsufficient: boolean
+): Finding[] {
+  if (isInsufficient || !frame) {
     return [
-      { area: "Shoulder Alignment", status: "mild", text: "Insufficient frame data captured — ensure full body is visible during assessment." },
-      { area: "Head Position",       status: "mild", text: "Insufficient data." },
-      { area: "Trunk Alignment",     status: "mild", text: "Insufficient data." },
-      { area: "Hip Symmetry",        status: "mild", text: "Insufficient data." },
+      {
+        area: "Shoulder Alignment",
+        status: "insufficient",
+        text: "Insufficient data — no usable shoulder measurement captured.",
+      },
+      {
+        area: "Head Position",
+        status: "insufficient",
+        text: "Insufficient data — no usable head-position measurement captured.",
+      },
+      {
+        area: "Trunk Alignment",
+        status: "insufficient",
+        text: "Insufficient data — no usable trunk measurement captured.",
+      },
+      {
+        area: "Hip Symmetry",
+        status: "insufficient",
+        text: "Insufficient data — no usable hip measurement captured.",
+      },
     ];
   }
 
@@ -38,74 +71,90 @@ function buildFindings(frame: PostureCheckResult | null): Finding[] {
 
   const shoulder: Finding =
     shoulderTilt > 8
-      ? { area: "Shoulder Alignment", status: "marked", text: `Marked shoulder asymmetry detected (tilt ${shoulderTilt.toFixed(1)}°). Indicates possible upper-trapezius tightness or thoracic scoliotic curve.` }
+      ? { area: "Shoulder Alignment", status: "marked", text: `Measured shoulder tilt ${shoulderTilt.toFixed(1)}°. May indicate asymmetric shoulder elevation — for therapist review.` }
       : shoulderTilt > 4
-        ? { area: "Shoulder Alignment", status: "mild", text: `Mild shoulder elevation on one side (tilt ${shoulderTilt.toFixed(1)}°). Monitor for upper-crossed syndrome pattern.` }
-        : { area: "Shoulder Alignment", status: "normal", text: `Shoulders are level (tilt ${shoulderTilt.toFixed(1)}°). No asymmetry detected.` };
+        ? { area: "Shoulder Alignment", status: "mild", text: `Measured shoulder tilt ${shoulderTilt.toFixed(1)}°. May warrant monitoring of upper-quarter symmetry — for therapist review.` }
+        : { area: "Shoulder Alignment", status: "normal", text: `Measured shoulder tilt ${shoulderTilt.toFixed(1)}° (within typical screening range).` };
 
   const head: Finding =
     headOffset > 0.06
-      ? { area: "Head Position", status: "marked", text: "Significant lateral head displacement from the coronal midline. Assess for cervical lateral flexion or visual accommodation pattern." }
+      ? { area: "Head Position", status: "marked", text: `Measured lateral head offset ${headOffset.toFixed(3)} (normalised). May indicate a compensatory pattern — for therapist review.` }
       : headOffset > 0.03
-        ? { area: "Head Position", status: "mild", text: "Mild lateral head offset observed. May reflect habitual posture or mild upper-cervical asymmetry." }
-        : { area: "Head Position", status: "normal", text: "Head is centred over the shoulder girdle. No lateral displacement noted." };
+        ? { area: "Head Position", status: "mild", text: `Measured lateral head offset ${headOffset.toFixed(3)} (normalised). May reflect habitual posture — for therapist review.` }
+        : { area: "Head Position", status: "normal", text: `Measured lateral head offset ${headOffset.toFixed(3)} (normalised; within typical screening range).` };
 
   const trunk: Finding =
     trunkOffset > 0.06
-      ? { area: "Trunk Alignment", status: "marked", text: "Significant trunk lateral shift relative to the pelvis. Assess for lumbar lateral flexion compensation or leg-length discrepancy." }
+      ? { area: "Trunk Alignment", status: "marked", text: `Measured trunk lateral shift ${trunkOffset.toFixed(3)} (normalised). May indicate compensatory lean — for therapist review.` }
       : trunkOffset > 0.03
-        ? { area: "Trunk Alignment", status: "mild", text: "Mild trunk deviation from plumb line. May indicate core asymmetry or habitual weight-shift." }
-        : { area: "Trunk Alignment", status: "normal", text: "Trunk is vertically aligned over the base of support." };
+        ? { area: "Trunk Alignment", status: "mild", text: `Measured trunk lateral shift ${trunkOffset.toFixed(3)} (normalised). May indicate habitual weight-shift — for therapist review.` }
+        : { area: "Trunk Alignment", status: "normal", text: `Measured trunk lateral shift ${trunkOffset.toFixed(3)} (normalised; within typical screening range).` };
 
   const hip: Finding =
     hipTilt > 8
-      ? { area: "Hip / Pelvic Symmetry", status: "marked", text: `Marked pelvic obliquity (hip tilt ${hipTilt.toFixed(1)}°). Assess for leg-length discrepancy, hip abductor weakness, or structural pelvic asymmetry.` }
+      ? { area: "Hip / Pelvic Symmetry", status: "marked", text: `Measured hip tilt ${hipTilt.toFixed(1)}°. May indicate pelvic obliquity or asymmetric loading — for therapist review.` }
       : hipTilt > 4
-        ? { area: "Hip / Pelvic Symmetry", status: "mild", text: `Mild pelvic tilt (${hipTilt.toFixed(1)}°). Monitor for gluteal imbalance or asymmetric loading pattern.` }
-        : { area: "Hip / Pelvic Symmetry", status: "normal", text: `Pelvis is level (tilt ${hipTilt.toFixed(1)}°). Symmetric base of support.` };
+        ? { area: "Hip / Pelvic Symmetry", status: "mild", text: `Measured hip tilt ${hipTilt.toFixed(1)}°. May warrant monitoring of loading pattern — for therapist review.` }
+        : { area: "Hip / Pelvic Symmetry", status: "normal", text: `Measured hip tilt ${hipTilt.toFixed(1)}° (within typical screening range).` };
 
   return [shoulder, head, trunk, hip];
 }
 
-function buildInterpretation(score: number | null, label: PostureLabel | null): string {
-  if (score === null || label === null) return "Assessment data is unavailable.";
+function buildInterpretation(
+  score: number | null,
+  label: PostureLabel | null,
+  isInsufficient: boolean
+): string {
+  if (isInsufficient) {
+    return "Insufficient pose frames were available for measured postural analysis. Legacy composite score/label retained for system compatibility must not be treated as clinical findings — for therapist review.";
+  }
+  if (score === null || label === null) {
+    return "Assessment data is unavailable — for therapist review.";
+  }
 
   if (score >= 80) {
-    return "The patient demonstrates good overall postural alignment across the evaluated planes. Findings are within normal clinical limits for static standing posture. Continued activity and preventive conditioning are appropriate.";
+    return "Measured observations may be consistent with generally aligned static posture across the evaluated planes. For therapist review only — not a diagnosis.";
   }
   if (score >= 60) {
-    return "The patient exhibits mild postural asymmetry in one or more regions. These deviations are sub-clinical but warrant monitoring. A targeted exercise programme addressing identified imbalances is recommended to prevent progression.";
+    return "Measured observations may indicate mild asymmetry in one or more regions. These signals warrant therapist review and are not a clinical diagnosis or severity rating.";
   }
-  return "The patient presents with postural deviations that are clinically significant. Comprehensive evaluation including dynamic assessment, muscle-length testing, and joint mobility screening is recommended. A structured rehabilitation plan addressing identified impairments should be initiated promptly.";
+  return "Measured observations may indicate more noticeable postural offsets. Further clinical evaluation by a therapist may be considered. This automated summary is not a diagnosis and does not prescribe treatment.";
 }
 
-function buildRecommendations(score: number | null, findings: Finding[]): string[] {
+function buildRecommendations(
+  score: number | null,
+  findings: Finding[],
+  isInsufficient: boolean
+): string[] {
+  if (isInsufficient) {
+    return [
+      "Repeat postural capture with full body visible and stable camera framing — for therapist review.",
+      "Do not use placeholder composite scores from insufficient captures for clinical decisions.",
+    ];
+  }
+
   const base: string[] = [];
   const flagged = findings.filter((f) => f.status !== "normal");
 
   if (flagged.some((f) => f.area === "Shoulder Alignment")) {
-    base.push("Upper-trapezius and levator-scapulae stretching protocol (3 × 30 s, bilateral).");
-    base.push("Scapular stabilisation exercises: wall slides, prone Y-T-W progression.");
+    base.push("Therapist may consider reviewing upper-trapezius / levator flexibility and scapular control if clinically indicated.");
   }
   if (flagged.some((f) => f.area === "Head Position")) {
-    base.push("Cervical postural correction: chin-tuck exercises (3 × 10 reps, daily).");
-    base.push("Ergonomic screen-height and workstation review.");
+    base.push("Therapist may consider cervical postural awareness cues and workstation ergonomics review if clinically indicated.");
   }
   if (flagged.some((f) => f.area === "Trunk Alignment")) {
-    base.push("Core stabilisation: dead-bug, bird-dog, pallof-press progression.");
-    base.push("Lateral trunk strengthening: side-plank and hip-hike programme.");
+    base.push("Therapist may consider core control and lateral trunk assessment if clinically indicated.");
   }
   if (flagged.some((f) => f.area.includes("Hip"))) {
-    base.push("Hip-abductor strengthening: clamshell and side-lying hip-abduction series.");
-    base.push("Leg-length discrepancy screening and orthopaedic referral if indicated.");
+    base.push("Therapist may consider hip-abductor strength and pelvic symmetry screening if clinically indicated.");
   }
 
   if (base.length === 0 || (score !== null && score >= 80)) {
-    base.push("Maintain current physical activity and posture habits.");
-    base.push("Reassess postural alignment in 3 months or following any new symptom onset.");
+    base.push("Maintaining current activity and postural habits may be reasonable — for therapist review.");
+    base.push("Reassessment after new symptoms or at a clinically chosen interval may be considered — for therapist review.");
   } else {
-    base.push("Reassess postural alignment in 4–6 weeks following commencement of prescribed programme.");
-    base.push("Educate patient on postural awareness and self-correction strategies during daily activity.");
+    base.push("Follow-up reassessment timing should be set by the treating therapist.");
+    base.push("Patient education on postural awareness during daily activity may be considered — for therapist review.");
   }
 
   return base;
@@ -120,8 +169,10 @@ function printReport(payload: {
   patientId: string;
   patientName: string;
   assessmentId: string;
-  score: number | null;
-  label: string;
+  displayedScore: string;
+  displayedClassification: string;
+  scoreForBadge: number | null;
+  exposeLegacyClinicalFields: boolean;
   date: string;
   findings: Finding[];
   interpretation: string;
@@ -129,11 +180,11 @@ function printReport(payload: {
   summary: string;
 }) {
   const statusColor = (status: Finding["status"]) =>
-    status === "normal" ? "#166534" : status === "mild" ? "#92400e" : "#991b1b";
+    status === "normal" ? "#166534" : status === "mild" ? "#92400e" : status === "marked" ? "#991b1b" : "#475569";
   const statusBg = (status: Finding["status"]) =>
-    status === "normal" ? "#dcfce7" : status === "mild" ? "#fef3c7" : "#fee2e2";
+    status === "normal" ? "#dcfce7" : status === "mild" ? "#fef3c7" : status === "marked" ? "#fee2e2" : "#f1f5f9";
   const statusLabel = (status: Finding["status"]) =>
-    status === "normal" ? "Normal" : status === "mild" ? "Mild deviation" : "Marked deviation";
+    status === "normal" ? "Normal" : status === "mild" ? "Mild deviation" : status === "marked" ? "Marked deviation" : "Insufficient data";
 
   const findingRows = payload.findings
     .map(
@@ -153,6 +204,26 @@ function printReport(payload: {
   const recList = payload.recommendations
     .map((r) => `<li style="margin-bottom:6px;color:#374151">${r}</li>`)
     .join("");
+
+  const badgeScore = payload.exposeLegacyClinicalFields
+    ? payload.scoreForBadge
+    : null;
+  const badgeBg =
+    badgeScore !== null && badgeScore >= 80
+      ? "#dcfce7"
+      : badgeScore !== null && badgeScore >= 60
+        ? "#fef3c7"
+        : badgeScore !== null
+          ? "#fee2e2"
+          : "#f1f5f9";
+  const badgeFg =
+    badgeScore !== null && badgeScore >= 80
+      ? "#166534"
+      : badgeScore !== null && badgeScore >= 60
+        ? "#92400e"
+        : badgeScore !== null
+          ? "#991b1b"
+          : "#334155";
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -193,6 +264,7 @@ function printReport(payload: {
   </div>
 
   <h1>Postural Assessment Report</h1>
+  <p style="margin-top:8px;color:#64748b;font-size:13px">For therapist review — not a diagnosis.</p>
 
   <div class="meta-grid" style="margin-top:16px">
     <div class="meta-box">
@@ -210,14 +282,14 @@ function printReport(payload: {
     <div class="meta-box">
       <div class="meta-label">Overall Score</div>
       <div class="meta-value">
-        <span class="score-badge" style="background:${payload.score !== null && payload.score >= 80 ? "#dcfce7" : payload.score !== null && payload.score >= 60 ? "#fef3c7" : "#fee2e2"};color:${payload.score !== null && payload.score >= 80 ? "#166534" : payload.score !== null && payload.score >= 60 ? "#92400e" : "#991b1b"}">
-          ${payload.score !== null ? `${payload.score}%` : "N/A"}
+        <span class="score-badge" style="background:${badgeBg};color:${badgeFg}">
+          ${payload.displayedScore}
         </span>
       </div>
     </div>
     <div class="meta-box" style="grid-column:span 2">
-      <div class="meta-label">Clinical Classification</div>
-      <div class="meta-value">${payload.label}</div>
+      <div class="meta-label">Classification</div>
+      <div class="meta-value">${payload.displayedClassification}</div>
     </div>
   </div>
 
@@ -227,7 +299,7 @@ function printReport(payload: {
       <tr>
         <th style="width:22%">Region</th>
         <th style="width:18%">Status</th>
-        <th>Clinical Observation</th>
+        <th>Observation</th>
       </tr>
     </thead>
     <tbody>${findingRows}</tbody>
@@ -242,7 +314,7 @@ function printReport(payload: {
 
   <div class="footer">
     <span>RASQ — Rehabilitation, precisely.</span>
-    <span>This report is generated from automated postural analysis. Clinical judgement must be applied.</span>
+    <span>Automated support for therapist review only. Does not provide diagnosis.</span>
   </div>
 </body>
 </html>`;
@@ -263,13 +335,15 @@ function printReport(payload: {
 ───────────────────────────────────────────── */
 const STATUS_STYLES: Record<Finding["status"], string> = {
   normal: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
-  mild:   "border-amber-400/30   bg-amber-400/10   text-amber-200",
+  mild: "border-amber-400/30   bg-amber-400/10   text-amber-200",
   marked: "border-rose-400/30    bg-rose-400/10    text-rose-200",
+  insufficient: "border-slate-400/30 bg-slate-400/10 text-slate-200",
 };
 const STATUS_LABELS: Record<Finding["status"], string> = {
   normal: "Normal",
-  mild:   "Mild deviation",
+  mild: "Mild deviation",
   marked: "Marked deviation",
+  insufficient: "Insufficient data",
 };
 
 /* ─────────────────────────────────────────────
@@ -282,14 +356,30 @@ export default function PostureReport({
   patientName,
   lastFrame,
   reportSummary,
+  dataSufficiency,
 }: PostureReportProps) {
-  const findings       = buildFindings(lastFrame);
-  const label: PostureLabel | null =
-    score === null ? null : score >= 80 ? "Good alignment" : score >= 60 ? "Mild asymmetry detected" : "Postural deviation observed";
-  const interpretation = buildInterpretation(score, label);
-  const recommendations = buildRecommendations(score, findings);
+  const label: PostureLabel | null = labelFromPostureScore(score);
+  const presentation = resolvePostureReportPresentation({
+    dataSufficiency,
+    lastFrame,
+    score,
+    label,
+  });
+  const findings = buildFindings(lastFrame, presentation.isInsufficient);
+  const interpretation = buildInterpretation(
+    score,
+    label,
+    presentation.isInsufficient
+  );
+  const recommendations = buildRecommendations(
+    score,
+    findings,
+    presentation.isInsufficient
+  );
   const date = new Date().toLocaleDateString("en-GB", {
-    day: "2-digit", month: "long", year: "numeric",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
   });
 
   function handleDownload() {
@@ -297,8 +387,10 @@ export default function PostureReport({
       patientId,
       patientName,
       assessmentId,
-      score,
-      label: label ?? "Not classified",
+      displayedScore: presentation.displayedScore,
+      displayedClassification: presentation.displayedClassification,
+      scoreForBadge: presentation.exposeLegacyClinicalFields ? score : null,
+      exposeLegacyClinicalFields: presentation.exposeLegacyClinicalFields,
       date,
       findings,
       interpretation,
@@ -326,6 +418,18 @@ export default function PostureReport({
       <p className="mt-1 text-xs text-white/50">
         Generated {date} &nbsp;·&nbsp; Assessment {assessmentId}
       </p>
+      <p className="mt-2 text-xs text-white/45">
+        For therapist review — not a diagnosis. Measured values remain separate
+        from interpretation.
+      </p>
+
+      {presentation.isInsufficient && (
+        <div className="mt-4 rounded-xl border border-amber-300/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
+          Insufficient data. Legacy composite score/label retained by the system
+          are persistence placeholders only and must not be used as clinical
+          findings.
+        </div>
+      )}
 
       {/* Postural Findings */}
       <div className="mt-5">
@@ -339,14 +443,18 @@ export default function PostureReport({
               className="rounded-xl border border-white/10 bg-white/[0.04] p-4"
             >
               <div className="flex flex-wrap items-center gap-3">
-                <span className="text-sm font-semibold text-white/90">{f.area}</span>
+                <span className="text-sm font-semibold text-white/90">
+                  {f.area}
+                </span>
                 <span
                   className={`rounded-full border px-3 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[f.status]}`}
                 >
                   {STATUS_LABELS[f.status]}
                 </span>
               </div>
-              <p className="mt-2 text-xs leading-relaxed text-white/65">{f.text}</p>
+              <p className="mt-2 text-xs leading-relaxed text-white/65">
+                {f.text}
+              </p>
             </div>
           ))}
         </div>
@@ -360,6 +468,13 @@ export default function PostureReport({
         <div className="rounded-xl border-l-4 border-cyan-400/60 bg-white/[0.04] px-4 py-3 text-sm leading-7 text-white/80">
           {interpretation}
         </div>
+        {presentation.exposeLegacyClinicalFields && (
+          <p className="mt-2 text-xs text-white/40">
+            Displayed score {presentation.displayedScore} · classification “
+            {presentation.displayedClassification}” — for therapist review; not
+            a diagnosis.
+          </p>
+        )}
       </div>
 
       {/* Recommendations */}
@@ -380,7 +495,9 @@ export default function PostureReport({
       </div>
 
       <p className="mt-5 text-[11px] text-white/35">
-        This report is generated from automated postural analysis. Clinical judgement must be applied before intervention.
+        Automated postural analysis for therapist review only. RASQ does not
+        provide diagnosis. Clinical judgement must be applied before
+        intervention.
       </p>
     </div>
   );

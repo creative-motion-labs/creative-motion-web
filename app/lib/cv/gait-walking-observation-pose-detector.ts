@@ -17,6 +17,7 @@ import type { PoseLandmark } from "@/app/lib/cv/sagittal-hip-rep-core";
 import {
   PATIENT_CAMERA_NO_FRAMES_ERROR,
   releaseMediaStream,
+  waitForDecodedVideoFrames,
   waitForVideoElementLayout,
 } from "@/app/lib/cv/patient-camera-stream";
 import {
@@ -25,7 +26,6 @@ import {
   getSitToStandBrowserSupportError,
   mapSitToStandStartError,
   needsSitToStandSecureContext,
-  startVideoPlayback,
   withSitToStandTimeout,
   type SitToStandDetectorSnapshot,
   type SitToStandInitPhase,
@@ -119,15 +119,21 @@ export class GaitWalkingObservationPoseDetector {
     this.callbacks.onSnapshot(this.getSnapshot());
   }
 
+  private detachVideoPauseHandler(): void {
+    const video = this.videoEl;
+    const handler = this.videoPauseHandler;
+    if (video && handler) {
+      video.removeEventListener("pause", handler);
+    }
+    this.videoPauseHandler = null;
+  }
+
   stop(): void {
     this.sessionEpoch += 1;
     this.previewActive = false;
     cancelAnimationFrame(this.animFrameId);
     this.animFrameId = 0;
-    if (this.videoEl && this.videoPauseHandler) {
-      this.videoEl.removeEventListener("pause", this.videoPauseHandler);
-    }
-    this.videoPauseHandler = null;
+    this.detachVideoPauseHandler();
     this.stream?.getTracks().forEach((track) => track.stop());
     this.stream = null;
     if (this.videoEl) this.videoEl.srcObject = null;
@@ -212,12 +218,16 @@ export class GaitWalkingObservationPoseDetector {
       }
       this.stream = stream;
       video.srcObject = stream;
+      this.detachVideoPauseHandler();
       const onVideoPause = () => {
-        if (this.previewActive && video.paused) void video.play().catch(() => undefined);
+        if (!this.previewActive || video.paused) {
+          void video.play().catch(() => undefined);
+        }
       };
       this.videoPauseHandler = onVideoPause;
       video.addEventListener("pause", onVideoPause);
-      await startVideoPlayback(video);
+      void video.play().catch(() => undefined);
+      await waitForDecodedVideoFrames(video);
       if (!isCurrent()) return;
       if (video.videoWidth === 0 || video.videoHeight === 0) {
         throw new Error(PATIENT_CAMERA_NO_FRAMES_ERROR);

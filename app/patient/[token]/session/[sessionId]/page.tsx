@@ -83,6 +83,13 @@ export default function SessionPlayerPage() {
   const { language: patientLanguage, isArabic, textDir, arClass } = usePatientLanguage();
   const [phase, setPhase] = useState<SessionPhase>("start");
   const [exerciseStep, setExerciseStep] = useState<ExerciseCardStep>("preview");
+  /**
+   * True once the patient has declined camera on the Interactive Shoulder consent
+   * screen. Interactive Shoulder is camera-dependent — there is no non-camera fallback
+   * — so this drives the same honest "Camera access is required" stop state the catalog
+   * playback route already shows, rather than continuing the exercise without a camera.
+   */
+  const [cameraDeclined, setCameraDeclined] = useState(false);
   const [setsCompleted, setSetsCompleted] = useState(0);
   const [exerciseIndex, setExerciseIndex] = useState(0);
   const [effortScore, setEffortScore] = useState<number | null>(null);
@@ -121,6 +128,7 @@ export default function SessionPlayerPage() {
   useEffect(() => {
     resetCapture();
     setCvSaveNotice(null);
+    setCameraDeclined(false);
   }, [exerciseIndex, resetCapture]);
 
   useEffect(() => {
@@ -136,6 +144,7 @@ export default function SessionPlayerPage() {
     setCompleteError("");
     setCompleting(false);
     setCvSaveNotice(null);
+    setCameraDeclined(false);
     resetCapture();
   }, [token, sessionId, resetCapture]);
 
@@ -221,6 +230,20 @@ export default function SessionPlayerPage() {
     setExerciseStep("preview");
     setSetsCompleted(0);
     setPhase("exercise");
+  }
+
+  /**
+   * "Skip camera" on the Interactive Shoulder consent screen.
+   *
+   * `markSkipped` alone was the bug: it sets the capture hook's `cvStatus` to
+   * "skipped", and this route never reads `cvStatus` — it is not even destructured
+   * from the hook — so the click produced no visible change whatsoever and the button
+   * read as dead. It is still called here, so the capture status stays correct; what is
+   * new is the stop state the patient can actually see.
+   */
+  function handleCvSkipped() {
+    markSkipped();
+    setCameraDeclined(true);
   }
 
   function handleStartExercise() {
@@ -407,7 +430,6 @@ export default function SessionPlayerPage() {
           lang={patientLanguage}
           arClass={arClass}
           textDir={textDir}
-          sessionTitle={session.title}
           totalExercises={total}
           firstExerciseName={firstExerciseView.name}
           onBegin={handleBeginSession}
@@ -528,6 +550,48 @@ export default function SessionPlayerPage() {
     );
   }
 
+  /**
+   * Camera declined — the same stop state the catalog playback route shows, using the
+   * same strings, so both routes behave identically no matter which one a session's
+   * catalog provenance happens to select.
+   *
+   * "Try again" returns to the session start, matching the catalog route's own retry.
+   * The step is reset alongside it because the Interactive Shoulder session renders
+   * only at step "active": clearing it is what guarantees nothing is left initialising
+   * a camera behind this screen.
+   */
+  if (cameraDeclined) {
+    return (
+      <GuidedSessionShell
+        lang={patientLanguage}
+        arClass={arClass}
+        textDir={textDir}
+        token={token}
+        sessionTitle={session.title}
+      >
+        <div className={`space-y-6 ${arClass}`} dir={textDir}>
+          <section className="rounded-[20px] border border-[#E2E8E5] bg-white p-5 shadow-[0_8px_30px_rgba(10,15,26,0.06)]">
+            <p className="text-[18px] font-bold text-[#0A0F1A]">{guidedUi.cameraRequiredTitle}</p>
+            <p className="mt-3 text-[13px] leading-relaxed text-[#6B7280]">
+              {guidedUi.cameraRequiredBody}
+            </p>
+          </section>
+          <button
+            type="button"
+            onClick={() => {
+              setCameraDeclined(false);
+              setExerciseStep("preview");
+              setPhase("start");
+            }}
+            className={GUIDED_PRIMARY_BTN}
+          >
+            {guidedUi.cameraRequiredRetry}
+          </button>
+        </div>
+      </GuidedSessionShell>
+    );
+  }
+
   return (
     <GuidedSessionShell
       lang={patientLanguage}
@@ -562,11 +626,12 @@ export default function SessionPlayerPage() {
         view={currentView}
         step={exerciseStep}
         setsCompleted={setsCompleted}
+        prescribedSide={session.prescribedSide}
         onStartExercise={handleStartExercise}
         onCompleteSet={handleCompleteSet}
         onCompleteExercise={handleCompleteExercise}
         onCvMetricsUpdate={onMetricsUpdate}
-        onCvSkipped={markSkipped}
+        onCvSkipped={handleCvSkipped}
         onRegisterCvMetricsFlush={registerMetricsFlush}
         onRegisterStsPilotBeforeSave={registerStsPilotBeforeSave}
         onRegisterStsPilotRecordFlush={registerStsPilotRecordFlush}

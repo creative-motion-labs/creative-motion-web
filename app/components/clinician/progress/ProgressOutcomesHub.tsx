@@ -21,6 +21,18 @@ import {
   mapProgressCvEvidenceToMetrics,
 } from "@/app/lib/progress/progress-outcomes-bundle";
 import { LongitudinalComparisonPanel } from "@/app/components/clinician/progress/LongitudinalComparisonPanel";
+import { InteractiveShoulderOutcomesPanel } from "@/app/components/clinician/progress/InteractiveShoulderOutcomesPanel";
+import {
+  ADDITIONAL_CAMERA_OBSERVATIONS_DESCRIPTION,
+  ADDITIONAL_CAMERA_OBSERVATIONS_TITLE,
+  filterOutcomesHubSectionNav,
+  INTERACTIVE_SHOULDER_SECTION_DESCRIPTION,
+  shouldShowCameraObservationsSection,
+  shouldShowCaptureReliabilitySection,
+  shouldShowInteractiveShoulderEmptyState,
+  TRACKING_CAPTURE_NOTES_DESCRIPTION,
+  TRACKING_CAPTURE_NOTES_TITLE,
+} from "@/app/lib/progress/progress-outcomes-hub-layout";
 
 const QUALITY_BADGE_CLASS: Record<CaptureQualityLevel, string> = {
   high: "border-[#1D9E75]/35 bg-[#1D9E75]/12 text-[#5DCAA5]",
@@ -32,6 +44,7 @@ const SECTION_NAV = [
   { id: "session-activity", label: "Session activity" },
   { id: "patient-reported-pain", label: "Patient-reported pain" },
   { id: "assessment-history", label: "Assessments" },
+  { id: "interactive-shoulder-outcomes", label: "Interactive Shoulder" },
   { id: "camera-assisted-observation", label: "Camera-assisted observation" },
   { id: "technical-capture-reliability", label: "Capture reliability" },
 ] as const;
@@ -128,7 +141,11 @@ function hubIsFullyEmpty(bundle: ProgressOutcomesBundle): boolean {
     bundle.painTrend.length === 0 &&
     bundle.assessments.length === 0 &&
     bundle.cvEvidence.length === 0 &&
-    bundle.captureQualityHistory.length === 0
+    bundle.captureQualityHistory.length === 0 &&
+    shouldShowInteractiveShoulderEmptyState(
+      bundle.interactiveShoulderOutcomes.length,
+      bundle.interactiveShoulderChartOutcomes.length,
+    )
   );
 }
 
@@ -144,7 +161,6 @@ export function ProgressOutcomesHub({ bundle }: ProgressOutcomesHubProps) {
 
   const profileHref = `/clinician/patients/${bundle.patientId}`;
   const planHref = `${profileHref}#rehabilitation-plan`;
-  const movementHref = `${profileHref}#movement-tracking-sessions`;
   const newAssessmentHref = `/clinician/assessment/new?patientId=${encodeURIComponent(bundle.patientId)}`;
   const newPlanHref = `/clinician/plans/new?patientId=${encodeURIComponent(bundle.patientId)}`;
   const reportBase = `/clinician/assessment/report?patientId=${encodeURIComponent(bundle.patientId)}`;
@@ -155,6 +171,13 @@ export function ProgressOutcomesHub({ bundle }: ProgressOutcomesHubProps) {
   );
 
   const fullyEmpty = hubIsFullyEmpty(bundle);
+  const showCameraObservations = shouldShowCameraObservationsSection(bundle.cvEvidence.length);
+  const showCaptureReliability = shouldShowCaptureReliabilitySection(bundle.captureQualityHistory.length);
+  const visibleSectionNav = filterOutcomesHubSectionNav(
+    SECTION_NAV,
+    bundle.cvEvidence.length,
+    bundle.captureQualityHistory.length,
+  );
 
   return (
     <div className="space-y-6">
@@ -173,7 +196,7 @@ export function ProgressOutcomesHub({ bundle }: ProgressOutcomesHubProps) {
         aria-label="Outcomes hub sections"
         className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1"
       >
-        {SECTION_NAV.map((item) => (
+        {visibleSectionNav.map((item) => (
           <a
             key={item.id}
             href={`#${item.id}`}
@@ -332,18 +355,33 @@ export function ProgressOutcomesHub({ bundle }: ProgressOutcomesHubProps) {
       </SectionShell>
 
       <SectionShell
-        id="camera-assisted-observation"
-        title="Camera-assisted observation"
-        typeBadge={PROGRESS_OUTCOMES_SECTION_BADGES.cameraObservation}
-        description="Derived observations from optional camera-assisted sessions. Camera-assisted observation only — therapist interpretation required."
+        id="interactive-shoulder-outcomes"
+        title="Interactive Shoulder — movement outcomes"
+        typeBadge={PROGRESS_OUTCOMES_SECTION_BADGES.interactiveShoulderOutcomes}
+        description={INTERACTIVE_SHOULDER_SECTION_DESCRIPTION}
       >
-        {bundle.cvEvidence.length === 0 ? (
-          <EmptyState message="No camera-assisted observations recorded yet. Sessions appear when CV-enabled exercises are completed or reviewed in Assessment Center.">
-            <EmptyLink href={movementHref}>Movement tracking on chart</EmptyLink>
-            <EmptyLink href="/clinician/assessments/sit-to-stand">STS review</EmptyLink>
-            <EmptyLink href="/clinician/assessments">Assessment Center</EmptyLink>
-          </EmptyState>
+        {shouldShowInteractiveShoulderEmptyState(
+          bundle.interactiveShoulderOutcomes.length,
+          bundle.interactiveShoulderChartOutcomes.length,
+        ) ? (
+          <EmptyState message="No Interactive Shoulder movement outcomes recorded yet. A record appears here after the patient completes an Interactive Shoulder session." />
         ) : (
+          <InteractiveShoulderOutcomesPanel
+            outcomes={bundle.interactiveShoulderOutcomes}
+            chartOutcomes={bundle.interactiveShoulderChartOutcomes}
+            painTrend={bundle.painTrend}
+            chartPainTrend={bundle.interactiveShoulderChartPainTrend}
+          />
+        )}
+      </SectionShell>
+
+      {showCameraObservations ? (
+      <SectionShell
+        id="camera-assisted-observation"
+        title={ADDITIONAL_CAMERA_OBSERVATIONS_TITLE}
+        typeBadge={PROGRESS_OUTCOMES_SECTION_BADGES.cameraObservation}
+        description={ADDITIONAL_CAMERA_OBSERVATIONS_DESCRIPTION}
+      >
           <div className="space-y-3">
             <ul className="divide-y divide-[#1E2D42]">
               {bundle.cvEvidence.map((row) => (
@@ -383,21 +421,16 @@ export function ProgressOutcomesHub({ bundle }: ProgressOutcomesHubProps) {
               />
             </div>
           </div>
-        )}
       </SectionShell>
+      ) : null}
 
+      {showCaptureReliability ? (
       <SectionShell
         id="technical-capture-reliability"
-        title="Technical capture reliability"
+        title={TRACKING_CAPTURE_NOTES_TITLE}
         typeBadge={PROGRESS_OUTCOMES_SECTION_BADGES.captureReliability}
-        description="Technical capture reliability only. Not movement quality or clinical assessment. Therapist interpretation required."
+        description={TRACKING_CAPTURE_NOTES_DESCRIPTION}
       >
-        {bundle.captureQualityHistory.length === 0 ? (
-          <EmptyState message="No technical capture reliability records yet. Available when pilot sessions store capture metadata (STS today).">
-            <EmptyLink href="/clinician/assessments/sit-to-stand">STS review</EmptyLink>
-            <EmptyLink href="/clinician/assessments">Assessment Center</EmptyLink>
-          </EmptyState>
-        ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] text-left text-[12px]">
               <thead>
@@ -435,8 +468,8 @@ export function ProgressOutcomesHub({ bundle }: ProgressOutcomesHubProps) {
               </tbody>
             </table>
           </div>
-        )}
       </SectionShell>
+      ) : null}
 
       <div className="flex flex-wrap gap-2 border-t border-[#1E2D42] pt-4">
         <EmptyLink href={profileHref}>Patient chart</EmptyLink>

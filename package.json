@@ -10,7 +10,16 @@
     "api": "cd backend/creative-motion-backend && py -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npx tsx --test app/lib/rasq-demo/*.test.ts app/lib/auth/provider-access-interest.test.ts app/lib/auth/clinician-login-errors.test.ts app/lib/auth/safe-redirect.test.ts app/lib/patient-portal/voice-consent-storage.test.ts app/lib/patient-portal/guided-session-rest-countdown.test.ts app/lib/patient-portal/patient-route-fetch-guard.test.ts app/lib/patient-portal/cv-readiness-scope.test.ts app/lib/qa/pr313-production-guard.test.ts app/lib/proxy-auth.test.ts app/lib/interactive-shoulder/interactive-shoulder-laterality-equivalence.test.ts app/lib/cv/cv-patient-profile-movement-view.test.ts app/lib/interactive-shoulder/orchestrator-cv-raf-loop-stable.test.ts app/lib/interactive-shoulder/orchestrator-cv-demo-init-stable.test.ts",
+    "test:shoulder-abduction-reach-rep-confirmation": "npx tsx --test app/lib/shoulder-rehabilitation/shoulder-abduction-reach-phase.test.ts app/lib/shoulder-rehabilitation/shoulder-abduction-reach-detector.test.ts app/lib/cv/shoulder-abduction-reach-pose-detector.test.ts app/lib/shoulder-rehabilitation/shoulder-abduction-reach-shadow-hook.test.ts app/lib/ml-research/shoulder-abduction-reach/rep-recorder.test.ts",
+    "release:lint-changed": "node scripts/regenerate-lint-changed-files.mjs upstream/main HEAD && node scripts/release/lint-changed-report.mjs",
+    "release:gates": "npm test && npm run test:shoulder-abduction-reach-rep-confirmation && npm run release:lint-changed && npm run build",
+    "release:verify-prod-qa-block": "node scripts/release/verify-production-qa-block.mjs",
+    "test:e2e-pr313": "playwright test e2e/pr313-lifecycle-verify.spec.ts --project=desktop-chrome",
+    "test:e2e-patient-profile": "playwright test e2e/patient-profile-workspace.spec.ts",
+    "test:ops-transfer": "node --test scripts/ops/judge-demo-patient-transfer.test.mjs",
+    "ops:rehearsal-preflight": "node scripts/ops/judge-demo-patient-transfer.mjs --rehearsal-preflight"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.34",
@@ -20,9 +29,11 @@
     "next": "16.2.2",
     "openai": "^6.39.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "resend": "^4.8.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.51.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PoseLandmark } from "@/app/lib/cv/pose-landmark-overlay";
+import { MOVEMENT_REP_CONFIRM_MIN_TICKS } from "@/app/lib/movement-rep-confirmation";
 import {
   createShoulderAbductionReachDetectorState,
   updateShoulderAbductionReachDetector,
@@ -55,6 +56,14 @@ function ctx(frameIndex: number) {
   return { frameIndex, capturedAtMs: frameIndex * 33 };
 }
 
+function holdAngle(angle: 0 | 90 | 180, ticks = MOVEMENT_REP_CONFIRM_MIN_TICKS): Array<0 | 90 | 180> {
+  return Array.from({ length: ticks }, () => angle);
+}
+
+function confirmedCycle(): Array<0 | 90 | 180> {
+  return [...holdAngle(0), ...holdAngle(180), ...holdAngle(0)];
+}
+
 describe("updateShoulderAbductionReachDetector — single frame", () => {
   it("computes both sides' angles from one frame of raw landmarks", () => {
     const state = createShoulderAbductionReachDetectorState();
@@ -94,7 +103,7 @@ describe("updateShoulderAbductionReachDetector — single frame", () => {
 describe("updateShoulderAbductionReachDetector — full session", () => {
   it("counts one left-side rep across a raise-and-lower sequence while the right side stays resting", () => {
     const state = createShoulderAbductionReachDetectorState();
-    const sequence: (0 | 90 | 180)[] = [0, 0, 90, 180, 180, 90, 0, 0];
+    const sequence = confirmedCycle();
 
     let last;
     for (const [i, angle] of sequence.entries()) {
@@ -111,8 +120,8 @@ describe("updateShoulderAbductionReachDetector — full session", () => {
 
   it("keeps left and right rep counts independent across an asymmetric session", () => {
     const state = createShoulderAbductionReachDetectorState();
-    for (const [i, angle] of [0, 90, 180, 180, 90, 0, 0].entries()) {
-      updateShoulderAbductionReachDetector(state, withLeftAbductionAngle(angle as 0 | 90 | 180), ctx(i));
+    for (const [i, angle] of confirmedCycle().entries()) {
+      updateShoulderAbductionReachDetector(state, withLeftAbductionAngle(angle), ctx(i));
     }
     assert.equal(state.left.repCount, 1);
     assert.equal(state.right.repCount, 0);

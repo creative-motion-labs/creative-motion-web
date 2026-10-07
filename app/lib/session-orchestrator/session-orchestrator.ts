@@ -29,6 +29,10 @@ import {
   type SessionState,
   type TransitionState,
 } from "./types";
+import {
+  extractPeakAngleSampleDegrees,
+  extractReactionTimeSampleMs,
+} from "./measured-sample-extraction";
 
 const DEFAULT_RECALIBRATION_GRACE_SECONDS = 5;
 
@@ -294,6 +298,10 @@ export class SessionOrchestrator {
     switch (event.type) {
       case "validRepetition": {
         this.currentBlockResult.measured.validRepetitions += 1;
+        const peakAngleDegrees = extractPeakAngleSampleDegrees(event.metrics);
+        if (peakAngleDegrees !== null) {
+          this.currentBlockResult.measured.rangeValuesDegrees.push(peakAngleDegrees);
+        }
         if (
           block.completionMode === "validRepetitions" &&
           block.prescribedRepetitions !== undefined &&
@@ -306,11 +314,24 @@ export class SessionOrchestrator {
       case "invalidRepetition":
         this.currentBlockResult.measured.invalidRepetitions += 1;
         return;
-      case "targetContact":
+      case "targetContact": {
         this.currentBlockResult.interaction.targetsContacted += 1;
+        const reactionTimeMs = extractReactionTimeSampleMs(event.reactionTimeMs);
+        if (reactionTimeMs !== null) {
+          this.currentBlockResult.interaction.timingSamplesMs.push(reactionTimeMs);
+        }
         return;
+      }
       case "patternCompleted":
         this.currentBlockResult.interaction.patternsCompleted += 1;
+        if (
+          block.completionMode === "validRepetitions" &&
+          block.blockType === "movement-pattern" &&
+          block.prescribedRepetitions !== undefined &&
+          this.currentBlockResult.interaction.patternsCompleted >= block.prescribedRepetitions
+        ) {
+          this.completeCurrentBlock(nowMs, "validRepetitions");
+        }
         return;
       case "holdCompleted": {
         this.currentBlockResult.measured.holdDurationSeconds = event.durationSeconds;
@@ -337,6 +358,10 @@ export class SessionOrchestrator {
    * the pre-configuration default behavior.
    */
   private evaluateTrackerLossHold(block: MovementBlock, nowMs: number): boolean {
+    // Instructional blocks (warm-up / cool-down) advance by duration only.
+    // Brief tracking loss must not enter safetyHold and block completion.
+    if (block.blockType === "instructional") return false;
+
     if (this.trackerLostAtMs === null) return false;
     if (this.state === "safetyHold" && this.safetyHoldReason === "trackerLost") return true;
     if (this.state !== "active") return false;

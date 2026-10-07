@@ -53,6 +53,8 @@ export type InteractiveShoulderUi = {
   patternMetricsSeparationNote: string;
   devMouseSimulation: string;
   therapeuticSideFallback: string;
+  prescribedSideRequiredTitle: string;
+  prescribedSideRequiredMessage: string;
   cameraPreviewAriaLabel: string;
   cameraAccessDenied: string;
   cameraNotFound: string;
@@ -69,6 +71,27 @@ export type InteractiveShoulderUi = {
   runtimeFaultPatternUnresolved: string;
   catalogSessionConfigErrorTitle: string;
   catalogSessionConfigErrorDescription: string;
+  readyLabel: string;
+  beginLabel: string;
+  blockLabel: string;
+  currentBlockLabel: string;
+  repProgressLabel: (completed: number, target: number | null) => string;
+  sessionCompleteTitle: string;
+  sessionCompleteHeadline: string;
+  sessionCompleteEncouragement: string;
+  blocksCompletedLabel: string;
+  repetitionsCompletedLabel: string;
+  interactionsCompletedLabel: string;
+  durationLabel: string;
+  durationSeconds: (seconds: number) => string;
+  sessionCompleteReviewNote: string;
+  soundOnLabel: string;
+  soundOffLabel: string;
+  soundMuteAria: string;
+  soundUnmuteAria: string;
+  goodReachFeedback: string;
+  niceControlFeedback: string;
+  skipCameraSecondaryHint: string;
 };
 
 const INTERACTIVE_SHOULDER_UI: Record<PatientExerciseLanguage, InteractiveShoulderUi> = {
@@ -125,6 +148,9 @@ const INTERACTIVE_SHOULDER_UI: Record<PatientExerciseLanguage, InteractiveShould
       "Development simulation: move the mouse over the preview when pose wrist is unavailable.",
     therapeuticSideFallback:
       "Reach guidance is using a temporary default side until your therapist assigns a specific arm.",
+    prescribedSideRequiredTitle: "Session cannot start",
+    prescribedSideRequiredMessage:
+      "The treatment side has not been prescribed. Please contact your therapist.",
     cameraPreviewAriaLabel: "Interactive shoulder rehabilitation camera preview",
     cameraAccessDenied:
       "Camera access was denied. Movement tracking could not start. Please check camera permission and try again.",
@@ -146,6 +172,29 @@ const INTERACTIVE_SHOULDER_UI: Record<PatientExerciseLanguage, InteractiveShould
     catalogSessionConfigErrorTitle: "Session could not start",
     catalogSessionConfigErrorDescription:
       "This rehabilitation session is not configured correctly. Please contact your care team for assistance.",
+    readyLabel: "Ready",
+    beginLabel: "Begin",
+    blockLabel: "Block",
+    currentBlockLabel: "Current block",
+    repProgressLabel: (completed, target) =>
+      target != null ? `Rep ${completed} of ${target}` : `Reps completed: ${completed}`,
+    sessionCompleteTitle: "Session complete",
+    sessionCompleteHeadline: "You finished this guided session.",
+    sessionCompleteEncouragement: "Take a moment to rest. Your therapist can review your session results.",
+    blocksCompletedLabel: "Blocks completed",
+    repetitionsCompletedLabel: "Repetitions completed",
+    interactionsCompletedLabel: "Targets and paths completed",
+    durationLabel: "Duration",
+    durationSeconds: (seconds) => `${seconds}s`,
+    sessionCompleteReviewNote:
+      "These observations are recorded for therapist review and do not replace clinical assessment.",
+    soundOnLabel: "Sound on",
+    soundOffLabel: "Muted",
+    soundMuteAria: "Mute session sounds",
+    soundUnmuteAria: "Unmute session sounds",
+    goodReachFeedback: "Good reach",
+    niceControlFeedback: "Nice control",
+    skipCameraSecondaryHint: "Continue without camera guidance",
   },
   ar: {
     consentTitle: "الكاميرا لتوجيه الحركة",
@@ -179,8 +228,7 @@ const INTERACTIVE_SHOULDER_UI: Record<PatientExerciseLanguage, InteractiveShould
       "فُقد التتبع لفترة — لنعيد المعايرة قبل المتابعة.",
     trackingRecovered: "عاد التتبع — يمكنك متابعة الوصول.",
     paused: "متوقف مؤقتًا.",
-    blockInstructions:
-      "ارفع ذراعك جانبًا وامدُد نحو كل ضوء علاجي. تحرّك بوتيرة مريحة.",
+    blockInstructions: "ارفع ذراعك باتجاه الضوء وتحرك بوتيرة مريحة.",
     targetReached: "تم الوصول للضوء — وصول متحكم وجيد.",
     patternPathComplete: "اكتمل المسار — حركة متحكم وجيدة.",
     encouragementNiceWork: "عمل رائع.",
@@ -200,6 +248,9 @@ const INTERACTIVE_SHOULDER_UI: Record<PatientExerciseLanguage, InteractiveShould
       "محاكاة للتطوير: حرّك المؤشر فوق المعاينة عندما لا يتوفر معصم التتبع.",
     therapeuticSideFallback:
       "يستخدم توجيه الوصول جانبًا افتراضيًا مؤقتًا حتى يحدّد معالجك الذراع المطلوب.",
+    prescribedSideRequiredTitle: "تعذّر بدء الجلسة",
+    prescribedSideRequiredMessage:
+      "لم يُحدَّد جانب العلاج بعد. يرجى التواصل مع معالجك.",
     cameraPreviewAriaLabel: "معاينة كاميرا جلسة الكتف التفاعلية",
     cameraAccessDenied:
       "تم رفض الوصول إلى الكاميرا. تعذّر بدء تتبع الحركة. تحقّق من إذن الكاميرا وحاول مرة أخرى.",
@@ -221,6 +272,29 @@ const INTERACTIVE_SHOULDER_UI: Record<PatientExerciseLanguage, InteractiveShould
     catalogSessionConfigErrorTitle: "تعذّر بدء الجلسة",
     catalogSessionConfigErrorDescription:
       "لم تُعدّ هذه الجلسة العلاجية بشكل صحيح. يرجى التواصل مع فريق الرعاية للمساعدة.",
+    readyLabel: "جاهز",
+    beginLabel: "ابدأ",
+    blockLabel: "الكتلة",
+    currentBlockLabel: "الكتلة الحالية",
+    repProgressLabel: (completed, target) =>
+      target != null ? `التكرار ${completed} من ${target}` : `التكرارات المكتملة: ${completed}`,
+    sessionCompleteTitle: "اكتملت الجلسة",
+    sessionCompleteHeadline: "أنهيت هذه الجلسة الموجّهة.",
+    sessionCompleteEncouragement: "خذ لحظة للراحة. يمكن لمعالجك مراجعة نتائج جلستك.",
+    blocksCompletedLabel: "الكتل المكتملة",
+    repetitionsCompletedLabel: "التكرارات المكتملة",
+    interactionsCompletedLabel: "الأهداف والمسارات المكتملة",
+    durationLabel: "المدة",
+    durationSeconds: (seconds) => `${seconds} ث`,
+    sessionCompleteReviewNote:
+      "تُسجَّل هذه الملاحظات لمراجعة المعالج ولا تحل محل التقييم السريري.",
+    soundOnLabel: "الصوت مفعّل",
+    soundOffLabel: "صامت",
+    soundMuteAria: "كتم أصوات الجلسة",
+    soundUnmuteAria: "تشغيل أصوات الجلسة",
+    goodReachFeedback: "وصول جيد",
+    niceControlFeedback: "تحكم جيد",
+    skipCameraSecondaryHint: "المتابعة بدون توجيه الكاميرا",
   },
 };
 
