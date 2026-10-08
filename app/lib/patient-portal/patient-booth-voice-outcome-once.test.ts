@@ -12,8 +12,9 @@ describe("patient booth voice + outcome callback", () => {
       join(process.cwd(), "app/hooks/usePatientInteractiveShoulderBoothVoice.ts"),
       "utf8",
     );
+    assert.match(hook, /invokePatientBoothSessionCompleteHandoff\(/);
     assert.match(hook, /patientBoothVoiceOnSessionComplete\(voiceStateRef\.current, voiceOptions\)/);
-    assert.match(hook, /onSessionCompleteRef\.current\?\.\(snapshot\)/);
+    assert.match(hook, /onSessionCompleteRef\.current/);
     assert.doesNotMatch(hook, /onSessionCompleteRef\.current\?\.\(snapshot\)[\s\S]*onSessionCompleteRef\.current\?\.\(snapshot\)/);
   });
 
