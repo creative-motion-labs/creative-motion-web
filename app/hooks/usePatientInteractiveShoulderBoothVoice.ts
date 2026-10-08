@@ -9,6 +9,7 @@ import {
   patientBoothVoiceOnMovementBlockActivated,
   patientBoothVoiceOnSessionComplete,
   patientBoothVoiceOnTargetAttemptStarted,
+  patientBoothVoiceOnPatternReachConfirmed,
   patientBoothVoiceOnTargetReachConfirmed,
   patientBoothVoiceOnTherapeuticBlockRest,
   patientBoothVoiceSetMuted,
@@ -18,6 +19,7 @@ import {
   type PatientBoothVoiceSessionState,
 } from "@/app/lib/interactive-shoulder/patient-booth-voice-runtime";
 import { unlockPatientBoothVoiceFromUserGesture } from "@/app/lib/interactive-shoulder/patient-booth-voice-unlock";
+import type { PatternCompletionEvent } from "@/app/lib/interactive-shoulder/motion-patterns/pattern-lifecycle";
 import type { TargetAttemptStartEvent, TargetHitEvent } from "@/app/lib/interactive-shoulder/types";
 
 export type PatientInteractiveShoulderBoothVoiceBindings = {
@@ -33,6 +35,7 @@ export type PatientInteractiveShoulderBoothVoiceBindings = {
   onMovementBlockActivated: (blockId: string) => void;
   onTargetAttemptStarted: (event: TargetAttemptStartEvent) => void;
   onTargetReachConfirmed: (event: TargetHitEvent) => void;
+  onPatternReachConfirmed: (event: PatternCompletionEvent) => void;
   onPoseDetectorSnapshot: (snapshot: ShoulderAbductionReachPoseDetectorSnapshot) => void;
   onSessionComplete: (snapshot: InteractiveShoulderSessionCompletionSnapshot) => void;
 };
@@ -119,6 +122,13 @@ export function usePatientInteractiveShoulderBoothVoice(
     [voiceOptions],
   );
 
+  const handlePatternReachConfirmed = useCallback(
+    (event: PatternCompletionEvent) => {
+      patientBoothVoiceOnPatternReachConfirmed(voiceStateRef.current, event, voiceOptions);
+    },
+    [voiceOptions],
+  );
+
   const handlePoseDetectorSnapshot = useCallback((snapshot: ShoulderAbductionReachPoseDetectorSnapshot) => {
     trackingStatusRef.current = snapshot.trackingStatus;
   }, []);
@@ -144,6 +154,7 @@ export function usePatientInteractiveShoulderBoothVoice(
     onMovementBlockActivated: handleMovementBlockActivated,
     onTargetAttemptStarted: handleTargetAttemptStarted,
     onTargetReachConfirmed: handleTargetReachConfirmed,
+    onPatternReachConfirmed: handlePatternReachConfirmed,
     onPoseDetectorSnapshot: handlePoseDetectorSnapshot,
     onSessionComplete: handleSessionComplete,
   };

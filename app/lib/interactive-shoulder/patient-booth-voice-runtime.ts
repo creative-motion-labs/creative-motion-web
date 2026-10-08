@@ -22,6 +22,12 @@ import {
   type BoothInactivityState,
 } from "@/app/lib/booth/booth-voice-inactivity";
 import type { ShoulderAbductionReachTrackingStatus } from "@/app/lib/cv/shoulder-abduction-reach-pose-detector";
+import {
+  playPatientPnfRepetitionTick,
+  playPatientTargetPopForConfirmedHit,
+  stopPatientInteractiveShoulderSessionSfx,
+} from "@/app/lib/interactive-shoulder/patient-interactive-shoulder-session-sfx";
+import type { PatternCompletionEvent } from "@/app/lib/interactive-shoulder/motion-patterns/pattern-lifecycle";
 import type { TargetHitEvent } from "@/app/lib/interactive-shoulder/types";
 
 export const PATIENT_BOOTH_VOICE_MUTE_SESSION_KEY = "rasq:is-shoulder-voice-muted";
@@ -85,6 +91,7 @@ export type PatientBoothVoiceSessionState = {
   movementBlockActive: boolean;
   sessionEnded: boolean;
   lastSuccessfulReachVoiceAtMs: number | null;
+  patternRepetitionsCompleted: number;
 };
 
 export function createPatientBoothVoiceSessionState(): PatientBoothVoiceSessionState {
@@ -93,6 +100,7 @@ export function createPatientBoothVoiceSessionState(): PatientBoothVoiceSessionS
     movementBlockActive: false,
     sessionEnded: false,
     lastSuccessfulReachVoiceAtMs: null,
+    patternRepetitionsCompleted: 0,
   };
 }
 
@@ -101,6 +109,7 @@ export function resetPatientBoothVoiceSession(state: PatientBoothVoiceSessionSta
   state.movementBlockActive = false;
   state.sessionEnded = false;
   state.lastSuccessfulReachVoiceAtMs = null;
+  state.patternRepetitionsCompleted = 0;
   resetBoothVoiceGuidance();
   stopAllBoothVoicePlayback();
 }
@@ -119,6 +128,7 @@ export function disposePatientBoothVoiceHookCleanup(state: PatientBoothVoiceSess
 export function cancelPatientBoothVoicePlayback(): void {
   stopAllBoothVoicePlayback();
   resetBoothVoiceGuidance();
+  stopPatientInteractiveShoulderSessionSfx();
 }
 
 export function patientBoothVoiceOnCountdownComplete(
@@ -167,6 +177,9 @@ export function patientBoothVoiceOnTargetReachConfirmed(
   if (state.sessionEnded) return;
   const nowMs = options.nowMs ?? Date.now();
   state.inactivity = onBoothMeaningfulInteraction(state.inactivity, nowMs);
+  if (!options.muted) {
+    playPatientTargetPopForConfirmedHit(event);
+  }
   if (
     state.lastSuccessfulReachVoiceAtMs != null &&
     nowMs - state.lastSuccessfulReachVoiceAtMs < PATIENT_SUCCESSFUL_REACH_VOICE_MIN_GAP_MS
@@ -183,6 +196,16 @@ export function patientBoothVoiceOnTargetReachConfirmed(
   if (spoke) {
     state.lastSuccessfulReachVoiceAtMs = nowMs;
   }
+}
+
+export function patientBoothVoiceOnPatternReachConfirmed(
+  state: PatientBoothVoiceSessionState,
+  _event: PatternCompletionEvent,
+  options: PatientBoothVoiceRuntimeOptions,
+): void {
+  if (state.sessionEnded || options.muted) return;
+  state.patternRepetitionsCompleted += 1;
+  playPatientPnfRepetitionTick({ repetitionNumber: state.patternRepetitionsCompleted });
 }
 
 export function patientBoothVoiceOnTargetAttemptStarted(
@@ -239,6 +262,7 @@ export function patientBoothVoiceSetMuted(muted: boolean): void {
   writePatientBoothVoiceMutedPreference(muted);
   if (muted) {
     stopAllBoothVoicePlayback();
+    stopPatientInteractiveShoulderSessionSfx();
   }
 }
 

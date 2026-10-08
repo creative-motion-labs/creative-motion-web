@@ -26,6 +26,7 @@ export function PatientCatalogBoothVoiceSession(props: PatientCatalogBoothVoiceS
       onMovementBlockActivated={voice.onMovementBlockActivated}
       onTargetAttemptStarted={voice.onTargetAttemptStarted}
       onTargetReachConfirmed={voice.onTargetReachConfirmed}
+      onPatternReachConfirmed={voice.onPatternReachConfirmed}
       onPoseDetectorSnapshot={voice.onPoseDetectorSnapshot}
       onSessionComplete={voice.onSessionComplete}
     />

@@ -27,6 +27,7 @@ import {
   sessionExerciseFlowUi,
   sessionShellUi,
 } from "@/app/lib/patient-portal-ui";
+import { createCatalogPatientSessionAudioCleanup } from "@/app/lib/interactive-shoulder/patient-catalog-session-audio-lifecycle";
 import { resolveCatalogSessionDisplay } from "@/app/lib/interactive-shoulder/resolve-catalog-session-display";
 
 type CatalogPhase = "start" | "playback" | "cameraDeclined" | "wrapup";
@@ -120,6 +121,10 @@ export function CatalogPatientSessionPlayback({
       isMountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    return createCatalogPatientSessionAudioCleanup();
+  }, [token, session.id]);
 
   const shellUi = sessionShellUi(patientLanguage);
   const guidedUi = guidedSessionUi(patientLanguage);

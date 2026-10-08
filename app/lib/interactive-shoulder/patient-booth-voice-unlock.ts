@@ -3,6 +3,7 @@
  */
 
 import { preloadInteractiveShoulderBoothVoiceAssets } from "@/app/lib/booth/booth-voice-guidance";
+import { unlockPatientInteractiveShoulderSessionSfxFromUserGesture } from "@/app/lib/interactive-shoulder/patient-interactive-shoulder-session-sfx";
 
 let patientBoothVoiceUnlocked = false;
 
@@ -16,6 +17,7 @@ export function resetPatientBoothVoiceUnlockForTests(): void {
 
 /** Call from Begin session, camera consent, or sound/voice toggle — not from pose tracking. */
 export function unlockPatientBoothVoiceFromUserGesture(): void {
+  unlockPatientInteractiveShoulderSessionSfxFromUserGesture();
   if (patientBoothVoiceUnlocked) {
     preloadInteractiveShoulderBoothVoiceAssets();
     return;

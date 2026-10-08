@@ -17,6 +17,12 @@ describe("catalog patient booth voice wiring", () => {
     assert.doesNotMatch(playback, /<CatalogSessionPlayer/);
   });
 
+  it("registers parent audio cleanup for navigation away from the session", () => {
+    const playback = read("app/components/patient/session/CatalogPatientSessionPlayback.tsx");
+    assert.match(playback, /createCatalogPatientSessionAudioCleanup/);
+    assert.match(playback, /\[token, session\.id\]/);
+  });
+
   it("preserves interactive shoulder outcome submission on session complete", () => {
     const playback = read("app/components/patient/session/CatalogPatientSessionPlayback.tsx");
     assert.match(playback, /submitInteractiveShoulderOutcomeWithRetry/);
