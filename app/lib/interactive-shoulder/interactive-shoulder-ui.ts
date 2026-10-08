@@ -26,6 +26,11 @@ export type InteractiveShoulderUi = {
   sessionProgressLabel: string;
   interactionTargetsLabel: (reached: number, shown: number) => string;
   interactionPatternsLabel: (completed: number, shown: number) => string;
+  /** Patient live HUD — numerator/denominator are confirmed vs presented so far (not prescribed reps). */
+  liveHudTargetsLabel: string;
+  liveHudTargetsValue: (reached: number, shown: number) => string;
+  liveHudPatternsLabel: string;
+  liveHudPatternsValue: (completed: number, shown: number) => string;
   measuredRepsLabel: (reps: number) => string;
   movementBlockLabel: string;
   timeRemainingSeconds: (seconds: number) => string;
@@ -109,6 +114,12 @@ const INTERACTIVE_SHOULDER_UI: Record<PatientExerciseLanguage, InteractiveShould
     sessionProgressLabel: "Session progress",
     interactionTargetsLabel: (reached, shown) => `Interaction targets: ${reached}/${shown}`,
     interactionPatternsLabel: (completed, shown) => `Paths completed: ${completed}/${shown}`,
+    liveHudTargetsLabel: "Lights reached",
+    liveHudTargetsValue: (reached, shown) =>
+      shown > 0 ? `${reached} of ${shown} presented` : `${reached}`,
+    liveHudPatternsLabel: "Path passes completed",
+    liveHudPatternsValue: (completed, shown) =>
+      shown > 0 ? `${completed} completed · ${shown} passes started` : `${completed}`,
     measuredRepsLabel: (reps) => `Measured repetitions: ${reps}`,
     movementBlockLabel: "Movement block",
     timeRemainingSeconds: (seconds) => `${seconds}s remaining`,
@@ -210,6 +221,12 @@ const INTERACTIVE_SHOULDER_UI: Record<PatientExerciseLanguage, InteractiveShould
     sessionProgressLabel: "تقدّم الجلسة",
     interactionTargetsLabel: (reached, shown) => `أهداف التفاعل: ${reached}/${shown}`,
     interactionPatternsLabel: (completed, shown) => `المسارات المكتملة: ${completed}/${shown}`,
+    liveHudTargetsLabel: "الأضواء التي تم الوصول إليها",
+    liveHudTargetsValue: (reached, shown) =>
+      shown > 0 ? `${reached} من ${shown} ظهرت` : `${reached}`,
+    liveHudPatternsLabel: "مرات إكمال المسار",
+    liveHudPatternsValue: (completed, shown) =>
+      shown > 0 ? `${completed} مكتمل · ${shown} مرات بدأت` : `${completed}`,
     measuredRepsLabel: (reps) => `التكرارات المقاسة: ${reps}`,
     movementBlockLabel: "كتلة الحركة",
     timeRemainingSeconds: (seconds) => `${seconds} ث متبقية`,

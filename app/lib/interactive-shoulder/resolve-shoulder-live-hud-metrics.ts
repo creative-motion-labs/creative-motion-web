@@ -28,14 +28,20 @@ export function resolveShoulderLiveHudMetrics(input: {
   const interactionTotal = isPatternMode
     ? patternInteraction.patternsShown
     : targetInteraction.targetsShown;
-  const interactionLabel = isPatternMode
-    ? ui.interactionPatternsLabel(0, 0).split(":")[0]
-    : ui.interactionTargetsLabel(0, 0).split(":")[0];
+
+  if (isPatternMode) {
+    return [
+      {
+        label: ui.liveHudPatternsLabel,
+        value: ui.liveHudPatternsValue(interactionCompleted, interactionTotal),
+      },
+    ];
+  }
 
   return [
     {
-      label: interactionLabel,
-      value: `${interactionCompleted}/${interactionTotal || "—"}`,
+      label: ui.liveHudTargetsLabel,
+      value: ui.liveHudTargetsValue(interactionCompleted, interactionTotal),
     },
   ];
 }

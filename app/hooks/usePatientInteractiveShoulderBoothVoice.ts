@@ -20,6 +20,7 @@ import {
 } from "@/app/lib/interactive-shoulder/patient-booth-voice-runtime";
 import { unlockPatientBoothVoiceFromUserGesture } from "@/app/lib/interactive-shoulder/patient-booth-voice-unlock";
 import type { PatternCompletionEvent } from "@/app/lib/interactive-shoulder/motion-patterns/pattern-lifecycle";
+import type { SessionBlockType } from "@/app/lib/session-orchestrator/types";
 import type { TargetAttemptStartEvent, TargetHitEvent } from "@/app/lib/interactive-shoulder/types";
 
 export type PatientInteractiveShoulderBoothVoiceBindings = {
@@ -30,7 +31,7 @@ export type PatientInteractiveShoulderBoothVoiceBindings = {
   };
   onInteractiveShoulderAudioUnlockFromGesture: () => void;
   onOrchestratorCountdownComplete: () => void;
-  onTherapeuticBlockRest: (completedBlockId: string) => void;
+  onTherapeuticBlockRest: (completedBlockId: string, completedBlockType: SessionBlockType) => void;
   onReadyCountdownStarted: () => void;
   onMovementBlockActivated: (blockId: string) => void;
   onTargetAttemptStarted: (event: TargetAttemptStartEvent) => void;
@@ -47,7 +48,10 @@ export function usePatientInteractiveShoulderBoothVoice(
   const voiceStateRef = useRef<PatientBoothVoiceSessionState>(createPatientBoothVoiceSessionState());
   const trackingStatusRef = useRef<ShoulderAbductionReachPoseDetectorSnapshot["trackingStatus"]>("idle");
   const onSessionCompleteRef = useRef(onSessionComplete);
-  onSessionCompleteRef.current = onSessionComplete;
+
+  useEffect(() => {
+    onSessionCompleteRef.current = onSessionComplete;
+  }, [onSessionComplete]);
 
   const voiceOptions = useMemo(
     () => ({
@@ -91,8 +95,13 @@ export function usePatientInteractiveShoulderBoothVoice(
   }, [voiceOptions]);
 
   const handleTherapeuticBlockRest = useCallback(
-    (completedBlockId: string) => {
-      patientBoothVoiceOnTherapeuticBlockRest(voiceStateRef.current, completedBlockId, voiceOptions);
+    (completedBlockId: string, completedBlockType: SessionBlockType) => {
+      patientBoothVoiceOnTherapeuticBlockRest(
+        voiceStateRef.current,
+        completedBlockId,
+        completedBlockType,
+        voiceOptions,
+      );
     },
     [voiceOptions],
   );

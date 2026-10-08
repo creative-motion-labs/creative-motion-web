@@ -5,7 +5,11 @@ import type { TargetAttemptStartEvent, TargetHitEvent } from "@/app/lib/interact
 import type { ReactNode } from "react";
 import { createPatientCvCameraConsentRecord } from "@/app/lib/cv/patient-cv-consent";
 import type { PatientExerciseLanguage } from "@/app/lib/exercise-resolve";
-import type { SessionDefinition, SessionOrchestratorSnapshot } from "@/app/lib/session-orchestrator/types";
+import type {
+  SessionBlockType,
+  SessionDefinition,
+  SessionOrchestratorSnapshot,
+} from "@/app/lib/session-orchestrator/types";
 
 /**
  * The smallest slice of SessionOrchestratorSnapshot a completion
@@ -70,7 +74,7 @@ export type InteractiveShoulderSessionProps = {
   /** Catalog patient sessions: fires when the ready countdown finishes and movement begins. */
   onOrchestratorCountdownComplete?: () => void;
   /** Catalog patient sessions: fires when a therapeutic block ends and rest begins. */
-  onTherapeuticBlockRest?: (completedBlockId: string) => void;
+  onTherapeuticBlockRest?: (completedBlockId: string, completedBlockType: SessionBlockType) => void;
   /** Demo-only: fires once when the ready countdown overlay begins. */
   onReadyCountdownStarted?: () => void;
   /** Demo-only: fires when a movement block becomes active (after transitions). */
