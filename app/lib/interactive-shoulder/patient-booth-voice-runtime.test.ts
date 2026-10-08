@@ -3,7 +3,10 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { resetBoothVoiceAudioPlaybackForTests } from "@/app/lib/booth/booth-voice-audio";
+import {
+  resetBoothVoiceAudioPlaybackForTests,
+  stopBoothVoicePlayback,
+} from "@/app/lib/booth/booth-voice-audio";
 import {
   BOOTH_VOICE_COOLDOWN_MS,
   resetBoothVoiceGuidance,
@@ -19,7 +22,6 @@ import {
   patientBoothVoiceOnCountdownComplete,
   patientBoothVoiceOnMovementBlockActivated,
   patientBoothVoiceOnSessionComplete,
-  PATIENT_SUCCESSFUL_REACH_VOICE_MIN_GAP_MS,
   patientBoothVoiceOnTargetReachConfirmed,
   patientBoothVoiceTickInactivity,
   resetPatientBoothVoiceSession,
@@ -108,25 +110,18 @@ describe("patient booth voice runtime", () => {
     });
   });
 
-  it("allows another successful-reach voice only after the min gap and when idle", () => {
+  it("uses milestone praise scheduling (see patient-booth-voice-milestones.test.ts)", () => {
     withMockHtmlAudio(() => {
       resetBoothVoiceGuidance();
       const state = createPatientBoothVoiceSessionState();
+      patientBoothVoiceOnMovementBlockActivated(state, "block-a", { muted: false, nowMs: 0 });
+      stopBoothVoicePlayback();
       patientBoothVoiceOnTargetReachConfirmed(
         state,
-        { targetId: "t1", capturedAtMs: 0, reactionTimeMs: 400 },
+        { targetId: "t1", capturedAtMs: 0, reactionTimeMs: 400, sequence: 1 },
         { muted: false, nowMs: 1_000 },
       );
-      patientBoothVoiceOnTargetReachConfirmed(
-        state,
-        { targetId: "t2", capturedAtMs: 0, reactionTimeMs: 500 },
-        { muted: false, nowMs: 1_000 + 200 },
-      );
-      patientBoothVoiceOnTargetReachConfirmed(
-        state,
-        { targetId: "t3", capturedAtMs: 0, reactionTimeMs: 600 },
-        { muted: false, nowMs: 1_000 + PATIENT_SUCCESSFUL_REACH_VOICE_MIN_GAP_MS },
-      );
+      assert.equal(state.milestoneEncouragementSpokenInBlock, 1);
     });
   });
 

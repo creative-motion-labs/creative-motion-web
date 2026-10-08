@@ -33,8 +33,8 @@ describe("resolveShoulderLiveHudMetrics — patient live metrics", () => {
     });
 
     assert.equal(metrics.length, 1);
-    assert.equal(metrics[0]?.label, "Interaction targets");
-    assert.equal(metrics[0]?.value, "2/5");
+    assert.equal(metrics[0]?.label, "Lights reached");
+    assert.equal(metrics[0]?.value, "2 of 5 presented");
     assertNoRepWording(metrics);
   });
 
@@ -51,8 +51,8 @@ describe("resolveShoulderLiveHudMetrics — patient live metrics", () => {
     });
 
     assert.equal(metrics.length, 1);
-    assert.equal(metrics[0]?.label, "أهداف التفاعل");
-    assert.equal(metrics[0]?.value, "1/4");
+    assert.equal(metrics[0]?.label, "الأضواء التي تم الوصول إليها");
+    assert.equal(metrics[0]?.value, "1 من 4 ظهرت");
     assertNoRepWording(metrics);
   });
 
@@ -69,8 +69,8 @@ describe("resolveShoulderLiveHudMetrics — patient live metrics", () => {
     });
 
     assert.equal(metrics.length, 1);
-    assert.equal(metrics[0]?.label, "Paths completed");
-    assert.equal(metrics[0]?.value, "3/6");
+    assert.equal(metrics[0]?.label, "Path passes completed");
+    assert.equal(metrics[0]?.value, "3 completed · 6 passes started");
     assertNoRepWording(metrics);
   });
 
@@ -87,8 +87,8 @@ describe("resolveShoulderLiveHudMetrics — patient live metrics", () => {
     });
 
     assert.equal(metrics.length, 1);
-    assert.equal(metrics[0]?.label, "المسارات المكتملة");
-    assert.equal(metrics[0]?.value, "2/5");
+    assert.equal(metrics[0]?.label, "مرات إكمال المسار");
+    assert.equal(metrics[0]?.value, "2 مكتمل · 5 مرات بدأت");
     assertNoRepWording(metrics);
   });
 

@@ -127,7 +127,11 @@ import {
   mapTargetHitToSessionInput,
 } from "@/app/lib/session-orchestrator/adapters/shoulder-session-adapter";
 import { SessionOrchestrator } from "@/app/lib/session-orchestrator/session-orchestrator";
-import type { SessionOrchestratorSnapshot } from "@/app/lib/session-orchestrator/types";
+import type {
+  SessionBlockType,
+  SessionOrchestratorSnapshot,
+} from "@/app/lib/session-orchestrator/types";
+import { traceInteractiveShoulderSessionDev } from "@/app/lib/interactive-shoulder/interactive-shoulder-session-dev-trace";
 import { ShoulderSessionHud } from "./ShoulderSessionHud";
 import { InstructionalBlockLayer } from "./InstructionalBlockLayer";
 import { CoolDownMotionGuide } from "./CoolDownMotionGuide";
@@ -297,6 +301,7 @@ export function OrchestratorCvSessionCore({
   const targetStateRef = useRef<TargetLifecycleState>(createInitialTargetLifecycle());
   const patternStateRef = useRef<PatternLifecycleState | null>(null);
   const activeBlockIdRef = useRef<string | null>(null);
+  const activeBlockTypeRef = useRef<SessionBlockType | null>(null);
   const rafRef = useRef<number>(0);
   const sessionStartedRef = useRef(false);
   /** Read at error time so `startSession` stays locale-independent (#286). */
@@ -675,6 +680,7 @@ export function OrchestratorCvSessionCore({
         faultPauseAppliedRef.current = false;
         setRuntimeFault(null);
         activeBlockIdRef.current = null;
+        activeBlockTypeRef.current = null;
         showBlockSummaryRef.current = false;
         setShowBlockSummary(false);
         const initialSnap = orchestrator.getSnapshot(now);
@@ -868,12 +874,16 @@ export function OrchestratorCvSessionCore({
           activeBlockIdRef.current !== currentBlockId &&
           currentBlock
         ) {
-          if (activeBlockIdRef.current !== null) {
+          if (activeBlockIdRef.current !== null && activeBlockTypeRef.current !== null) {
             playOrchestratorUiSoundRef.current("blockComplete");
-            onTherapeuticBlockRestRef.current?.(activeBlockIdRef.current);
+            onTherapeuticBlockRestRef.current?.(
+              activeBlockIdRef.current,
+              activeBlockTypeRef.current,
+            );
           }
           previousBlockIdForSoundRef.current = activeBlockIdRef.current;
           activeBlockIdRef.current = currentBlockId;
+          activeBlockTypeRef.current = currentBlock.blockType ?? null;
           if (
             (currentBlock.blockType === "movement-target" ||
               currentBlock.blockType === "movement-pattern") &&
@@ -1041,7 +1051,22 @@ export function OrchestratorCvSessionCore({
               { renderSeq: renderSeqRef.current },
             );
             const processedTargetContact = targetContactOutcome.contactToProcess;
+            if (targetContactOutcome.skippedDuplicate) {
+              traceInteractiveShoulderSessionDev("target-contact-duplicate-rejected", {
+                targetId: dispatch.targetContact?.targetId ?? "unknown",
+                targetsReached: dispatch.states.target.interaction.targetsReached,
+                targetsShown: dispatch.states.target.interaction.targetsShown,
+              });
+            }
             if (processedTargetContact) {
+              traceInteractiveShoulderSessionDev("target-contact-forwarded", {
+                targetId: processedTargetContact.targetId,
+                targetsReachedBefore: targetStateRef.current.interaction.targetsReached,
+                targetsShown: dispatch.states.target.interaction.targetsShown,
+                targetsReachedAfter: dispatch.states.target.interaction.targetsReached,
+                blockId: activeBlockIdRef.current ?? "unknown",
+                blockType: activeBlockTypeRef.current ?? "unknown",
+              });
               onTargetReachConfirmedRef.current?.(processedTargetContact);
               orchestrator.reportInputEvent(
                 mapTargetHitToSessionInput(processedTargetContact),

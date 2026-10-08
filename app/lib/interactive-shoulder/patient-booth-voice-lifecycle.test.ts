@@ -7,6 +7,7 @@ import {
   isBoothVoicePlaybackActive,
   isDetachedBoothVoicePlaybackActive,
   resetBoothVoiceAudioPlaybackForTests,
+  stopBoothVoicePlayback,
 } from "@/app/lib/booth/booth-voice-audio";
 import {
   resetBoothVoiceGuidance,
@@ -18,6 +19,7 @@ import {
   cancelPatientBoothVoicePlayback,
   createPatientBoothVoiceSessionState,
   disposePatientBoothVoiceHookCleanup,
+  patientBoothVoiceOnMovementBlockActivated,
   patientBoothVoiceOnSessionComplete,
   patientBoothVoiceOnTargetReachConfirmed,
   patientBoothVoiceSetMuted,
@@ -61,28 +63,35 @@ function withLifecycleMockAudio(run: () => void): void {
 }
 
 describe("patient booth voice lifecycle", () => {
-  it("throttles rapid successive target hits without interrupting active reach feedback", () => {
+  it("speaks milestone praise at most once for rapid successive hits", () => {
     withLifecycleMockAudio(() => {
       resetBoothVoiceGuidance();
       const state = createPatientBoothVoiceSessionState();
+      patientBoothVoiceOnMovementBlockActivated(state, "reach", { muted: false, nowMs: 0 });
+      stopBoothVoicePlayback();
+      const afterBlockCue = audioConstructCount;
       patientBoothVoiceOnTargetReachConfirmed(
         state,
-        { targetId: "t1", capturedAtMs: 0, reactionTimeMs: 400 },
+        { targetId: "t1", capturedAtMs: 0, reactionTimeMs: 400, sequence: 1 },
         { muted: false, nowMs: 1_000 },
       );
       const instancesAfterFirst = audioConstructCount;
       patientBoothVoiceOnTargetReachConfirmed(
         state,
-        { targetId: "t2", capturedAtMs: 0, reactionTimeMs: 500 },
+        { targetId: "t2", capturedAtMs: 0, reactionTimeMs: 500, sequence: 2 },
         { muted: false, nowMs: 1_000 + 100 },
       );
-      assert.equal(audioConstructCount, instancesAfterFirst, "within min gap, no new reach voice");
       patientBoothVoiceOnTargetReachConfirmed(
         state,
-        { targetId: "t3", capturedAtMs: 0, reactionTimeMs: 600 },
-        { muted: false, nowMs: 1_000 + PATIENT_SUCCESSFUL_REACH_VOICE_MIN_GAP_MS },
+        { targetId: "t3", capturedAtMs: 0, reactionTimeMs: 600, sequence: 3 },
+        { muted: false, nowMs: 1_000 + 200 },
       );
-      assert.ok(audioConstructCount > instancesAfterFirst);
+      assert.equal(
+        audioConstructCount,
+        instancesAfterFirst,
+        "hits 2–3 do not add spoken praise clips",
+      );
+      assert.ok(instancesAfterFirst > afterBlockCue, "first hit may add one milestone clip");
     });
   });
 
