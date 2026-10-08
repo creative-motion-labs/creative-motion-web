@@ -15,7 +15,7 @@ export const RASQ_DEMO_PLATFORM_ENTRY_HREF = "/demo";
 export const RASQ_DEMO_PLATFORM_ENTRY_CTA_LABEL = "Try Interactive Demo";
 
 export const RASQ_DEMO_PLATFORM_ENTRY_SUPPORT_COPY =
-  "Experience a short guided movement demonstration. For demonstration purposes only — not a medical diagnosis.";
+  "Experience a short guided movement demonstration. For demonstration purposes only. Not a medical diagnosis.";
 
 export const RASQ_DEMO_NO_RAW_VIDEO_NOTICE =
   "Camera processing runs in your browser. RASQ does not store raw video from this demo by default.";

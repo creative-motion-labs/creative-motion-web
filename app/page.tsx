@@ -403,7 +403,8 @@ function HeroPreview() {
                 alt=""
                 fill
                 priority
-                sizes="(max-width: 1024px) 420px, 520px"
+                quality={90}
+                sizes="(max-width: 1024px) 420px, 819px"
                 className="object-cover object-[42%_38%]"
               />
             </div>
@@ -472,8 +473,8 @@ function HeroSection() {
               className="rasq-stagger-item mt-5 max-w-lg text-base leading-7 text-white/55"
               style={{ animationDelay: "120ms" }}
             >
-              AI-assisted rehabilitation that helps clinicians assess, guide rehabilitation,
-              and follow patient progress — with the clinician at the center of care.
+              AI-assisted rehabilitation that helps clinicians assess, guide care,
+              and follow patient progress, with the clinician at the center of care.
             </p>
 
             <p
@@ -531,9 +532,9 @@ function TrustBar() {
   const [ref, revealed] = useReveal(0.3);
 
   const items = [
-    "Clinical workflows co-designed with rehabilitation specialists",
-    "Secure clinic links — no public sign-up for remote assessments",
-    "Export-ready clinical reports — structured for clinician review and referral",
+    "Clinical workflows co-designed with rehabilitation specialists.",
+    "Secure clinic links. No public sign-up for remote assessments.",
+    "Export-ready clinical reports, structured for clinician review and referral.",
   ];
 
   return (
@@ -553,7 +554,7 @@ function TrustBar() {
 }
 
 const WORKFLOW_STEPS = [
-  { num: "01", label: "Assess", desc: "Structured functional assessments — in clinic or through secure remote links." },
+  { num: "01", label: "Assess", desc: "Structured functional assessments, in clinic or through secure remote links." },
   { num: "02", label: "Plan", desc: "Prescribe rehabilitation plans and issue secure clinic access to patients." },
   { num: "03", label: "Track", desc: "Monitor guided sessions, adherence, and progress across the care pathway." },
   { num: "04", label: "Report", desc: "Export clinical reports structured for review, referral, and records." },
@@ -589,13 +590,13 @@ function WorkflowSection() {
         </div>
 
         <div
-          className={`rasq-reveal-children mt-12 grid grid-cols-1 gap-8 sm:grid-cols-4 ${revealed ? "is-revealed" : ""}`}
+          className={`rasq-reveal-children mt-12 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4 ${revealed ? "is-revealed" : ""}`}
         >
           {WORKFLOW_STEPS.map((step, i) => (
             <div key={step.num} className="relative flex flex-col">
               {i < WORKFLOW_STEPS.length - 1 && (
                 <div
-                  className={`rasq-connector absolute top-[22px] hidden h-px bg-[var(--rasq-border)] sm:block ${revealed ? "is-revealed" : ""}`}
+                  className={`rasq-connector absolute top-[22px] hidden h-px bg-[var(--rasq-border)] lg:block ${revealed ? "is-revealed" : ""}`}
                   style={{ width: "calc(100% - 44px)", left: "calc(50% + 22px)" }}
                 />
               )}
@@ -680,7 +681,7 @@ function GuidedRehabilitationSection() {
             </div>
 
             <p className="relative z-10 mt-4 text-[11px] leading-5 text-white/30">
-              Illustrative session — example UI overlay only, not a real patient record.
+              Illustrative session. Example UI overlay only, not a real patient record.
             </p>
           </div>
         </div>
@@ -727,7 +728,7 @@ function ProgressJourneySection() {
           </h2>
           <p className="mt-3 max-w-lg text-sm leading-6 text-white/40">
             RASQ supports the clinician workflow from assessment through plan assignment
-            and progress review — with draft clinical notes for therapist review.
+            and progress review, with draft clinical notes for therapist review.
           </p>
         </div>
 
@@ -937,7 +938,7 @@ function AccessSection() {
                   Use the link from your therapist
                 </p>
                 <p className="mt-1 text-xs leading-5 text-[var(--rasq-warm-tx2)]">
-                  Patient access is issued by your clinic — not through public sign-up.
+                  Patient access is issued by your clinic, not through public sign-up.
                 </p>
               </div>
               <Link
@@ -968,7 +969,7 @@ const CAPABILITY_CARDS = [
     name: "Remote assessment",
     tagline: "Secure, clinic-issued access",
     desc:
-      "Patients complete structured remote assessments through a secure clinic link — no public sign-up, no separate login.",
+      "Patients complete structured remote assessments through a secure clinic link. No public sign-up or separate login.",
     specs: ["Secure clinic links", "No public sign-up", "Clinician-reviewed submissions"],
   },
   {
@@ -1071,7 +1072,7 @@ function Footer() {
               </span>
             </div>
             <p className="mt-3 max-w-sm text-sm leading-6 text-white/40">
-              Rehabilitation, precisely. Supports therapist review — not a substitute
+              Rehabilitation, precisely. Supports therapist review. Not a substitute
               for clinical judgment.
             </p>
             <p className="mt-5 text-xs text-white/25">RASQ by Creative Motion Lab</p>
