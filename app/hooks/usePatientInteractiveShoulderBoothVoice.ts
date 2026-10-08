@@ -14,7 +14,7 @@ import {
   patientBoothVoiceSetMuted,
   patientBoothVoiceTickInactivity,
   readPatientBoothVoiceMutedPreference,
-  resetPatientBoothVoiceSession,
+  disposePatientBoothVoiceHookCleanup,
   type PatientBoothVoiceSessionState,
 } from "@/app/lib/interactive-shoulder/patient-booth-voice-runtime";
 import { unlockPatientBoothVoiceFromUserGesture } from "@/app/lib/interactive-shoulder/patient-booth-voice-unlock";
@@ -55,7 +55,7 @@ export function usePatientInteractiveShoulderBoothVoice(
 
   useEffect(() => {
     return () => {
-      resetPatientBoothVoiceSession(voiceStateRef.current);
+      disposePatientBoothVoiceHookCleanup(voiceStateRef.current);
     };
   }, []);
 

@@ -19,6 +19,7 @@ import {
   patientBoothVoiceOnCountdownComplete,
   patientBoothVoiceOnMovementBlockActivated,
   patientBoothVoiceOnSessionComplete,
+  PATIENT_SUCCESSFUL_REACH_VOICE_MIN_GAP_MS,
   patientBoothVoiceOnTargetReachConfirmed,
   patientBoothVoiceTickInactivity,
   resetPatientBoothVoiceSession,
@@ -30,10 +31,16 @@ function withMockHtmlAudio(run: () => void): void {
     preload = "auto";
     currentTime = 0;
     src = "";
+    paused = true;
+    ended = false;
     play(): Promise<void> {
+      this.paused = false;
+      this.ended = false;
       return Promise.resolve();
     }
-    pause(): void {}
+    pause(): void {
+      this.paused = true;
+    }
   }
   (globalThis as { Audio: typeof Audio }).Audio = MockAudio as typeof Audio;
   try {
@@ -101,19 +108,24 @@ describe("patient booth voice runtime", () => {
     });
   });
 
-  it("allows distinct successful-reach scopes per target", () => {
+  it("allows another successful-reach voice only after the min gap and when idle", () => {
     withMockHtmlAudio(() => {
       resetBoothVoiceGuidance();
       const state = createPatientBoothVoiceSessionState();
       patientBoothVoiceOnTargetReachConfirmed(
         state,
         { targetId: "t1", capturedAtMs: 0, reactionTimeMs: 400 },
-        { muted: false, nowMs: 0 },
+        { muted: false, nowMs: 1_000 },
       );
       patientBoothVoiceOnTargetReachConfirmed(
         state,
         { targetId: "t2", capturedAtMs: 0, reactionTimeMs: 500 },
-        { muted: false, nowMs: 50 },
+        { muted: false, nowMs: 1_000 + 200 },
+      );
+      patientBoothVoiceOnTargetReachConfirmed(
+        state,
+        { targetId: "t3", capturedAtMs: 0, reactionTimeMs: 600 },
+        { muted: false, nowMs: 1_000 + PATIENT_SUCCESSFUL_REACH_VOICE_MIN_GAP_MS },
       );
     });
   });

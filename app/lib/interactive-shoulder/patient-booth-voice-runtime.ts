@@ -6,6 +6,8 @@ import {
   BOOTH_VOICE_COOLDOWN_MS,
   resetBoothVoiceGuidance,
   speakBoothVoiceCue,
+  speakBoothVoiceCueDetached,
+  stopAllBoothVoicePlayback,
   stopBoothVoicePlayback,
 } from "@/app/lib/booth/booth-voice-guidance";
 import type { InteractiveShoulderBoothVoiceCue } from "@/app/lib/booth/booth-voice-manifest";
@@ -23,6 +25,9 @@ import type { ShoulderAbductionReachTrackingStatus } from "@/app/lib/cv/shoulder
 import type { TargetHitEvent } from "@/app/lib/interactive-shoulder/types";
 
 export const PATIENT_BOOTH_VOICE_MUTE_SESSION_KEY = "rasq:is-shoulder-voice-muted";
+
+/** Minimum time between spoken successful-reach cues (avoids interrupting "Nice reach."). */
+export const PATIENT_SUCCESSFUL_REACH_VOICE_MIN_GAP_MS = 4_000;
 
 const SIDE_SPECIFIC_PATTERN =
   /\b(left|right)\s+(arm|hand|side)\b|\breach\s+(to\s+)?(your\s+)?(left|right)\b/i;
@@ -63,6 +68,7 @@ function speakPatientCue(
   options: PatientBoothVoiceRuntimeOptions & {
     allowRepeatKey?: boolean;
     skipCooldown?: boolean;
+    interruptCurrent?: boolean;
   },
 ): boolean {
   return speakBoothVoiceCue(cue, scope, {
@@ -70,6 +76,7 @@ function speakPatientCue(
     nowMs: options.nowMs,
     allowRepeatKey: options.allowRepeatKey,
     skipCooldown: options.skipCooldown,
+    interruptCurrent: options.interruptCurrent,
   });
 }
 
@@ -77,6 +84,7 @@ export type PatientBoothVoiceSessionState = {
   inactivity: BoothInactivityState | null;
   movementBlockActive: boolean;
   sessionEnded: boolean;
+  lastSuccessfulReachVoiceAtMs: number | null;
 };
 
 export function createPatientBoothVoiceSessionState(): PatientBoothVoiceSessionState {
@@ -84,6 +92,7 @@ export function createPatientBoothVoiceSessionState(): PatientBoothVoiceSessionS
     inactivity: null,
     movementBlockActive: false,
     sessionEnded: false,
+    lastSuccessfulReachVoiceAtMs: null,
   };
 }
 
@@ -91,8 +100,25 @@ export function resetPatientBoothVoiceSession(state: PatientBoothVoiceSessionSta
   state.inactivity = null;
   state.movementBlockActive = false;
   state.sessionEnded = false;
+  state.lastSuccessfulReachVoiceAtMs = null;
   resetBoothVoiceGuidance();
-  stopBoothVoicePlayback();
+  stopAllBoothVoicePlayback();
+}
+
+/** Hook unmount: preserve detached session-complete audio after wrap-up navigation. */
+export function disposePatientBoothVoiceHookCleanup(state: PatientBoothVoiceSessionState): void {
+  if (state.sessionEnded) {
+    state.inactivity = null;
+    state.movementBlockActive = false;
+    stopBoothVoicePlayback();
+    return;
+  }
+  resetPatientBoothVoiceSession(state);
+}
+
+export function cancelPatientBoothVoicePlayback(): void {
+  stopAllBoothVoicePlayback();
+  resetBoothVoiceGuidance();
 }
 
 export function patientBoothVoiceOnCountdownComplete(
@@ -141,12 +167,22 @@ export function patientBoothVoiceOnTargetReachConfirmed(
   if (state.sessionEnded) return;
   const nowMs = options.nowMs ?? Date.now();
   state.inactivity = onBoothMeaningfulInteraction(state.inactivity, nowMs);
+  if (
+    state.lastSuccessfulReachVoiceAtMs != null &&
+    nowMs - state.lastSuccessfulReachVoiceAtMs < PATIENT_SUCCESSFUL_REACH_VOICE_MIN_GAP_MS
+  ) {
+    return;
+  }
   const targetKey = event.targetId ?? `seq-${event.sequence ?? 0}`;
-  speakPatientCue("successful-reach", `target:${targetKey}`, {
+  const spoke = speakPatientCue("successful-reach", `target:${targetKey}`, {
     ...options,
     nowMs,
     skipCooldown: true,
+    interruptCurrent: true,
   });
+  if (spoke) {
+    state.lastSuccessfulReachVoiceAtMs = nowMs;
+  }
 }
 
 export function patientBoothVoiceOnTargetAttemptStarted(
@@ -165,9 +201,9 @@ export function patientBoothVoiceOnSessionComplete(
   state.sessionEnded = true;
   state.movementBlockActive = false;
   state.inactivity = null;
-  speakPatientCue("session-complete", "patient-session", {
-    ...options,
-    skipCooldown: true,
+  speakBoothVoiceCueDetached("session-complete", "patient-session", {
+    muted: options.muted,
+    nowMs: options.nowMs,
   });
 }
 
@@ -202,7 +238,7 @@ export function patientBoothVoiceTickInactivity(
 export function patientBoothVoiceSetMuted(muted: boolean): void {
   writePatientBoothVoiceMutedPreference(muted);
   if (muted) {
-    stopBoothVoicePlayback();
+    stopAllBoothVoicePlayback();
   }
 }
 
