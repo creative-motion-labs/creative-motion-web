@@ -532,7 +532,7 @@ function TrustBar() {
   const [ref, revealed] = useReveal(0.3);
 
   const items = [
-    "Clinical workflows co-designed with rehabilitation specialists",
+    "Clinical workflows co-designed with rehabilitation specialists.",
     "Secure clinic links. No public sign-up for remote assessments.",
     "Export-ready clinical reports, structured for clinician review and referral.",
   ];
