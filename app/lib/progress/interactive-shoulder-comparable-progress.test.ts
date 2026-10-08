@@ -404,3 +404,42 @@ describe("clinician chart wiring", () => {
     assert.match(source, /buildInteractiveShoulderProgressSessionsSummary\(comparable\)/);
   });
 });
+
+describe("same patient, two separate plans", () => {
+  // Each plan holds exactly one comparable LEFT-side session. Neither plan alone can chart,
+  // but together they are two comparable sessions of one patient, so a two-point trend shows.
+  const planA = { ...entry("a1", T(1), "left", undefined, "ps-a1"), planId: "plan-a" };
+  const planB = { ...entry("b1", T(8), "left", undefined, "ps-b1"), planId: "plan-b" };
+
+  it("each plan alone is only a baseline (guard of 2 untouched)", () => {
+    assert.equal(MIN_SESSIONS_FOR_PROGRESS_CHARTS, 2);
+    assert.equal(selectComparableOutcomes([planA]).comparable.length, 1);
+    assert.equal(shouldShowInteractiveShoulderProgressCharts(selectComparableOutcomes([planA]).comparable.length), false);
+    assert.equal(shouldShowInteractiveShoulderProgressCharts(selectComparableOutcomes([planB]).comparable.length), false);
+  });
+
+  it("both plans together give two comparable sessions and nothing excluded", () => {
+    const selection = selectComparableOutcomes([planB, planA]);
+    assert.equal(selection.comparable.length, 2);
+    assert.equal(selection.excludedCount, 0);
+    assert.equal(shouldShowInteractiveShoulderProgressCharts(selection.comparable.length), true);
+  });
+
+  it("produces a valid two-point chronological series across the plans", () => {
+    const { comparable } = selectComparableOutcomes([planB, planA]);
+    const points = buildInteractiveShoulderSessionChartPoints(comparable);
+    assert.deepEqual(points.map((p) => p.sessionId), ["a1", "b1"]);
+    assert.deepEqual(points.map((p) => p.sessionLabel), ["S1", "S2"]);
+    const series = buildClinicianProgressChartSeries(points);
+    assert.ok(series.length > 0);
+    for (const one of series) assert.equal(one.values.length, 2);
+  });
+
+  it("renders a chart, not a baseline card", () => {
+    const html = renderToStaticMarkup(
+      createElement(InteractiveShoulderClinicianProgressCharts, { outcomes: [planB, planA], painTrend: [] }),
+    );
+    assert.match(html, /<svg/);
+    assert.doesNotMatch(html, /data-testid="progress-baseline"/);
+  });
+});
