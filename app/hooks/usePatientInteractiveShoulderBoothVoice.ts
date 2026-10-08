@@ -18,6 +18,7 @@ import {
   disposePatientBoothVoiceHookCleanup,
   type PatientBoothVoiceSessionState,
 } from "@/app/lib/interactive-shoulder/patient-booth-voice-runtime";
+import { invokePatientBoothSessionCompleteHandoff } from "@/app/lib/interactive-shoulder/patient-booth-session-complete-handoff";
 import { unlockPatientBoothVoiceFromUserGesture } from "@/app/lib/interactive-shoulder/patient-booth-voice-unlock";
 import type { PatternCompletionEvent } from "@/app/lib/interactive-shoulder/motion-patterns/pattern-lifecycle";
 import type { TargetAttemptStartEvent, TargetHitEvent } from "@/app/lib/interactive-shoulder/types";
@@ -138,8 +139,11 @@ export function usePatientInteractiveShoulderBoothVoice(
 
   const handleSessionComplete = useCallback(
     (snapshot: InteractiveShoulderSessionCompletionSnapshot) => {
-      patientBoothVoiceOnSessionComplete(voiceStateRef.current, voiceOptions);
-      onSessionCompleteRef.current?.(snapshot);
+      invokePatientBoothSessionCompleteHandoff(
+        snapshot,
+        () => patientBoothVoiceOnSessionComplete(voiceStateRef.current, voiceOptions),
+        onSessionCompleteRef.current,
+      );
     },
     [voiceOptions],
   );
