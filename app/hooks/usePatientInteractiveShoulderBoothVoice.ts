@@ -47,7 +47,10 @@ export function usePatientInteractiveShoulderBoothVoice(
   const voiceStateRef = useRef<PatientBoothVoiceSessionState>(createPatientBoothVoiceSessionState());
   const trackingStatusRef = useRef<ShoulderAbductionReachPoseDetectorSnapshot["trackingStatus"]>("idle");
   const onSessionCompleteRef = useRef(onSessionComplete);
-  onSessionCompleteRef.current = onSessionComplete;
+
+  useEffect(() => {
+    onSessionCompleteRef.current = onSessionComplete;
+  }, [onSessionComplete]);
 
   const voiceOptions = useMemo(
     () => ({
