@@ -119,3 +119,75 @@ export async function submitInteractiveShoulderOutcome(
     return { ok: false, error: INTERACTIVE_SHOULDER_OUTCOME_NETWORK_ERROR, status: 0 };
   }
 }
+
+// ── Bounded retry (end-to-end readiness) ─────────────────────────────
+
+/**
+ * UI-facing state of the movement-outcome save, kept separate from the patient-reported
+ * completion flow. "failed" and "retrying" are the only states the patient is ever told
+ * about: a movement summary that was NOT saved must never look like one that was.
+ */
+export type InteractiveShoulderOutcomeSaveState =
+  | "idle"
+  | "saving"
+  | "saved"
+  | "failed"
+  | "retrying";
+
+/**
+ * Statuses worth another attempt: a network failure before any response (0), rate limiting
+ * (429) and transient server-side unavailability (500/502/503/504). Everything else (400
+ * invalid/ineligible, 404 unknown token or ownership mismatch, ...) will fail identically
+ * on every attempt, so it is never retried.
+ */
+export function isRetryableOutcomeSubmissionStatus(status: number): boolean {
+  return status === 0 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+/** Delays before attempt 2 and attempt 3 (so at most 3 attempts, ~5.5 s of waiting in total). */
+export const OUTCOME_SUBMISSION_RETRY_DELAYS_MS: readonly number[] = [1500, 4000];
+
+export type SubmitInteractiveShoulderOutcomeWithRetryOptions = {
+  retryDelaysMs?: readonly number[];
+  sleep?: (ms: number) => Promise<void>;
+  submit?: (
+    input: SubmitInteractiveShoulderOutcomeInput,
+  ) => Promise<SubmitInteractiveShoulderOutcomeResult>;
+  /** Checked before each wait and each retry so an unmounted screen stops retrying. */
+  isCancelled?: () => boolean;
+};
+
+export type SubmitInteractiveShoulderOutcomeWithRetryResult =
+  SubmitInteractiveShoulderOutcomeResult & { attempts: number };
+
+/**
+ * Submits the movement outcome, retrying only transient failures a bounded number of times.
+ *
+ * Safe by construction: the server stores exactly one outcome per plan session (unique
+ * plan_session_id) and answers a repeat with the original row (created:false), so a retry
+ * after a lost response can never create a duplicate or change an already-stored outcome.
+ * The SAME snapshot is resent every time; nothing is regenerated, merged or estimated.
+ */
+export async function submitInteractiveShoulderOutcomeWithRetry(
+  input: SubmitInteractiveShoulderOutcomeInput,
+  options: SubmitInteractiveShoulderOutcomeWithRetryOptions = {},
+): Promise<SubmitInteractiveShoulderOutcomeWithRetryResult> {
+  const delays = options.retryDelaysMs ?? OUTCOME_SUBMISSION_RETRY_DELAYS_MS;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const submit = options.submit ?? ((attemptInput) => submitInteractiveShoulderOutcome(attemptInput));
+  const isCancelled = options.isCancelled ?? (() => false);
+
+  let attempts = 0;
+  for (;;) {
+    attempts += 1;
+    const result = await submit(input);
+    if (result.ok) return { ...result, attempts };
+
+    const nextDelay = delays[attempts - 1];
+    if (nextDelay === undefined || !isRetryableOutcomeSubmissionStatus(result.status) || isCancelled()) {
+      return { ...result, attempts };
+    }
+    await sleep(nextDelay);
+    if (isCancelled()) return { ...result, attempts };
+  }
+}
