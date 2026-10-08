@@ -10,6 +10,7 @@ export type { BoothVoiceCue } from "./booth-voice-manifest";
 export {
   preloadBatteryBoothVoiceAssets,
   preloadBoothVoiceAssets,
+  preloadInteractiveShoulderBoothVoiceAssets,
   stopBoothVoicePlayback,
 } from "./booth-voice-audio";
 export { BOOTH_VOICE_CUE_MANIFEST } from "./booth-voice-manifest";

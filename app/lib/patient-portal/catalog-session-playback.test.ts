@@ -85,7 +85,7 @@ describe("patient session route integration contracts", () => {
     assert.doesNotMatch(catalogBranch, /PatientExerciseSessionCard/);
   });
 
-  it("does not nest CatalogSessionPlayer inside PatientExerciseSessionCard", () => {
+  it("does not nest catalog interactive shoulder player inside PatientExerciseSessionCard", () => {
     const playbackPath = join(
       process.cwd(),
       "app/components/patient/session/CatalogPatientSessionPlayback.tsx",
@@ -96,8 +96,9 @@ describe("patient session route integration contracts", () => {
     );
     const playbackSource = readFileSync(playbackPath, "utf8");
     const cardSource = readFileSync(cardPath, "utf8");
-    assert.match(playbackSource, /<CatalogSessionPlayer/);
+    assert.match(playbackSource, /<PatientCatalogBoothVoiceSession/);
     assert.doesNotMatch(cardSource, /CatalogSessionPlayer/);
+    assert.doesNotMatch(cardSource, /PatientCatalogBoothVoiceSession/);
   });
 
   it("does not route catalog playback based on exercise IDs", () => {

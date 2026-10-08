@@ -58,6 +58,19 @@ export type InteractiveShoulderSessionProps = {
    * Public `/demo` sets this so prerecorded demo voice cues stay isolated from booth/battery audio.
    */
   orchestratorUiSoundEffectsEnabled?: boolean;
+  /**
+   * Catalog patient sessions: prerecorded booth voice mute toggle (shared with HUD sound control).
+   */
+  patientBoothVoiceControl?: {
+    muted: boolean;
+    onToggle: () => void;
+  };
+  /** Catalog patient sessions: unlock HTMLAudio after explicit user gestures. */
+  onInteractiveShoulderAudioUnlockFromGesture?: () => void;
+  /** Catalog patient sessions: fires when the ready countdown finishes and movement begins. */
+  onOrchestratorCountdownComplete?: () => void;
+  /** Catalog patient sessions: fires when a therapeutic block ends and rest begins. */
+  onTherapeuticBlockRest?: (completedBlockId: string) => void;
   /** Demo-only: fires once when the ready countdown overlay begins. */
   onReadyCountdownStarted?: () => void;
   /** Demo-only: fires when a movement block becomes active (after transitions). */

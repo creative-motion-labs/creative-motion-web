@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PatientSession } from "@/app/api/patient/plan/route";
-import { CatalogSessionPlayer } from "@/app/components/patient/interactive-shoulder/CatalogSessionPlayer";
+import { PatientCatalogBoothVoiceSession } from "@/app/components/patient/interactive-shoulder/PatientCatalogBoothVoiceSession";
+import { unlockPatientBoothVoiceFromUserGesture } from "@/app/lib/interactive-shoulder/patient-booth-voice-unlock";
 import {
   GUIDED_PRIMARY_BTN,
   GuidedSessionAlreadyCompleteScreen,
@@ -347,7 +348,10 @@ export function CatalogPatientSessionPlayback({
           </p>
           <button
             type="button"
-            onClick={() => setPhase("playback")}
+            onClick={() => {
+              unlockPatientBoothVoiceFromUserGesture();
+              setPhase("playback");
+            }}
             className={GUIDED_PRIMARY_BTN}
           >
             {guidedUi.beginSession}
@@ -467,7 +471,7 @@ export function CatalogPatientSessionPlayback({
       token={token}
       sessionTitle={sessionDisplay.title}
     >
-      <CatalogSessionPlayer
+      <PatientCatalogBoothVoiceSession
         key={`${session.id}:${session.prescribedSide ?? "none"}`}
         programSession={catalogSession}
         language={patientLanguage}

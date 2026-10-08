@@ -238,6 +238,10 @@ export function OrchestratorCvSessionCore({
   onCaptureReadinessChange,
   onSessionComplete,
   orchestratorUiSoundEffectsEnabled = true,
+  patientBoothVoiceControl,
+  onInteractiveShoulderAudioUnlockFromGesture,
+  onOrchestratorCountdownComplete,
+  onTherapeuticBlockRest,
   onReadyCountdownStarted,
   onMovementBlockActivated,
   onPoseDetectorSnapshot,
@@ -406,6 +410,14 @@ export function OrchestratorCvSessionCore({
   const targetContactConsumptionRef = useRef(createTargetContactConsumptionState());
   const onReadyCountdownStartedRef = useRef(onReadyCountdownStarted);
   onReadyCountdownStartedRef.current = onReadyCountdownStarted;
+  const onOrchestratorCountdownCompleteRef = useRef(onOrchestratorCountdownComplete);
+  onOrchestratorCountdownCompleteRef.current = onOrchestratorCountdownComplete;
+  const onTherapeuticBlockRestRef = useRef(onTherapeuticBlockRest);
+  onTherapeuticBlockRestRef.current = onTherapeuticBlockRest;
+  const onInteractiveShoulderAudioUnlockRef = useRef(onInteractiveShoulderAudioUnlockFromGesture);
+  onInteractiveShoulderAudioUnlockRef.current = onInteractiveShoulderAudioUnlockFromGesture;
+  const patientBoothVoiceControlRef = useRef(patientBoothVoiceControl);
+  patientBoothVoiceControlRef.current = patientBoothVoiceControl;
   countdownActiveRef.current = countdownActive;
   hitExitTransitionMsRef.current = hitExitTransitionMs;
   publicDemoMovementTargetPacingRef.current = publicDemoMovementTargetPacing;
@@ -428,9 +440,21 @@ export function OrchestratorCvSessionCore({
   }, [publicDemoConsent]);
 
   const handleSoundToggle = useCallback(() => {
+    onInteractiveShoulderAudioUnlockRef.current?.();
+    const boothControl = patientBoothVoiceControlRef.current;
+    if (boothControl) {
+      boothControl.onToggle();
+      return;
+    }
     const muted = soundPlayerRef.current.toggleMuted();
     setSoundMuted(muted);
   }, []);
+
+  useEffect(() => {
+    if (!patientBoothVoiceControl) return;
+    setSoundMuted(patientBoothVoiceControl.muted);
+    soundPlayerRef.current.setMuted(true);
+  }, [patientBoothVoiceControl]);
 
   const playOrchestratorUiSound = useCallback(
     (cue: InteractiveShoulderSoundCue) => {
@@ -453,6 +477,7 @@ export function OrchestratorCvSessionCore({
       orchestrator.resume(performance.now());
     }
     playOrchestratorUiSoundRef.current("sessionStart");
+    onOrchestratorCountdownCompleteRef.current?.();
     setCountdownActive((active) => (active ? false : active));
   }, []);
 
@@ -845,6 +870,7 @@ export function OrchestratorCvSessionCore({
         ) {
           if (activeBlockIdRef.current !== null) {
             playOrchestratorUiSoundRef.current("blockComplete");
+            onTherapeuticBlockRestRef.current?.(activeBlockIdRef.current);
           }
           previousBlockIdForSoundRef.current = activeBlockIdRef.current;
           activeBlockIdRef.current = currentBlockId;
@@ -1121,6 +1147,7 @@ export function OrchestratorCvSessionCore({
     writePatientCvCameraConsentToSession(createPatientCvCameraConsentRecord());
     setConsentAccepted(true);
     onDemoTargetPopAudioUnlock?.();
+    onInteractiveShoulderAudioUnlockRef.current?.();
     onPublicDemoCameraPathSelected?.("camera");
   };
 

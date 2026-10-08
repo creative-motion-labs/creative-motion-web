@@ -5,11 +5,17 @@
 import type { BoothVoiceCue } from "./booth-voice-manifest";
 import {
   BOOTH_VOICE_CUE_IDS,
+  INTERACTIVE_SHOULDER_BOOTH_VOICE_MANIFEST,
   isRemoteBatteryBoothVoiceCue,
   REMOTE_BATTERY_BOOTH_VOICE_CUE_IDS,
   boothVoicePublicSrc,
+  type InteractiveShoulderBoothVoiceCue,
   type RemoteBatteryBoothVoiceCue,
 } from "./booth-voice-manifest";
+
+const INTERACTIVE_SHOULDER_BOOTH_VOICE_CUE_IDS = Object.keys(
+  INTERACTIVE_SHOULDER_BOOTH_VOICE_MANIFEST,
+) as InteractiveShoulderBoothVoiceCue[];
 
 function canUseHtmlAudio(): boolean {
   return typeof globalThis !== "undefined" && typeof (globalThis as { Audio?: typeof Audio }).Audio !== "undefined";
@@ -38,6 +44,19 @@ export function preloadBoothVoiceAssets(): void {
   if (!canUseHtmlAudio()) return;
   const AudioCtor = (globalThis as { Audio: typeof Audio }).Audio;
   for (const cue of BOOTH_VOICE_CUE_IDS) {
+    if (preloadedByCue.has(cue)) continue;
+    const src = boothVoicePublicSrc(cue);
+    const audio = new AudioCtor(src);
+    audio.preload = "auto";
+    preloadedByCue.set(cue, audio);
+  }
+}
+
+/** Catalog Interactive Shoulder — Sarah-profile session guidance clips only (no battery assets). */
+export function preloadInteractiveShoulderBoothVoiceAssets(): void {
+  if (!canUseHtmlAudio()) return;
+  const AudioCtor = (globalThis as { Audio: typeof Audio }).Audio;
+  for (const cue of INTERACTIVE_SHOULDER_BOOTH_VOICE_CUE_IDS) {
     if (preloadedByCue.has(cue)) continue;
     const src = boothVoicePublicSrc(cue);
     const audio = new AudioCtor(src);
