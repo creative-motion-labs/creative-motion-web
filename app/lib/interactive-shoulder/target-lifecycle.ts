@@ -466,7 +466,17 @@ export function tickTargetLifecycle(
     const isInside = isWristInsideTarget(input.wrist, next.currentTarget, config);
     if (shouldRegisterTargetHit(next.wristInside, isInside, next.targetHit)) {
       const hitTarget = next.currentTarget;
-      const reactionTimeMs = Math.max(0, input.nowMs - hitTarget.spawnedAtMs);
+      // Response time is the MEASURABLE time the patient spent reaching: pause / safety-hold
+      // time is already frozen out of `blockElapsedSeconds`, and wrist-tracking gaps are
+      // excluded by the attempt accumulator -- the same quantity expiration uses. Plain
+      // wall-clock (`nowMs - spawnedAtMs`) is kept only for legacy callers that supply no
+      // block clock, so a pause or tracking gap can no longer inflate the recorded sample.
+      const reactionTimeMs =
+        resolveAttemptMeasurableElapsedMs(
+          hitTarget,
+          input.blockElapsedSeconds,
+          next.attemptUnmeasuredElapsedS,
+        ) ?? Math.max(0, input.nowMs - hitTarget.spawnedAtMs);
       const compensated = next.attemptCompensationObserved;
       const hitEvent: TargetHitEvent = {
         targetId: hitTarget.id,

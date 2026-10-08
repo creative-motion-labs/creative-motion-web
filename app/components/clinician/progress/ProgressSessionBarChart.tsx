@@ -21,14 +21,19 @@ const VIEWBOX_WIDTH = 320;
 const VIEWBOX_HEIGHT = 132;
 const PADDING = { top: 18, right: 12, bottom: 28, left: 12 };
 
-function chartMaxValue(values: Array<number | null>): number {
+function chartMaxValue(values: Array<number | null>, axisMax?: number): number {
   const numeric = values.filter((value): value is number => value != null);
-  if (numeric.length === 0) return 1;
-  return Math.max(...numeric, 1);
+  const dataMax = numeric.length === 0 ? 1 : Math.max(...numeric, 1);
+  // A bounded scale (e.g. patient-reported 0-10) keeps its real ceiling, so 3/10 is not
+  // drawn as a "full" bar just because 3 is the largest value plotted.
+  if (axisMax !== undefined && Number.isFinite(axisMax) && axisMax > 0) {
+    return Math.max(axisMax, dataMax);
+  }
+  return dataMax;
 }
 
-function buildPlotPoints(values: Array<number | null>): PlotPoint[] {
-  const max = chartMaxValue(values);
+function buildPlotPoints(values: Array<number | null>, axisMax?: number): PlotPoint[] {
+  const max = chartMaxValue(values, axisMax);
   const plotWidth = VIEWBOX_WIDTH - PADDING.left - PADDING.right;
   const plotHeight = VIEWBOX_HEIGHT - PADDING.top - PADDING.bottom;
   const count = values.length;
@@ -88,7 +93,7 @@ export function ProgressSessionBarChart({
     secondary: series.secondary,
     variant,
   });
-  const plotPoints = buildPlotPoints(series.values);
+  const plotPoints = buildPlotPoints(series.values, series.axisMax);
   const lineSegments = buildLineSegments(plotPoints);
   const gridY = PADDING.top + (VIEWBOX_HEIGHT - PADDING.top - PADDING.bottom) / 2;
 
@@ -153,10 +158,11 @@ export function ProgressSessionBarChart({
             const label = pointLabels[point.index];
             const formattedValue = series.valueFormatter(point.value);
             const sessionLabel = label?.sessionLabel ?? `S${point.index + 1}`;
+            const dateLabel = label?.dateLabel;
 
             return (
               <g key={`${series.id}-${label?.sessionId ?? point.index}`}>
-                <title>{`${sessionLabel}: ${formattedValue}`}</title>
+                <title>{`${sessionLabel}${dateLabel ? ` · ${dateLabel}` : ""}: ${formattedValue}`}</title>
                 <circle
                   cx={point.x}
                   cy={point.y}
@@ -177,13 +183,24 @@ export function ProgressSessionBarChart({
                 </text>
                 <text
                   x={point.x}
-                  y={VIEWBOX_HEIGHT - 8}
+                  y={dateLabel ? VIEWBOX_HEIGHT - 18 : VIEWBOX_HEIGHT - 8}
                   textAnchor="middle"
                   fontSize="9"
                   fill={isPatient ? "#9CA3AF" : "rgba(255,255,255,0.35)"}
                 >
                   {sessionLabel}
                 </text>
+                {dateLabel ? (
+                  <text
+                    x={point.x}
+                    y={VIEWBOX_HEIGHT - 7}
+                    textAnchor="middle"
+                    fontSize="8"
+                    fill={isPatient ? "#9CA3AF" : "rgba(255,255,255,0.3)"}
+                  >
+                    {dateLabel}
+                  </text>
+                ) : null}
               </g>
             );
           })}

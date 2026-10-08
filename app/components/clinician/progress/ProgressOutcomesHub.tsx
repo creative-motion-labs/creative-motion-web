@@ -22,6 +22,7 @@ import {
 } from "@/app/lib/progress/progress-outcomes-bundle";
 import { LongitudinalComparisonPanel } from "@/app/components/clinician/progress/LongitudinalComparisonPanel";
 import { InteractiveShoulderOutcomesPanel } from "@/app/components/clinician/progress/InteractiveShoulderOutcomesPanel";
+import { InteractiveShoulderMissingOutcomeNotice } from "@/app/components/clinician/progress/InteractiveShoulderMissingOutcomeNotice";
 import {
   ADDITIONAL_CAMERA_OBSERVATIONS_DESCRIPTION,
   ADDITIONAL_CAMERA_OBSERVATIONS_TITLE,
@@ -360,6 +361,9 @@ export function ProgressOutcomesHub({ bundle }: ProgressOutcomesHubProps) {
         typeBadge={PROGRESS_OUTCOMES_SECTION_BADGES.interactiveShoulderOutcomes}
         description={INTERACTIVE_SHOULDER_SECTION_DESCRIPTION}
       >
+        <InteractiveShoulderMissingOutcomeNotice
+          count={bundle.interactiveShoulderCompletedWithoutOutcome ?? 0}
+        />
         {shouldShowInteractiveShoulderEmptyState(
           bundle.interactiveShoulderOutcomes.length,
           bundle.interactiveShoulderChartOutcomes.length,

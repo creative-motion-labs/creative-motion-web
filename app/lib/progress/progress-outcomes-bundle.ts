@@ -117,6 +117,11 @@ export type ProgressOutcomesBundle = {
   interactiveShoulderChartOutcomes: InteractiveShoulderOutcomeReportEntry[];
   /** Patient-reported pain/effort joined across plans for longitudinal charts only. */
   interactiveShoulderChartPainTrend: ProgressOutcomesPainPoint[];
+  /**
+   * Completed catalog sessions in the selected plan that have no saved movement outcome.
+   * Optional so older callers and stored bundles stay valid; absent means "not computed".
+   */
+  interactiveShoulderCompletedWithoutOutcome?: number;
 };
 
 export type SessionLogInput = {
@@ -223,6 +228,7 @@ export function buildProgressOutcomesBundle(input: {
   interactiveShoulderChartOutcomeRows: InteractiveShoulderOutcomeReportRow[];
   interactiveShoulderChartSessionLogs: SessionLogInput[];
   interactiveShoulderChartSessionNumberById: Map<string, number>;
+  interactiveShoulderCompletedWithoutOutcome?: number;
 }): ProgressOutcomesBundle {
   const adherence =
     input.planId && input.totalSessions > 0
@@ -267,6 +273,7 @@ export function buildProgressOutcomesBundle(input: {
       input.interactiveShoulderChartSessionLogs,
       input.interactiveShoulderChartSessionNumberById,
     ),
+    interactiveShoulderCompletedWithoutOutcome: input.interactiveShoulderCompletedWithoutOutcome ?? 0,
   };
 }
 
