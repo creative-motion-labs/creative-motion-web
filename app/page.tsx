@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { RootRecoveryHashRedirect } from "@/app/components/auth/RootRecoveryHashRedirect";
 import { RasqDemoPlatformEntryCta } from "@/app/components/rasq-demo/RasqDemoPlatformEntryCta";
 
 function useReveal(threshold = 0.15) {
@@ -1133,6 +1134,7 @@ export default function HomePage() {
       className="relative min-h-screen bg-[var(--rasq-void)] text-white"
       style={{ fontFamily: "var(--rasq-font-body)" }}
     >
+      <RootRecoveryHashRedirect />
       <PageAmbientLines />
       <Navbar />
       <main className="relative z-10">

@@ -38,13 +38,24 @@ export type InteractiveShoulderSessionChartPoint = {
 export type ProgressChartPointLabel = {
   sessionId: string;
   sessionLabel: string;
+  /** Short calendar date of the recorded session, shown under the label when present. */
+  dateLabel?: string;
 };
+
+/** Patient-reported pain and effort are 0-10 scales: their axis must not stretch to the data. */
+export const PATIENT_REPORTED_SCALE_MAX = 10;
 
 export type ProgressChartSeries = {
   id: string;
   label: string;
   helper?: string;
   secondary?: boolean;
+  /**
+   * Fixed upper bound for a bounded scale (e.g. 10 for patient-reported pain/effort).
+   * Without it the chart scales to the largest plotted value, which would make a 3/10 look
+   * like a "full" bar next to a 4/10 on the same axis.
+   */
+  axisMax?: number;
   values: Array<number | null>;
   valueFormatter: (value: number) => string;
 };
@@ -130,6 +141,110 @@ export function buildInteractiveShoulderSessionChartPoints(
   });
 }
 
+// ── Comparable sessions & single-session baseline ─────────────────────
+
+export const BASELINE_SESSION_TITLE = "Baseline — first comparable recorded session";
+export const BASELINE_NEEDS_SECOND_SESSION_NOTE =
+  "No trend can be shown from one session. A second comparable session is needed to calculate a trend.";
+export const BASELINE_NOT_A_TREND_NOTE =
+  "Single-session values are a starting point for therapist review, not a trend or a measure of change.";
+
+/**
+ * Two sessions are only comparable when they were treated on the same side AND used the same
+ * active-block design. Summing left with right, or a target-reach session with a different
+ * exercise pattern, would plot numbers that do not measure the same thing as one trend.
+ * Instructional (warm-up / cool-down) blocks are ignored: they carry no performance data.
+ * A legacy outcome saved before block types were recorded keeps its own "unknown" design
+ * key, so it is never assumed to match a newer session.
+ */
+export function resolveOutcomeComparabilityKey(
+  entry: InteractiveShoulderOutcomeReportEntry,
+): string {
+  const side = entry.prescribedSide ?? "unknown-side";
+  const design = entry.blocks
+    .filter((block) => block.displayCategory !== "instructional")
+    .map((block) => `${block.blockType ?? "unknown"}:${block.movementId}:${block.blockId}`)
+    .join("|");
+  return `${side}#${design}`;
+}
+
+export type ComparableOutcomeSelection = {
+  /** Chronological (oldest first). Empty when there are no outcomes. */
+  comparable: InteractiveShoulderOutcomeReportEntry[];
+  /** Recorded sessions deliberately left out because side or design differs. */
+  excludedCount: number;
+  sideLabel: "LEFT" | "RIGHT" | null;
+};
+
+/**
+ * Picks the sessions that may share one trend: those comparable to the MOST RECENT session
+ * (the current regimen). Everything else is counted, never silently dropped, so the
+ * clinician is told how many recorded sessions are not charted.
+ */
+export function selectComparableOutcomes(
+  outcomes: readonly InteractiveShoulderOutcomeReportEntry[],
+): ComparableOutcomeSelection {
+  if (outcomes.length === 0) return { comparable: [], excludedCount: 0, sideLabel: null };
+
+  const chronological = sortInteractiveShoulderOutcomesChronologically([...outcomes]);
+  const latest = chronological[chronological.length - 1]!;
+  const key = resolveOutcomeComparabilityKey(latest);
+  const comparable = chronological.filter((entry) => resolveOutcomeComparabilityKey(entry) === key);
+
+  const side = latest.prescribedSide;
+  return {
+    comparable,
+    excludedCount: chronological.length - comparable.length,
+    sideLabel: side === "left" ? "LEFT" : side === "right" ? "RIGHT" : null,
+  };
+}
+
+/** Note shown with the chart whenever some recorded sessions are not part of the trend. */
+export function describeComparableSelection(selection: ComparableOutcomeSelection): string | null {
+  if (selection.excludedCount === 0) return null;
+  const charted = selection.comparable.length;
+  const side = selection.sideLabel ? `${selection.sideLabel} side, ` : "";
+  return (
+    `${charted} comparable recorded session${charted === 1 ? "" : "s"} shown (${side}same session design). ` +
+    `${selection.excludedCount} other recorded session${selection.excludedCount === 1 ? "" : "s"} ` +
+    "not shown because the treated side or session design differs."
+  );
+}
+
+export type BaselineSessionMetric = {
+  id: string;
+  label: string;
+  value: string;
+  helper?: string;
+  secondary?: boolean;
+};
+
+/**
+ * The first comparable session's measures, using exactly the same definitions, units and
+ * visibility rules as the multi-session series (so a baseline can never show a value the
+ * trend would not). A measure that was not recorded is simply absent.
+ */
+export function buildBaselineSessionMetrics(
+  entry: InteractiveShoulderOutcomeReportEntry,
+  painTrend: readonly ProgressOutcomesPainPoint[] = [],
+): BaselineSessionMetric[] {
+  const [point] = buildInteractiveShoulderSessionChartPoints([entry], painTrend);
+  if (!point) return [];
+  return buildClinicianProgressChartSeries([point]).flatMap((series) => {
+    const value = series.values[0];
+    if (value == null) return [];
+    return [
+      {
+        id: series.id,
+        label: series.label,
+        value: series.valueFormatter(value),
+        helper: series.helper,
+        secondary: series.secondary,
+      },
+    ];
+  });
+}
+
 function hasSeriesValues(values: Array<number | null>): boolean {
   return values.some((value) => value != null && value > 0);
 }
@@ -178,6 +293,7 @@ export function buildClinicianProgressChartSeries(
       id: "pain-after",
       label: "Patient-reported pain after session",
       helper: "Patient-reported value from session check-in; for therapist review.",
+      axisMax: PATIENT_REPORTED_SCALE_MAX,
       values: pain,
       valueFormatter: (value) => `${Math.round(value)}/10`,
     });
@@ -189,6 +305,7 @@ export function buildClinicianProgressChartSeries(
       id: "effort",
       label: "Patient-reported effort",
       helper: "Patient-reported effort from session check-in; for therapist review.",
+      axisMax: PATIENT_REPORTED_SCALE_MAX,
       values: effort,
       valueFormatter: (value) => `${Math.round(value)}/10`,
     });
@@ -248,6 +365,7 @@ export function buildPatientProgressChartSeries(
     series.push({
       id: "pain-after",
       label: labels.painAfter,
+      axisMax: PATIENT_REPORTED_SCALE_MAX,
       values: pain,
       valueFormatter: (value) => `${Math.round(value)}/10`,
     });
@@ -258,6 +376,7 @@ export function buildPatientProgressChartSeries(
     series.push({
       id: "effort",
       label: labels.effort,
+      axisMax: PATIENT_REPORTED_SCALE_MAX,
       values: effort,
       valueFormatter: (value) => `${Math.round(value)}/10`,
     });
@@ -272,6 +391,20 @@ export function toProgressChartPointLabels(
   return points.map((point) => ({
     sessionId: point.sessionId,
     sessionLabel: point.sessionLabel,
+  }));
+}
+
+/** Clinician axis labels: session number plus the real calendar date of that session. */
+export function toProgressChartDatedPointLabels(
+  points: ReadonlyArray<
+    Pick<InteractiveShoulderSessionChartPoint, "sessionId" | "sessionLabel" | "sessionDate">
+  >,
+  lang: PatientPortalLanguage = "en",
+): ProgressChartPointLabel[] {
+  return points.map((point) => ({
+    sessionId: point.sessionId,
+    sessionLabel: point.sessionLabel,
+    dateLabel: formatPortalChartDate(point.sessionDate, lang),
   }));
 }
 

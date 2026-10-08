@@ -21,6 +21,7 @@ import {
 } from "@/app/lib/progress/progress-outcomes-bundle";
 import { fetchInteractiveShoulderOutcomesForPatient } from "@/app/lib/interactive-shoulder/movement-outcome-persistence";
 import { filterInteractiveShoulderOutcomeRowsToPlan } from "@/app/lib/progress/interactive-shoulder-patient-progress";
+import { countCompletedCatalogSessionsWithoutOutcome } from "@/app/lib/progress/interactive-shoulder-missing-outcomes";
 
 export type { ProgressOutcomesBundle };
 
@@ -271,6 +272,31 @@ export async function GET(req: NextRequest) {
   );
   const interactiveShoulderChartOutcomeRows = outcomesResult.rows;
 
+  // Completed catalog sessions with no saved movement outcome (the patient-reported
+  // completion and the movement outcome are separate saves). Additive and schema-tolerant:
+  // the catalog provenance column exists only after migration 017, so any error here simply
+  // leaves the count at 0 and the page behaves exactly as before.
+  let interactiveShoulderCompletedWithoutOutcome = 0;
+  if (planId) {
+    const { data: catalogSessionRows, error: catalogSessionsErr } = await adminClient
+      .from("plan_sessions")
+      .select("id, status")
+      .eq("plan_id", planId)
+      .not("source_program_session_id", "is", null)
+      .returns<{ id: string; status: string }[]>();
+    if (!catalogSessionsErr) {
+      const outcomePlanSessionIds = new Set(
+        outcomesResult.rows
+          .map((row) => row.plan_session_id)
+          .filter((id): id is string => Boolean(id)),
+      );
+      interactiveShoulderCompletedWithoutOutcome = countCompletedCatalogSessionsWithoutOutcome(
+        catalogSessionRows ?? [],
+        outcomePlanSessionIds,
+      );
+    }
+  }
+
   const chartPlanSessionIds = [
     ...new Set(
       interactiveShoulderChartOutcomeRows
@@ -325,6 +351,7 @@ export async function GET(req: NextRequest) {
     interactiveShoulderChartOutcomeRows,
     interactiveShoulderChartSessionLogs,
     interactiveShoulderChartSessionNumberById,
+    interactiveShoulderCompletedWithoutOutcome,
   });
 
   return NextResponse.json(bundle);

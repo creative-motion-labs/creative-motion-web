@@ -16,8 +16,10 @@ import {
 } from "@/app/lib/patient-portal/catalog-session-playback";
 import {
   shouldSubmitInteractiveShoulderOutcome,
-  submitInteractiveShoulderOutcome,
+  submitInteractiveShoulderOutcomeWithRetry,
+  type InteractiveShoulderOutcomeSaveState,
 } from "@/app/lib/patient-portal/interactive-shoulder-outcome-submission";
+import { InteractiveShoulderOutcomeSaveNotice } from "@/app/components/patient/session/InteractiveShoulderOutcomeSaveNotice";
 import type { InteractiveShoulderSessionCompletionSnapshot } from "@/app/lib/interactive-shoulder/orchestrator-cv-session-types";
 import {
   guidedSessionUi,
@@ -101,6 +103,22 @@ export function CatalogPatientSessionPlayback({
    * retry without ever double-submitting a success.
    */
   const movementOutcomeSubmissionRef = useRef<"idle" | "submitting" | "submitted">("idle");
+  /**
+   * What the patient is told about the movement-outcome save (and nothing else). The real
+   * runtime snapshot is held in memory only until it is saved or the screen goes away, so a
+   * failed save can be retried with the genuine data -- never reconstructed or estimated.
+   */
+  const [outcomeSaveState, setOutcomeSaveState] =
+    useState<InteractiveShoulderOutcomeSaveState>("idle");
+  const pendingOutcomeSnapshotRef = useRef<InteractiveShoulderSessionCompletionSnapshot | null>(null);
+  const outcomeSubmissionGenerationRef = useRef(0);
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const shellUi = sessionShellUi(patientLanguage);
   const guidedUi = guidedSessionUi(patientLanguage);
@@ -130,6 +148,9 @@ export function CatalogPatientSessionPlayback({
     cvSessionCompleteRef.current = false;
     submitStartedRef.current = false;
     movementOutcomeSubmissionRef.current = "idle";
+    pendingOutcomeSnapshotRef.current = null;
+    outcomeSubmissionGenerationRef.current += 1;
+    setOutcomeSaveState("idle");
   }, [token, session.id]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -146,30 +167,59 @@ export function CatalogPatientSessionPlayback({
     setPhase("cameraDeclined");
   }, []);
 
+  /**
+   * Submits the real movement snapshot, retrying only transient failures a bounded number
+   * of times (safe: the server stores exactly one outcome per session and answers a repeat
+   * with the original). It never blocks the wrap-up flow below; it only reports honestly
+   * whether the movement details were saved.
+   */
+  const runOutcomeSubmission = useCallback(
+    async (snapshot: InteractiveShoulderSessionCompletionSnapshot, isManualRetry: boolean) => {
+      const generation = outcomeSubmissionGenerationRef.current;
+      movementOutcomeSubmissionRef.current = "submitting";
+      setOutcomeSaveState(isManualRetry ? "retrying" : "saving");
+
+      const result = await submitInteractiveShoulderOutcomeWithRetry(
+        { token, planSessionId: session.id, snapshot },
+        {
+          isCancelled: () =>
+            !isMountedRef.current || generation !== outcomeSubmissionGenerationRef.current,
+        },
+      );
+
+      // A different session (or an unmounted screen) owns the state now.
+      if (generation !== outcomeSubmissionGenerationRef.current) return;
+      movementOutcomeSubmissionRef.current = result.ok ? "submitted" : "idle";
+      if (result.ok) pendingOutcomeSnapshotRef.current = null;
+      if (isMountedRef.current) setOutcomeSaveState(result.ok ? "saved" : "failed");
+    },
+    [token, session.id],
+  );
+
   const handleCatalogSessionComplete = useCallback(
     (snapshot: InteractiveShoulderSessionCompletionSnapshot) => {
       if (cvSessionCompleteRef.current) return;
       cvSessionCompleteRef.current = true;
       setPhase("wrapup");
 
-      // Fire-and-forget, independent of the patient-reported completion
-      // flow below: this never blocks or gates the wrap-up UI, and the
-      // wrap-up UI never waits on or reflects this submission's outcome.
-      // A poor network connection or a disabled feature flag must not
-      // interrupt the patient's own session-complete flow.
+      // Independent of the patient-reported completion flow below: this never blocks or
+      // gates the wrap-up UI. A poor connection or a disabled feature flag must not
+      // interrupt the patient's own session-complete flow -- but a failed save is no longer
+      // silent: the wrap-up and completion screens show an honest notice with a retry.
       if (shouldSubmitInteractiveShoulderOutcome(movementOutcomeSubmissionRef.current)) {
-        movementOutcomeSubmissionRef.current = "submitting";
-        void submitInteractiveShoulderOutcome({
-          token,
-          planSessionId: session.id,
-          snapshot,
-        }).then((result) => {
-          movementOutcomeSubmissionRef.current = result.ok ? "submitted" : "idle";
-        });
+        pendingOutcomeSnapshotRef.current = snapshot;
+        void runOutcomeSubmission(snapshot, false);
       }
     },
-    [token, session.id],
+    [runOutcomeSubmission],
   );
+
+  const handleRetryOutcomeSave = useCallback(() => {
+    const snapshot = pendingOutcomeSnapshotRef.current;
+    if (!snapshot) return;
+    if (!shouldSubmitInteractiveShoulderOutcome(movementOutcomeSubmissionRef.current)) return;
+    void runOutcomeSubmission(snapshot, true);
+  }, [runOutcomeSubmission]);
 
   const handleSubmitSession = useCallback(async () => {
     if (effortScore === null || painAfter === null) return;
@@ -245,19 +295,28 @@ export function CatalogPatientSessionPlayback({
 
   if (completed && completionSummary) {
     return (
-      <GuidedSessionCompleteScreen
-        lang={patientLanguage}
-        arClass={arClass}
-        textDir={textDir}
-        token={token}
-        sessionTitle={sessionDisplay.title}
-        exercisesCompleted={0}
-        effortScore={completionSummary.effortScore}
-        painAfter={completionSummary.painAfter}
-        effortLabel={shellUi.effort}
-        painLabel={shellUi.painAfterLabel}
-        hideExerciseCount
-      />
+      <div className="space-y-4">
+        <GuidedSessionCompleteScreen
+          lang={patientLanguage}
+          arClass={arClass}
+          textDir={textDir}
+          token={token}
+          sessionTitle={sessionDisplay.title}
+          exercisesCompleted={0}
+          effortScore={completionSummary.effortScore}
+          painAfter={completionSummary.painAfter}
+          effortLabel={shellUi.effort}
+          painLabel={shellUi.painAfterLabel}
+          hideExerciseCount
+        />
+        <InteractiveShoulderOutcomeSaveNotice
+          state={outcomeSaveState}
+          lang={patientLanguage}
+          textDir={textDir}
+          arClass={arClass}
+          onRetry={handleRetryOutcomeSave}
+        />
+      </div>
     );
   }
 
@@ -368,6 +427,14 @@ export function CatalogPatientSessionPlayback({
               className="w-full resize-none rounded-[10px] border border-[#E2E8E5] bg-[#F9FAFB] px-3 py-2.5 text-[14px] text-[#374151] placeholder:text-[#9CA3AF] focus:border-[#1D9E75]/50 focus:outline-none"
             />
           </div>
+
+          <InteractiveShoulderOutcomeSaveNotice
+            state={outcomeSaveState}
+            lang={patientLanguage}
+            textDir={textDir}
+            arClass={arClass}
+            onRetry={handleRetryOutcomeSave}
+          />
 
           {saveFailed ? (
             <div className="rounded-[10px] border border-rose-200 bg-rose-50 px-4 py-3">
